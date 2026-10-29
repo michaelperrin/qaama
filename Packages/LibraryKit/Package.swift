@@ -8,6 +8,7 @@ let package = Package(
         .library(name: "LibraryKit", targets: ["LibraryKit"]),
     ],
     dependencies: [
+        .package(path: "../ImageIOKit"),
         // SQLite catalog (MIT). See docs/catalogue.md for why GRDB rather than SwiftData.
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.11.0"),
     ],
@@ -15,6 +16,7 @@ let package = Package(
         .target(
             name: "LibraryKit",
             dependencies: [
+                "ImageIOKit",
                 .product(name: "GRDB", package: "GRDB.swift"),
             ],
             swiftSettings: [

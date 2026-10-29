@@ -147,14 +147,27 @@ public final nonisolated class CatalogStore: Sendable {
 
     // MARK: - Metadata phase
 
-    /// Items whose header still has to be read, oldest capture unknown first; `limit` bounds a batch.
-    public func itemsNeedingMetadata(inFolder folderID: UUID, limit: Int) async throws -> [CatalogItem] {
+    /// Items whose header still has to be read; `limit` bounds a batch. Items in `preferring` (those on
+    /// screen, typically) come first, then the rest in path order.
+    public func itemsNeedingMetadata(inFolder folderID: UUID, limit: Int, preferring preferred: Set<UUID> = []) async throws -> [CatalogItem] {
         try await writer.read { db in
-            try CatalogItem
+            let pending = CatalogItem
                 .filter(CatalogItem.Col.folderID == folderID && CatalogItem.Col.isMissing == false)
                 .filter(CatalogItem.Col.metadataRead == nil || CatalogItem.Col.metadataRead < CatalogItem.Col.contentModified)
-                .limit(limit)
-                .fetchAll(db)
+            var batch: [CatalogItem] = []
+            if !preferred.isEmpty {
+                batch = try pending.filter(preferred.contains(CatalogItem.Col.id)).limit(limit).fetchAll(db)
+            }
+            if batch.count < limit {
+                let taken = Set(batch.map(\.id))
+                let rest = try pending
+                    .filter(!taken.contains(CatalogItem.Col.id))
+                    .order(CatalogItem.Col.relativePath)
+                    .limit(limit - batch.count)
+                    .fetchAll(db)
+                batch += rest
+            }
+            return batch
         }
     }
 

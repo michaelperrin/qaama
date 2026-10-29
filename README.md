@@ -24,8 +24,9 @@ Package tests: `swift test` inside `Packages/<Package>`.
 
 - `Qaama/`: application target (SwiftUI, with AppKit where needed).
 - `Packages/EditModel`: the versioned edit recipe, pure Swift.
+- `Packages/ImageIOKit`: image headers (EXIF), thumbnails and decoding through ImageIO and Quick Look.
 - `Packages/RenderEngine`: Core Image on Metal, RAW decoding, canvas, export.
-- `Packages/LibraryKit`: photo sources (PhotoKit, folders), edit storage, preview cache.
+- `Packages/LibraryKit`: photo sources (PhotoKit, folders), SQLite catalog, sidecars, preview cache.
   Package APIs never expose AppKit, to keep them portable.
 - `Experiments/`: feasibility prototypes, not linked into the app.
 

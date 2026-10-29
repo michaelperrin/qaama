@@ -27,14 +27,19 @@ anyone, human or agent, contributing code. The roadmap lives in `docs/PLAN.md`.
 Qaama/            SwiftUI app: views, glue between packages, AppKit where unavoidable
 Packages/
   EditModel/      EditRecipe: the versioned JSON edit description, pure Swift
+  ImageIOKit/     ImageIO and Quick Look: headers (EXIF), thumbnails, full-size decoding
   RenderEngine/   Core Image on Metal: decoding (CIRAWFilter for RAW), pipeline, canvas, export
-  LibraryKit/     Sources of photos (Photos library, folders), assets, editing storage, caches
+  LibraryKit/     Sources of photos (Photos library, folders), SQLite catalog (GRDB), sidecars, caches
 Experiments/      Throwaway feasibility prototypes, never linked into the app
 ```
 
-- Dependency direction: app → everything; RenderEngine → EditModel; LibraryKit depends on
-  neither. When LibraryKit needs rendering (preview rebuilds), the app injects a closure
-  (`PreviewRenderer`).
+- Dependency direction: app → everything; RenderEngine → EditModel; LibraryKit → ImageIOKit
+  and GRDB. LibraryKit never depends on RenderEngine: when it needs rendering (preview
+  rebuilds), the app injects a closure (`PreviewRenderer`).
+- The catalog (`docs/catalogue.md`) is an index of the folders and sidecars, rebuildable at any
+  time; the sidecar next to the image is the portable truth and wins on conflict. Scans run in
+  two phases: `FolderLister` + `FolderIndexer` (fast, system attributes, identity), then
+  `MetadataIndexer` (headers in batches, in the background).
 - `LibrarySource` is the protocol every photo source implements; views only see
   `any LibrarySource` and `LibraryAsset`. Keep PhotoKit and file-system types inside LibraryKit.
 - Edits are recipes, never pixels: sidecar `<file>.qaama` next to folder images,

@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ImageIOKit
 import Observation
 import OSLog
 

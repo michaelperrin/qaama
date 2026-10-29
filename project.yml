@@ -27,6 +27,8 @@ packages:
     path: Packages/LibraryKit
   EditModel:
     path: Packages/EditModel
+  ImageIOKit:
+    path: Packages/ImageIOKit
   RenderEngine:
     path: Packages/RenderEngine
 
@@ -39,6 +41,7 @@ targets:
     dependencies:
       - package: LibraryKit
       - package: EditModel
+      - package: ImageIOKit
       - package: RenderEngine
     info:
       path: Qaama/Info.plist
