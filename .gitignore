@@ -9,4 +9,4 @@ build/
 # SwiftPM
 .build/
 .swiftpm/
-Package.resolved
+# Keep Package.resolved versioned: LibraryKit now has an external dependency (GRDB).

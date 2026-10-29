@@ -7,9 +7,16 @@ let package = Package(
     products: [
         .library(name: "LibraryKit", targets: ["LibraryKit"]),
     ],
+    dependencies: [
+        // SQLite catalog (MIT). See docs/catalogue.md for why GRDB rather than SwiftData.
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.11.0"),
+    ],
     targets: [
         .target(
             name: "LibraryKit",
+            dependencies: [
+                .product(name: "GRDB", package: "GRDB.swift"),
+            ],
             swiftSettings: [
                 .defaultIsolation(MainActor.self),
                 .enableUpcomingFeature("MemberImportVisibility"),

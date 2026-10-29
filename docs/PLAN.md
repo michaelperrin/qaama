@@ -119,7 +119,7 @@ Points notables :
 | Rendu | Core Image sur contexte Metal, filtres natifs + `CIKernel` Metal maison si besoin | pipeline non destructif naturel, GPU, RAW via `CIRAWFilter` |
 | Bibliothèque Photos | PhotoKit : `PHPhotoLibrary`, `PHCachingImageManager`, `PHFetchResultChangeDetails`, `PHAdjustmentData` | identique à l'approche observée |
 | Bibliothèque fichiers | `NSOpenPanel` + security‑scoped bookmarks, scan asynchrone, `QuickLookThumbnailing`, `FSEvents`/`DispatchSource` pour la surveillance | sandbox‑compatible |
-| Persistance | SwiftData (index de bibliothèque, vignettes en cache disque) ; recette d'édition en JSON `Codable` (sidecar à côté du fichier, et `PHAdjustmentData` pour Photos) | lisible, versionnable, testable |
+| Persistance | SQLite via GRDB derrière `CatalogStore` (index de bibliothèque, décidé le 29/10/2026), aperçus en cache disque ; recette d'édition en JSON `Codable` (sidecar à côté du fichier, et `PHAdjustmentData` pour Photos) | lisible, versionnable, testable |
 | Import/export | ImageIO (`CGImageSource`/`CGImageDestination`), métadonnées EXIF/IPTC/XMP conservées | natif, tous formats |
 | Analyse d'image | Vision (horizon, sujet/masque de premier plan, saillance, personnes), Core Image (auto‑enhance, histogramme) | remplace les modèles maison |
 | Structure | monorepo Xcode + paquets SwiftPM locaux : `EditModel`, `RenderEngine`, `LibraryKit`, `ImageIOKit`, `App` | découpage testable, ouvre la porte à iPad plus tard |
@@ -213,7 +213,7 @@ maintenant (règles dans `AGENTS.md`).
 
 1. **Identifiants stables.** `LibraryAsset.id` est le chemin du fichier : un renommage ou un
    déplacement casse le sidecar, le cache d'aperçus et les futures notes. Introduire un
-   catalogue persistant (SwiftData) avec un identifiant propre à Qaama, le chemin et une
+   catalogue persistant (SQLite via GRDB, voir `docs/catalogue.md`) avec un identifiant propre à Qaama, le chemin et une
    empreinte (taille + date + hachage partiel) pour retrouver les fichiers déplacés.
 2. **Listage en deux temps.** Lister d'abord (nom, type, dates système), lire les en-têtes
    (dimensions, EXIF) en arrière-plan par lots et les conserver dans le catalogue. Même
