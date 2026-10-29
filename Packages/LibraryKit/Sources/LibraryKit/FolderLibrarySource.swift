@@ -74,4 +74,29 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     public func setRating(_: Int, for _: LibraryAsset) async throws {
         throw LibrarySourceError.ratingUnsupported
     }
+
+    // MARK: - Editing (sidecar file next to the image)
+
+    public func editingInput(for asset: LibraryAsset) async throws -> EditingInput {
+        let url = URL(filePath: asset.id)
+        let sidecar = Self.sidecarURL(for: url)
+        let recipeData = try? Data(contentsOf: sidecar)
+        return EditingInput(imageURL: url, recipeData: recipeData)
+    }
+
+    /// Writes the recipe as `<image name>.qaama` next to the image. The rendered JPEG is not kept:
+    /// the recipe is the edit, and the original stays the only pixel file.
+    public func saveEdit(_ output: EditingOutput, for asset: LibraryAsset) async throws {
+        let sidecar = Self.sidecarURL(for: URL(filePath: asset.id))
+        do {
+            try output.recipeData.write(to: sidecar, options: .atomic)
+        } catch {
+            throw LibrarySourceError.editingFailed(error.localizedDescription)
+        }
+        logger.notice("Saved recipe to \(sidecar.lastPathComponent, privacy: .public)")
+    }
+
+    static func sidecarURL(for imageURL: URL) -> URL {
+        imageURL.appendingPathExtension(EditingFormat.sidecarExtension)
+    }
 }

@@ -25,6 +25,10 @@ settings:
 packages:
   LibraryKit:
     path: Packages/LibraryKit
+  EditModel:
+    path: Packages/EditModel
+  RenderEngine:
+    path: Packages/RenderEngine
 
 targets:
   Qaama:
@@ -34,6 +38,8 @@ targets:
       - path: Qaama
     dependencies:
       - package: LibraryKit
+      - package: EditModel
+      - package: RenderEngine
     info:
       path: Qaama/Info.plist
       properties:

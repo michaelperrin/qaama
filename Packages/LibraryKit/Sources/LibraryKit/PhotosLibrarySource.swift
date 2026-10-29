@@ -26,6 +26,8 @@ public final class PhotosLibrarySource: LibrarySource {
     private var assetsByID: [String: PHAsset] = [:]
     private let imageManager = PHCachingImageManager()
     private var changeRelay: PhotoLibraryChangeRelay?
+    /// Editing inputs kept alive while a photo is open: they hold the access to the original file.
+    private var editingInputs: [String: PHContentEditingInput] = [:]
     private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "PhotosLibrarySource")
 
     public init() {}
@@ -96,6 +98,63 @@ public final class PhotosLibrarySource: LibrarySource {
     public func prefetchThumbnails(for assets: [LibraryAsset], pixelSize: CGSize) {
         let phAssets = assets.compactMap { assetsByID[$0.id] }
         imageManager.startCachingImages(for: phAssets, targetSize: pixelSize, contentMode: .aspectFill, options: Self.requestOptions())
+    }
+
+    // MARK: - Editing (PHAdjustmentData)
+
+    /// Asks Photos for the original (RAW included) and for Qaama's own adjustment data, if the photo
+    /// was last edited here. Edits made by other apps are baked into the image Photos hands back.
+    public func editingInput(for asset: LibraryAsset) async throws -> EditingInput {
+        guard let phAsset = assetsByID[asset.id] else { throw LibrarySourceError.assetUnavailable }
+        let options = PHContentEditingInputRequestOptions()
+        options.isNetworkAccessAllowed = true
+        options.canHandleAdjustmentData = { @Sendable data in data.formatIdentifier == EditingFormat.identifier }
+
+        // PHContentEditingInput isn't Sendable; PhotoKit hands it over once and we only touch it on the main actor afterwards.
+        let input = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<UncheckedSendable<PHContentEditingInput>, Error>) in
+            phAsset.requestContentEditingInput(with: options) { @Sendable input, info in
+                if let input {
+                    continuation.resume(returning: UncheckedSendable(input))
+                } else {
+                    let reason = (info[PHContentEditingInputErrorKey] as? NSError)?.localizedDescription ?? "no original available"
+                    continuation.resume(throwing: LibrarySourceError.editingFailed(reason))
+                }
+            }
+        }.value
+        editingInputs[asset.id] = input
+        let recipeData = input.adjustmentData?.formatIdentifier == EditingFormat.identifier ? input.adjustmentData?.data : nil
+        logger.notice("Editing input for \(asset.id, privacy: .public): file \(input.fullSizeImageURL?.pathExtension ?? "none", privacy: .public), recipe \(recipeData != nil)")
+        return EditingInput(imageURL: input.fullSizeImageURL, image: input.displaySizeImage?.asCGImage, recipeData: recipeData)
+    }
+
+    /// Stores the recipe as `PHAdjustmentData` and the rendered JPEG as the photo's current version,
+    /// the standard non-destructive path: Photos keeps the original and can revert at any time.
+    public func saveEdit(_ output: EditingOutput, for asset: LibraryAsset) async throws {
+        guard let phAsset = assetsByID[asset.id] else { throw LibrarySourceError.assetUnavailable }
+        guard let input = editingInputs[asset.id] else { throw LibrarySourceError.editingFailed("the photo wasn't opened for editing") }
+
+        let editingOutput = PHContentEditingOutput(contentEditingInput: input)
+        editingOutput.adjustmentData = PHAdjustmentData(
+            formatIdentifier: EditingFormat.identifier,
+            formatVersion: EditingFormat.version,
+            data: output.recipeData
+        )
+        do {
+            try output.renderedJPEG.write(to: editingOutput.renderedContentURL, options: .atomic)
+        } catch {
+            throw LibrarySourceError.editingFailed(error.localizedDescription)
+        }
+        // Same story as above: the output is built here and consumed once by PhotoKit's change block.
+        nonisolated(unsafe) let pendingOutput = editingOutput
+        try await PHPhotoLibrary.shared().performChanges { @Sendable in
+            PHAssetChangeRequest(for: phAsset).contentEditingOutput = pendingOutput
+        }
+        logger.notice("Saved edit to Photos for \(asset.id, privacy: .public)")
+    }
+
+    /// Releases the original file access once the editor closes.
+    public func endEditing(_ asset: LibraryAsset) {
+        editingInputs[asset.id] = nil
     }
 
     // MARK: - Private

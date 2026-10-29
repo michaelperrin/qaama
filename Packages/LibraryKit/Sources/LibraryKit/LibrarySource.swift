@@ -23,12 +23,25 @@ public protocol LibrarySource: AnyObject, Observable {
     func fullSizeImage(for asset: LibraryAsset) async -> CGImage?
     /// Sets the star rating (0 to 5) of a photo.
     func setRating(_ rating: Int, for asset: LibraryAsset) async throws
+
+    /// Original pixels and previously saved recipe, to open the photo in the editor.
+    func editingInput(for asset: LibraryAsset) async throws -> EditingInput
+    /// Stores an edit non-destructively. Passing a recipe equal to the identity reverts the photo.
+    func saveEdit(_ output: EditingOutput, for asset: LibraryAsset) async throws
+    /// Called when the editor closes, so the source can release what it held for the edit.
+    func endEditing(_ asset: LibraryAsset)
+}
+
+public extension LibrarySource {
+    func endEditing(_: LibraryAsset) {}
 }
 
 /// Errors shared by the library sources.
 public nonisolated enum LibrarySourceError: Error, LocalizedError, Sendable {
     case ratingUnsupported
     case folderUnreadable(URL)
+    case assetUnavailable
+    case editingFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -36,6 +49,10 @@ public nonisolated enum LibrarySourceError: Error, LocalizedError, Sendable {
             "This library doesn't store ratings yet."
         case let .folderUnreadable(url):
             "The folder “\(url.lastPathComponent)” can't be read."
+        case .assetUnavailable:
+            "This photo is no longer available."
+        case let .editingFailed(reason):
+            "The edit couldn't be saved: \(reason)"
         }
     }
 }

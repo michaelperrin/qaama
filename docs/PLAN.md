@@ -149,10 +149,18 @@ But : prouver que les trois briques critiques tiennent, sans soin de l'UI.
 
 - [x] Squelette Xcode (XcodeGen), app SwiftUI sandboxée, cible macOS 27, signature ad hoc,
       paquet `LibraryKit` (29/10/2026).
-- [ ] **Brique rendu** : ouvrir un JPEG/HEIC/RAW, afficher dans un canevas Metal
+- [x] **Brique rendu** : ouvrir un JPEG/HEIC/RAW, afficher dans un canevas Metal
       (zoom/pan), 3 curseurs (exposition, contraste, saturation) appliqués en
       temps réel via Core Image, export JPEG. Mesurer la latence sur une image 24–48 Mpx
       et un RAW.
+      Fait le 29/10/2026 : paquets `EditModel` (recette JSON versionnée) et `RenderEngine`
+      (CIRAWFilter pour les RAW, pipeline Core Image, `MTKView` piloté par `setNeedsDisplay`,
+      export JPEG sRGB). Éditeur dans la colonne principale avec pincement, glisser,
+      double-clic. Sauvegarde non destructive : sidecar `<fichier>.qaama` pour les dossiers,
+      `PHAdjustmentData` + JPEG rendu pour Photos (à vérifier à l'usage).
+      Leçon : une `CAMetalLayer` n'affiche rien dans une feuille `.sheet` SwiftUI sur
+      macOS 27 (contenu composé hors écran) ; l'éditeur vit donc dans la fenêtre.
+      Sortie 8 bits sRGB pour l'instant ; l'EDR (rgba16Float + P3 linéaire) viendra plus tard.
 - [ ] **Brique Photos** : demander l'accès, afficher une grille des photos récentes
       (`PHCachingImageManager`), ouvrir une photo dans le canevas, réécrire un
       ajustement dans Photos via `PHAdjustmentData` et le relire.
@@ -161,7 +169,7 @@ But : prouver que les trois briques critiques tiennent, sans soin de l'UI.
       photothèque, mesure du temps de listage (journal `OSLog`, sous-titre de fenêtre).
       Mesuré : 74 000 photos listées en 2,8 s ; la notation rafraîchit la liste de façon
       incrémentale (avant : reconstruction complète, ~1,5 s de latence perçue).
-      Reste : `PHAdjustmentData`, à faire avec la brique rendu (il faut une image rendue).
+      `PHAdjustmentData` écrit et relu avec la brique rendu (29/10/2026).
 - [ ] **Brique fichiers** : choisir un dossier, le scanner récursivement, afficher les
       vignettes, conserver l'accès au redémarrage (bookmark).
       Fait le 29/10/2026 : barre latérale Photos + dossiers, ajout via `fileImporter`,
@@ -171,6 +179,26 @@ But : prouver que les trois briques critiques tiennent, sans soin de l'UI.
       sources. Reste : notes pour les fichiers (sidecar), vérifier le temps de scan et la
       qualité RAW sur les RAF du X-T30.
 - [ ] Bilan : ce qui marche, ce qui coince, décisions pour le MVP.
+
+### Étude de faisabilité : masque « ciel » (29/10/2026)
+
+Demande de Michaël : vérifier tôt que le masque ciel est faisable sans modèle propriétaire,
+avant de poursuivre. Prototype dans `Experiments/sky-mask/`, testé sur 13 photos du dossier
+d'essai (JPEG 2 Mpx et 26 Mpx, un RAF).
+
+- **Apple fournit les masques sujet, arrière-plan et personnes** (Vision), et sur macOS 27 une
+  segmentation « par clic » (`GenerateIterativeSegmentationRequest`, amorce par point,
+  rectangle ou gribouillis, points à inclure/exclure). Pas de classe « ciel » publique.
+- **Modèle tiers légal** : `apple/coreml-detr-semantic-segmentation` (Apache 2.0, 85 Mo),
+  classes COCO panoptique dont `sky (other)`. Détection automatique correcte sur toutes les
+  photos de test, mais masque calculé en 448 × 448 donc bords grossiers.
+- **Mesures** : DETR 70 à 110 ms par image après chauffe (3,5 s de chargement + 2,3 s au
+  premier appel) ; segmentation par clic 80 ms en 2 Mpx, 130 à 200 ms en 26 Mpx, bords fins,
+  ressources téléchargées par le système au premier usage (3,9 s).
+- **Conclusion : faisable.** Pipeline retenu pour la phase 3 : DETR trouve le ciel, son masque
+  sert d'amorce (gribouillis) à la requête Vision qui affine les bords ; l'utilisateur corrige
+  par points inclus/exclus. Le même DETR donne aussi mer, route, herbe, bâtiment, etc. Peau et
+  cheveux restent hors de portée sans modèle dédié.
 
 ### Phase 2 — MVP (une appli utilisable au quotidien)
 
