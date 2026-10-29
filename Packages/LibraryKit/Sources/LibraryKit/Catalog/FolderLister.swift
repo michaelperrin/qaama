@@ -20,6 +20,13 @@ public nonisolated struct ListedFile: Hashable, Sendable {
     }
 }
 
+/// Result of `FolderLister.list`: the images, plus sidecars whose image is gone or was renamed.
+public nonisolated struct FolderListing: Sendable {
+    public var files: [ListedFile]
+    /// Relative paths of `.qaama` files with no image next to them.
+    public var orphanSidecars: [String]
+}
+
 /// Phase A of a scan: lists the image files below a folder with their system attributes only.
 /// No image header is read here; that is `ImageMetadataReader`'s job, in the background.
 ///
@@ -29,7 +36,7 @@ public nonisolated enum FolderLister {
         .isRegularFileKey, .contentTypeKey, .fileSizeKey, .contentModificationDateKey, .fileResourceIdentifierKey,
     ]
 
-    public static func list(_ folder: URL) throws -> [ListedFile] {
+    public static func list(_ folder: URL) throws -> FolderListing {
         var isDirectory: ObjCBool = false
         let root = folder.standardizedFileURL
         guard FileManager.default.fileExists(atPath: root.path(percentEncoded: false), isDirectory: &isDirectory),
@@ -68,11 +75,14 @@ public nonisolated enum FolderLister {
             images.append((file, sidecarKey: "\(relativePath).\(EditingFormat.sidecarExtension)"))
         }
 
-        return images.map { file, sidecarKey in
+        var unclaimed = Set(sidecarDates.keys)
+        let files = images.map { file, sidecarKey in
             guard let date = sidecarDates[sidecarKey] else { return file }
+            unclaimed.remove(sidecarKey)
             return ListedFile(url: file.url, relativePath: file.relativePath, fileType: file.fileType, fileSize: file.fileSize,
                               contentModified: file.contentModified, fileIdentifier: file.fileIdentifier, sidecarModified: date)
         }
+        return FolderListing(files: files, orphanSidecars: unclaimed.sorted())
     }
 
     private static func serialize(_ identifier: any NSCopying & NSCoding & NSSecureCoding) -> Data? {

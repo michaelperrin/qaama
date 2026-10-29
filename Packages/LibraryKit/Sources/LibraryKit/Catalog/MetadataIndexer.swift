@@ -24,7 +24,7 @@ public nonisolated struct MetadataIndexer: Sendable {
     /// caller can push the items currently on screen to the front. Returns the number of items read.
     /// Cancelling the task stops after the current batch.
     @discardableResult
-    public func run(folder: CatalogFolder, at root: URL, preferred: @Sendable () -> Set<UUID> = { [] }) async throws -> Int {
+    public func run(folder: CatalogFolder, at root: URL, preferred: @Sendable () async -> Set<UUID> = { [] }) async throws -> Int {
         let clock = ContinuousClock()
         let start = clock.now
         var total = 0

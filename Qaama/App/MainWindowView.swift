@@ -22,8 +22,9 @@ struct MainWindowView: View {
         } detail: {
             detail
         }
+        .task { await catalog.load() }
         .fileImporter(isPresented: $isPickingFolder, allowedContentTypes: [.folder]) { result in
-            addFolder(result)
+            Task { await addFolder(result) }
         }
         .alert("Couldn't Add Folder", isPresented: Binding(get: { folderError != nil }, set: {
             if !$0 {
@@ -54,9 +55,9 @@ struct MainWindowView: View {
         }
     }
 
-    private func addFolder(_ result: Result<URL, Error>) {
+    private func addFolder(_ result: Result<URL, Error>) async {
         do {
-            let folder = try catalog.addFolder(result.get())
+            let folder = try await catalog.addFolder(result.get())
             selection = .folder(folder.id)
         } catch {
             folderError = error.localizedDescription

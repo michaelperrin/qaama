@@ -118,6 +118,26 @@ struct FolderIndexerTests {
         #expect(cleared.rating == 0 && !cleared.hasEdit && cleared.sidecarModified == nil)
     }
 
+    @Test func movesTheSidecarAlongWithARenamedImage() async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let image = fixture.root.appendingPathComponent("a.png")
+        let sidecar = Sidecar(rating: 2, recipeData: Data(#"{"exposure":1}"#.utf8))
+        try sidecar.write(forImageAt: image)
+        _ = try await fixture.index()
+
+        // Renamed in the Finder: the sidecar keeps the old name.
+        let renamed = fixture.root.appendingPathComponent("Trip/a-renamed.png")
+        try FileManager.default.moveItem(at: image, to: renamed)
+        let result = try await fixture.index()
+        #expect(result.created == 0 && result.matched == 2)
+
+        let item = try #require(try await fixture.store.item(id: sidecar.id))
+        #expect(item.relativePath == "Trip/a-renamed.png" && item.hasEdit && item.rating == 2)
+        #expect(try Sidecar.read(forImageAt: renamed)?.recipeData != nil)
+        #expect(!FileManager.default.fileExists(atPath: Sidecar.url(for: image).path))
+    }
+
     @Test func recognizesCopiesByFingerprintAndDuplicateSidecars() async throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }

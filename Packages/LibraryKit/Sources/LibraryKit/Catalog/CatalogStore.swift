@@ -194,15 +194,27 @@ public final nonisolated class CatalogStore: Sendable {
 
     // MARK: - Observation
 
-    /// Emits the items of a folder every time they change. Cancel the task to stop.
-    public func observeItems(inFolder folderID: UUID) -> AsyncValueObservation<[CatalogItem]> {
-        ValueObservation
-            .tracking { db in
-                try CatalogItem
-                    .filter(CatalogItem.Col.folderID == folderID && CatalogItem.Col.isMissing == false)
-                    .order(CatalogItem.Col.captureDate.desc, CatalogItem.Col.contentModified.desc)
-                    .fetchAll(db)
+    /// Emits the items of a folder (current first, then after every change) until the consumer stops.
+    public func observeItems(inFolder folderID: UUID) -> AsyncThrowingStream<[CatalogItem], Error> {
+        let observation = ValueObservation.tracking { db in
+            try CatalogItem
+                .filter(CatalogItem.Col.folderID == folderID && CatalogItem.Col.isMissing == false)
+                .order(CatalogItem.Col.captureDate.desc, CatalogItem.Col.contentModified.desc)
+                .fetchAll(db)
+        }
+        let writer = writer
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await items in observation.values(in: writer) {
+                        continuation.yield(items)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
             }
-            .values(in: writer)
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 }

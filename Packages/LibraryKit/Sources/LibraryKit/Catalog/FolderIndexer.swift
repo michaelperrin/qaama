@@ -28,7 +28,8 @@ public nonisolated struct FolderIndexer: Sendable {
         let start = clock.now
         // Make sure the folder row exists: items reference it through a foreign key.
         try await store.save(folder)
-        let files = try await Task.detached(priority: .userInitiated) { try FolderLister.list(url) }.value
+        let listing = try await Task.detached(priority: .userInitiated) { try FolderLister.list(url) }.value
+        let files = listing.files
         let existing = try await store.items(inFolder: folder.id, includeMissing: true)
 
         var byPath: [String: CatalogItem] = [:]
@@ -99,6 +100,8 @@ public nonisolated struct FolderIndexer: Sendable {
             toSave.append(item)
         }
 
+        reattachOrphanSidecars(listing.orphanSidecars, root: url, items: &toSave)
+
         try await store.save(toSave)
         result.missing = try await store.reconcile(folderID: folder.id, presentIDs: presentIDs).count
         var updatedFolder = folder
@@ -106,6 +109,38 @@ public nonisolated struct FolderIndexer: Sendable {
         try await store.save(updatedFolder)
         logger.notice("Indexed \(folder.displayName, privacy: .public): \(result.listed) files, \(result.created) new, \(result.matched) matched, \(result.missing) newly missing, in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
         return result
+    }
+
+    /// A sidecar left behind when its image was renamed or moved outside Qaama still carries the item's
+    /// identifier: move it next to the image again and take its decisions.
+    private func reattachOrphanSidecars(_ orphans: [String], root: URL, items: inout [CatalogItem]) {
+        guard !orphans.isEmpty else { return }
+        var indexByID: [UUID: Int] = [:]
+        for (index, item) in items.enumerated() {
+            indexByID[item.id] = index
+        }
+        for orphan in orphans {
+            let orphanURL = root.appendingPathComponent(orphan)
+            guard let data = try? Data(contentsOf: orphanURL), let sidecar = try? Sidecar(data: data, url: orphanURL),
+                  let index = indexByID[sidecar.id], items[index].sidecarModified == nil || !sidecarExists(for: items[index], root: root)
+            else { continue }
+            let imageURL = root.appendingPathComponent(items[index].relativePath)
+            let destination = Sidecar.url(for: imageURL)
+            do {
+                try FileManager.default.moveItem(at: orphanURL, to: destination)
+            } catch {
+                logger.error("Couldn't move sidecar \(orphan, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                continue
+            }
+            let date = (try? destination.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .now
+            items[index].apply(sidecar, modified: date)
+            let target = items[index].relativePath
+            logger.notice("Moved sidecar \(orphan, privacy: .public) next to \(target, privacy: .public)")
+        }
+    }
+
+    private func sidecarExists(for item: CatalogItem, root: URL) -> Bool {
+        FileManager.default.fileExists(atPath: Sidecar.url(for: root.appendingPathComponent(item.relativePath)).path(percentEncoded: false))
     }
 
     private enum SidecarStatus {

@@ -30,10 +30,13 @@ public protocol LibrarySource: AnyObject, Observable {
     func saveEdit(_ output: EditingOutput, for asset: LibraryAsset) async throws
     /// Called when the editor closes, so the source can release what it held for the edit.
     func endEditing(_ asset: LibraryAsset)
+    /// Hint that the asset is on screen, so pending background work (metadata) serves it first.
+    func prioritize(_ asset: LibraryAsset)
 }
 
 public extension LibrarySource {
     func endEditing(_: LibraryAsset) {}
+    func prioritize(_: LibraryAsset) {}
 }
 
 /// Errors shared by the library sources.

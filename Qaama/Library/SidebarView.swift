@@ -19,7 +19,7 @@ struct SidebarView: View {
                         .tag(LibrarySelection.folder(folder.id))
                         .help(folder.folderURL.path(percentEncoded: false))
                         .contextMenu {
-                            Button("Rescan Folder") { folder.invalidate(); Task { await folder.load() } }
+                            Button("Rescan Folder") { folder.rescan() }
                             Button("Remove Folder", role: .destructive) { remove(folder) }
                         }
                 }
@@ -44,6 +44,6 @@ struct SidebarView: View {
         if selection == .folder(folder.id) {
             selection = .photos
         }
-        catalog.removeFolder(folder)
+        Task { try? await catalog.removeFolder(folder) }
     }
 }

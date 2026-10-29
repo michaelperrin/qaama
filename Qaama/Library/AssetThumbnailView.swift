@@ -48,6 +48,7 @@ struct AssetThumbnailView: View {
             .padding(6)
         }
         .task(id: ThumbnailKey(id: asset.id, modificationDate: asset.modificationDate)) {
+            source.prioritize(asset)
             let pixels = CGSize(width: side * displayScale, height: side * displayScale)
             image = await source.thumbnail(for: asset, pixelSize: pixels)
         }

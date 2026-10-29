@@ -13,10 +13,7 @@ struct FolderLibraryView: View {
                 } description: {
                     Text(error)
                 } actions: {
-                    Button("Try Again") {
-                        source.invalidate()
-                        Task { await source.load() }
-                    }
+                    Button("Try Again") { source.rescan() }
                 }
             } else if !source.isLoaded {
                 ProgressView("Scanning “\(source.displayName)”…")
