@@ -30,7 +30,7 @@ struct CatalogStoreTests {
 
         let items = try await store.items(inFolder: folder.id)
         #expect(items.map(\.fileName) == ["new.jpg", "old.jpg", "undated.jpg"])
-        #expect(items.allSatisfy(\.needsMetadata))
+        #expect(items.allSatisfy { $0.needsMetadata })
     }
 
     @Test func findsItemsByPathIdentifierAndFingerprint() async throws {

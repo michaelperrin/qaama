@@ -4,3 +4,5 @@
 --disable redundantSelf
 # Keep `#if` blocks flush with the surrounding code.
 --ifdef no-indent
+# Swift Testing's #expect macro rejects key paths in some positions; keep explicit closures.
+--disable preferKeyPath

@@ -97,34 +97,39 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
 
     public func editingInput(for asset: LibraryAsset) async throws -> EditingInput {
         let url = URL(filePath: asset.id)
-        let sidecar = EditingFormat.sidecarURL(for: url)
-        let recipeData = try? Data(contentsOf: sidecar)
+        let recipeData = await Task.detached { try? Sidecar.read(forImageAt: url)?.recipeData }.value
         return EditingInput(imageURL: url, recipeData: recipeData)
     }
 
     /// Writes the recipe as `<image name>.qaama` next to the image and caches a preview of the render.
     /// The recipe is the edit; the original stays the only pixel file in the folder.
     public func saveEdit(_ output: EditingOutput, for asset: LibraryAsset) async throws {
-        let sidecar = EditingFormat.sidecarURL(for: URL(filePath: asset.id))
+        let imageURL = URL(filePath: asset.id)
+        let sidecarURL = Sidecar.url(for: imageURL)
         let cache = previewCache
+        // Keep the other decisions (rating, flag, keywords) stored in the sidecar; only the recipe changes.
+        // An unreadable sidecar (older format) is replaced rather than migrated.
+        var sidecar = await Task.detached { try? Sidecar.read(forImageAt: imageURL) }.value ?? Sidecar()
         if output.isReset {
-            try? FileManager.default.removeItem(at: sidecar)
+            sidecar.recipeData = nil
+            try? sidecar.write(forImageAt: imageURL)
             await Task.detached { cache.removePreviews(for: asset.id) }.value
-            logger.notice("Removed recipe \(sidecar.lastPathComponent, privacy: .public)")
+            logger.notice("Removed recipe from \(sidecarURL.lastPathComponent, privacy: .public)")
             update(asset.withEdit(false, at: .now))
             return
         }
         let updated: LibraryAsset
         do {
-            try output.recipeData.write(to: sidecar, options: .atomic)
+            sidecar.recipeData = output.recipeData
+            try sidecar.write(forImageAt: imageURL)
             // The sidecar's own date is the key: the scanner will read the same one on the next launch.
-            let date = try sidecar.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate ?? .now
+            let date = try sidecarURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate ?? .now
             updated = asset.withEdit(true, at: date)
             try await Task.detached { try cache.store(renderedJPEG: output.renderedJPEG, for: updated) }.value
         } catch {
             throw LibrarySourceError.editingFailed(error.localizedDescription)
         }
-        logger.notice("Saved recipe to \(sidecar.lastPathComponent, privacy: .public)")
+        logger.notice("Saved recipe to \(sidecarURL.lastPathComponent, privacy: .public)")
         update(updated)
     }
 
