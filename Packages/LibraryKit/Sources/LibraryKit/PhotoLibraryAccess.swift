@@ -1,7 +1,7 @@
 import Photos
 
 /// Access state for the Apple Photos library, expressed without exposing PhotoKit to callers.
-nonisolated public enum PhotoLibraryAccess: Sendable {
+public nonisolated enum PhotoLibraryAccess: Sendable {
     case notDetermined
     case authorized
     case limited
@@ -14,7 +14,7 @@ nonisolated public enum PhotoLibraryAccess: Sendable {
 
     /// Requests read/write access if the user has not decided yet.
     public static func request() async -> PhotoLibraryAccess {
-        PhotoLibraryAccess(await PHPhotoLibrary.requestAuthorization(for: .readWrite))
+        await PhotoLibraryAccess(PHPhotoLibrary.requestAuthorization(for: .readWrite))
     }
 
     init(_ status: PHAuthorizationStatus) {

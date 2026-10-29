@@ -1,0 +1,6 @@
+# swiftformat configuration for Qaama
+--swiftversion 6.0
+# OSLog interpolations require explicit `self.`; keep it everywhere rather than fight the compiler.
+--disable redundantSelf
+# Keep `#if` blocks flush with the surrounding code.
+--ifdef no-indent

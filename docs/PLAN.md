@@ -156,8 +156,10 @@ But : prouver que les trois briques critiques tiennent, sans soin de l'UI.
 - [ ] **Brique Photos** : demander l'accès, afficher une grille des photos récentes
       (`PHCachingImageManager`), ouvrir une photo dans le canevas, réécrire un
       ajustement dans Photos via `PHAdjustmentData` et le relire.
-      Fait le 29/10/2026 : accès, grille des 400 photos les plus récentes, vue pleine
-      taille. Reste : `PHAdjustmentData`, suivi des changements, mesure des performances.
+      Fait le 29/10/2026 : accès, grille de toute la photothèque, vue pleine taille,
+      note par étoiles native (PhotoKit 27, touches 0–5), suivi des changements de la
+      photothèque, mesure du temps de listage (journal `OSLog`, sous-titre de fenêtre).
+      Reste : `PHAdjustmentData`, à faire avec la brique rendu (il faut une image rendue).
 - [ ] **Brique fichiers** : choisir un dossier, le scanner récursivement, afficher les
       vignettes, conserver l'accès au redémarrage (bookmark).
 - [ ] Bilan : ce qui marche, ce qui coince, décisions pour le MVP.

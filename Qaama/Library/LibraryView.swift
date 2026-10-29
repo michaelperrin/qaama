@@ -4,7 +4,12 @@ import SwiftUI
 /// Apple Photos library grid: first building block of the proof of concept.
 struct LibraryView: View {
     let source: PhotosLibrarySource
-    @State private var selectedAsset: LibraryAsset?
+    @State private var selection: Selection?
+
+    /// Identifiable wrapper so a sheet can be driven by the asset identifier alone.
+    private struct Selection: Identifiable {
+        let id: LibraryAsset.ID
+    }
 
     private let thumbnailSide: CGFloat = 160
 
@@ -19,11 +24,21 @@ struct LibraryView: View {
                 grid
             }
         }
-        .task { await source.load(limit: 400) }
-        .sheet(item: $selectedAsset) { asset in
-            AssetDetailView(asset: asset, source: source)
+        .task { await source.load() }
+        .sheet(item: $selection) { selection in
+            AssetDetailView(assetID: selection.id, source: source)
         }
         .navigationTitle("Library")
+        .navigationSubtitle(subtitle)
+    }
+
+    private var subtitle: String {
+        guard !source.assets.isEmpty else { return "" }
+        var text = "\(source.assets.count) photos"
+        if let duration = source.lastLoadDuration {
+            text += " · listed in \(duration.formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow)))"
+        }
+        return text
     }
 
     private var grid: some View {
@@ -31,7 +46,7 @@ struct LibraryView: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: thumbnailSide), spacing: 8)], spacing: 8) {
                 ForEach(source.assets) { asset in
                     AssetThumbnailView(asset: asset, source: source, side: thumbnailSide)
-                        .onTapGesture { selectedAsset = asset }
+                        .onTapGesture { selection = Selection(id: asset.id) }
                 }
             }
             .padding(12)
