@@ -7,6 +7,11 @@ public final class LibraryCatalog {
     public let photos = PhotosLibrarySource()
     public private(set) var folders: [FolderLibrarySource] = []
 
+    /// Renders full-size edits for sources that cache previews. Set once by the app.
+    public var previewRenderer: PreviewRenderer? {
+        didSet { folders.forEach { $0.previewRenderer = previewRenderer } }
+    }
+
     private let bookmarks = FolderBookmarkStore()
 
     public init() {
@@ -29,6 +34,7 @@ public final class LibraryCatalog {
         }
         try bookmarks.add(url)
         let source = FolderLibrarySource(folderURL: url)
+        source.previewRenderer = previewRenderer
         folders.append(source)
         return source
     }

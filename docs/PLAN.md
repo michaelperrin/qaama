@@ -170,6 +170,10 @@ But : prouver que les trois briques critiques tiennent, sans soin de l'UI.
       Mesuré : 74 000 photos listées en 2,8 s ; la notation rafraîchit la liste de façon
       incrémentale (avant : reconstruction complète, ~1,5 s de latence perçue).
       `PHAdjustmentData` écrit et relu avec la brique rendu (29/10/2026).
+      Vignettes des photos modifiées (29/10/2026) : aperçu 2048 px du vrai rendu mis en cache
+      (`PreviewCache`, dossier Caches, clé = identifiant + date du sidecar), vignettes découpées
+      dedans, reconstruction en arrière-plan si l'aperçu manque. Remise à zéro = suppression du
+      sidecar et de l'aperçu ; côté Photos, retour à l'original.
 - [ ] **Brique fichiers** : choisir un dossier, le scanner récursivement, afficher les
       vignettes, conserver l'accès au redémarrage (bookmark).
       Fait le 29/10/2026 : barre latérale Photos + dossiers, ajout via `fileImporter`,

@@ -24,12 +24,18 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         false
     }
 
+    /// Rebuilds the preview of an edited photo when the cache has none. Set by the catalog.
+    public var previewRenderer: PreviewRenderer?
+
     private let hasSecurityScope: Bool
+    private let previewCache: PreviewCache
+    private var previewsInProgress: Set<LibraryAsset.ID> = []
     private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "FolderLibrarySource")
 
-    public init(folderURL: URL, id: UUID = UUID()) {
+    public init(folderURL: URL, id: UUID = UUID(), previewCache: PreviewCache = PreviewCache()) {
         self.id = id
         self.folderURL = folderURL
+        self.previewCache = previewCache
         hasSecurityScope = folderURL.startAccessingSecurityScopedResource()
     }
 
@@ -61,8 +67,20 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         isLoaded = false
     }
 
+    /// Edited photos: the thumbnail is cut from the cached preview of the real render; a missing preview
+    /// is rebuilt once in the background. Others: Quick Look on the original.
     public func thumbnail(for asset: LibraryAsset, pixelSize: CGSize) async -> CGImage? {
-        await FileImageLoader.thumbnail(at: URL(filePath: asset.id), pixelSize: pixelSize)
+        if asset.hasEdit {
+            let cache = previewCache
+            let fromCache = { @Sendable in await Task.detached { cache.thumbnail(for: asset, pixelSize: pixelSize) }.value }
+            if let cached = await fromCache() {
+                return cached
+            }
+            if await rebuildPreview(for: asset), let rebuilt = await fromCache() {
+                return rebuilt
+            }
+        }
+        return await FileImageLoader.thumbnail(at: URL(filePath: asset.id), pixelSize: pixelSize)
     }
 
     public func fullSizeImage(for asset: LibraryAsset) async -> CGImage? {
@@ -84,24 +102,55 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         return EditingInput(imageURL: url, recipeData: recipeData)
     }
 
-    /// Writes the recipe as `<image name>.qaama` next to the image. The rendered JPEG is not kept:
-    /// the recipe is the edit, and the original stays the only pixel file.
+    /// Writes the recipe as `<image name>.qaama` next to the image and caches a preview of the render.
+    /// The recipe is the edit; the original stays the only pixel file in the folder.
     public func saveEdit(_ output: EditingOutput, for asset: LibraryAsset) async throws {
         let sidecar = EditingFormat.sidecarURL(for: URL(filePath: asset.id))
+        let cache = previewCache
+        if output.isReset {
+            try? FileManager.default.removeItem(at: sidecar)
+            await Task.detached { cache.removePreviews(for: asset.id) }.value
+            logger.notice("Removed recipe \(sidecar.lastPathComponent, privacy: .public)")
+            update(asset.withEdit(false, at: .now))
+            return
+        }
+        let updated: LibraryAsset
         do {
             try output.recipeData.write(to: sidecar, options: .atomic)
+            // The sidecar's own date is the key: the scanner will read the same one on the next launch.
+            let date = try sidecar.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate ?? .now
+            updated = asset.withEdit(true, at: date)
+            try await Task.detached { try cache.store(renderedJPEG: output.renderedJPEG, for: updated) }.value
         } catch {
             throw LibrarySourceError.editingFailed(error.localizedDescription)
         }
         logger.notice("Saved recipe to \(sidecar.lastPathComponent, privacy: .public)")
+        update(updated)
+    }
+
+    private func update(_ asset: LibraryAsset) {
         if let index = assets.firstIndex(where: { $0.id == asset.id }) {
-            assets[index] = asset.withEdit(true, at: .now)
+            assets[index] = asset
         }
     }
 
-    public func savedRecipeData(for asset: LibraryAsset) async -> Data? {
-        guard asset.hasEdit else { return nil }
-        let sidecar = EditingFormat.sidecarURL(for: URL(filePath: asset.id))
-        return await Task.detached { try? Data(contentsOf: sidecar) }.value
+    /// Renders and stores the preview of an edited photo whose cache entry is missing. Returns false when
+    /// no renderer is available, the render fails, or a rebuild is already running.
+    private func rebuildPreview(for asset: LibraryAsset) async -> Bool {
+        guard let previewRenderer, !previewsInProgress.contains(asset.id) else { return false }
+        previewsInProgress.insert(asset.id)
+        defer { previewsInProgress.remove(asset.id) }
+        let cache = previewCache
+        do {
+            let input = try await editingInput(for: asset)
+            guard let recipeData = input.recipeData else { return false }
+            let jpeg = try await previewRenderer(input, recipeData)
+            try await Task.detached { try cache.store(renderedJPEG: jpeg, for: asset) }.value
+            logger.notice("Rebuilt preview for \(URL(filePath: asset.id).lastPathComponent, privacy: .public)")
+            return true
+        } catch {
+            logger.error("Preview rebuild failed: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
     }
 }

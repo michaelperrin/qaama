@@ -194,7 +194,7 @@ struct EditorView: View {
         isBusy = true
         defer { isBusy = false }
         do {
-            let output = try await EditingOutput(recipeData: recipe.jsonData(), renderedJPEG: renderJPEG())
+            let output = try await EditingOutput(recipeData: recipe.jsonData(), renderedJPEG: renderJPEG(), isReset: recipe.isIdentity)
             try await source.saveEdit(output, for: asset)
             savedRecipe = recipe
             statusMessage = nil

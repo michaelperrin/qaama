@@ -125,6 +125,13 @@ public final class PhotosLibrarySource: LibrarySource {
     public func saveEdit(_ output: EditingOutput, for asset: LibraryAsset) async throws {
         guard let phAsset = assetsByID[asset.id] else { throw LibrarySourceError.assetUnavailable }
         guard let input = editingInputs[asset.id] else { throw LibrarySourceError.editingFailed("the photo wasn't opened for editing") }
+        if output.isReset {
+            try await PHPhotoLibrary.shared().performChanges { @Sendable in
+                PHAssetChangeRequest(for: phAsset).revertAssetContentToOriginal()
+            }
+            logger.notice("Reverted \(asset.id, privacy: .public) to its original in Photos")
+            return
+        }
 
         let editingOutput = PHContentEditingOutput(contentEditingInput: input)
         editingOutput.adjustmentData = PHAdjustmentData(

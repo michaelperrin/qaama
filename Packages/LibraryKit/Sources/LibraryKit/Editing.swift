@@ -35,9 +35,16 @@ public nonisolated struct EditingOutput: Sendable {
     public let recipeData: Data
     /// Full-size JPEG of the edit. Photos stores it next to the recipe so other apps see the result.
     public let renderedJPEG: Data
+    /// True when the recipe is the identity: sources drop the edit and show the original again.
+    public let isReset: Bool
 
-    public init(recipeData: Data, renderedJPEG: Data) {
+    public init(recipeData: Data, renderedJPEG: Data, isReset: Bool = false) {
         self.recipeData = recipeData
         self.renderedJPEG = renderedJPEG
+        self.isReset = isReset
     }
 }
+
+/// Renders the full-size JPEG of an edit from its input and recipe. Provided by the app, which owns
+/// the rendering engine; sources use it to rebuild a missing preview.
+public typealias PreviewRenderer = @Sendable (EditingInput, Data) async throws -> Data

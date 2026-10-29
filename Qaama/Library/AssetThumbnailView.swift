@@ -1,6 +1,4 @@
-import EditModel
 import LibraryKit
-import RenderEngine
 import SwiftUI
 
 /// Square thumbnail of a photo, loaded on demand.
@@ -51,12 +49,7 @@ struct AssetThumbnailView: View {
         }
         .task(id: ThumbnailKey(id: asset.id, modificationDate: asset.modificationDate)) {
             let pixels = CGSize(width: side * displayScale, height: side * displayScale)
-            guard let thumbnail = await source.thumbnail(for: asset, pixelSize: pixels) else { return }
-            if let data = await source.savedRecipeData(for: asset), let recipe = try? EditRecipe(jsonData: data) {
-                image = await Task.detached { ThumbnailRenderer.apply(recipe, to: thumbnail) }.value ?? thumbnail
-            } else {
-                image = thumbnail
-            }
+            image = await source.thumbnail(for: asset, pixelSize: pixels)
         }
     }
 }
