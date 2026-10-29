@@ -27,12 +27,18 @@ struct AssetThumbnailView: View {
         }
         .frame(width: side, height: side)
         .clipShape(.rect(cornerRadius: 6))
+        .opacity(asset.flag == .rejected ? 0.45 : 1)
         .overlay(alignment: .bottom) {
             HStack {
                 if asset.rating > 0 {
                     Label("\(asset.rating)", systemImage: "star.fill")
                         .labelStyle(.titleAndIcon)
                         .font(.caption2.bold())
+                }
+                switch asset.flag {
+                case .picked: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).help("Picked")
+                case .rejected: Image(systemName: "xmark.circle.fill").foregroundStyle(.red).help("Rejected")
+                case .none: EmptyView()
                 }
                 Spacer()
                 if asset.hasEdit {

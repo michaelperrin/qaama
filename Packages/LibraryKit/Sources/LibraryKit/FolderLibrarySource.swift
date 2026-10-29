@@ -23,8 +23,8 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     /// Message to show when the folder could not be listed.
     public private(set) var loadError: String?
 
-    public var canRate: Bool {
-        true
+    public var capabilities: Set<LibraryCapability> {
+        [.rating, .flag, .keywords]
     }
 
     /// Rebuilds the preview of an edited photo when the cache has none. Set by the catalog.
@@ -165,6 +165,21 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         logger.notice("Rated \(asset.id, privacy: .public) with \(rating) stars")
     }
 
+    public func setFlag(_ flag: ItemFlag, for asset: LibraryAsset) async throws {
+        try await updateSidecar(for: asset) { sidecar, item in
+            sidecar.flag = flag
+            item.flag = flag
+        }
+    }
+
+    public func setKeywords(_ keywords: [String], for asset: LibraryAsset) async throws {
+        let cleaned = keywords.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        try await updateSidecar(for: asset) { sidecar, item in
+            sidecar.keywords = cleaned
+            item.keywords = cleaned
+        }
+    }
+
     public func editingInput(for asset: LibraryAsset) async throws -> EditingInput {
         guard let url = fileURL(for: asset) else { throw LibrarySourceError.assetUnavailable }
         let recipeData = await Task.detached { try? Sidecar.read(forImageAt: url)?.recipeData }.value
@@ -248,8 +263,10 @@ nonisolated extension LibraryAsset {
             pixelWidth: item.pixelWidth ?? 0,
             pixelHeight: item.pixelHeight ?? 0,
             creationDate: item.captureDate ?? item.contentModified,
-            isFavorite: item.flag == .picked,
+            isFavorite: false,
             rating: item.rating,
+            flag: item.flag,
+            keywords: item.keywords,
             modificationDate: item.sidecarModified ?? item.contentModified,
             hasEdit: item.hasEdit
         )

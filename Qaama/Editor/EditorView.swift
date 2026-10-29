@@ -23,6 +23,7 @@ struct EditorView: View {
     @State private var statusMessage: String?
     @State private var exportDocument: JPEGDocument?
     @State private var isExporting = false
+    @State private var keywords: [String] = []
 
     /// Live copy of the asset, so the rating reflects library changes.
     private var asset: LibraryAsset? {
@@ -118,7 +119,16 @@ struct EditorView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                if source.canRate {
+                if source.capabilities.contains(.keywords) {
+                    KeywordsField(keywords: keywords) { new in
+                        keywords = new
+                        update { try await source.setKeywords(new, for: asset) }
+                    }
+                }
+                if source.capabilities.contains(.flag) {
+                    FlagView(flag: asset.flag) { flag in update { try await source.setFlag(flag, for: asset) } }
+                }
+                if source.capabilities.contains(.rating) {
                     RatingView(rating: asset.rating) { rate($0) }
                     ratingShortcuts
                 }
@@ -156,6 +166,7 @@ struct EditorView: View {
     private func open() async {
         guard let asset else { return }
         do {
+            keywords = await source.keywords(for: asset)
             let input = try await source.editingInput(for: asset)
             if let url = input.imageURL {
                 baseName = url.deletingPathExtension().lastPathComponent
@@ -216,12 +227,17 @@ struct EditorView: View {
 
     private func rate(_ value: Int) {
         guard let asset else { return }
+        update { try await source.setRating(value, for: asset) }
+    }
+
+    /// Runs a decision (rating, flag, keywords) and shows its error, if any.
+    private func update(_ action: @escaping () async throws -> Void) {
         Task {
             do {
-                try await source.setRating(value, for: asset)
+                try await action()
                 statusMessage = nil
             } catch {
-                statusMessage = "Rating failed: \(error.localizedDescription)"
+                statusMessage = error.localizedDescription
             }
         }
     }

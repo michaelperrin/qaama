@@ -74,6 +74,27 @@ struct FolderLibrarySourceTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).filter { $0.hasSuffix(".qaama") }.isEmpty)
     }
 
+    @Test func flagsAndKeywordsRoundTripThroughTheSidecar() async throws {
+        let root = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try makeSource(root: root)
+        await source.load()
+        await wait { source.assets.count == 2 && !source.isScanning }
+        let asset = try #require(source.assets.first)
+        #expect(source.capabilities == [.rating, .flag, .keywords])
+
+        try await source.setFlag(.rejected, for: asset)
+        try await source.setKeywords([" lapland", "", "winter "], for: asset)
+        await wait { source.assets.first { $0.id == asset.id }?.keywords == ["lapland", "winter"] }
+        let updated = try #require(source.assets.first { $0.id == asset.id })
+        #expect(updated.flag == .rejected && updated.keywords == ["lapland", "winter"])
+        #expect(await source.keywords(for: updated) == ["lapland", "winter"])
+
+        let sidecarName = try #require(try FileManager.default.contentsOfDirectory(atPath: root.path).first { $0.hasSuffix(".qaama") })
+        let sidecar = try #require(try Sidecar.read(forImageAt: root.appendingPathComponent(String(sidecarName.dropLast(6)))))
+        #expect(sidecar.flag == .rejected && sidecar.keywords == ["lapland", "winter"])
+    }
+
     @Test func savingAnEditMarksTheAssetAndKeepsTheRating() async throws {
         let root = try makeFolder()
         defer { try? FileManager.default.removeItem(at: root) }

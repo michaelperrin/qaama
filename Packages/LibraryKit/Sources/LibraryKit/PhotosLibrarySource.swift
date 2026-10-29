@@ -18,8 +18,8 @@ public final class PhotosLibrarySource: LibrarySource {
         "Photos"
     }
 
-    public var canRate: Bool {
-        true
+    public var capabilities: Set<LibraryCapability> {
+        [.rating, .keywords]
     }
 
     private var fetchResult: PHFetchResult<PHAsset>?
@@ -73,8 +73,29 @@ public final class PhotosLibrarySource: LibrarySource {
         logger.notice("Rated \(asset.id, privacy: .public) with \(rating) stars")
         // Reflect the new rating right away; the change observer confirms it a moment later.
         if let index = assets.firstIndex(where: { $0.id == asset.id }) {
-            assets[index] = asset.withRating(value.rawValue)
+            assets[index].rating = value.rawValue
         }
+    }
+
+    /// Keywords live in Photos' extended metadata, fetched per asset rather than for the whole listing.
+    public func keywords(for asset: LibraryAsset) async -> [String] {
+        guard let phAsset = assetsByID[asset.id] else { return [] }
+        return await Task.detached { phAsset.extendedMetadata.keywords }.value
+    }
+
+    public func setKeywords(_ keywords: [String], for asset: LibraryAsset) async throws {
+        guard let phAsset = assetsByID[asset.id] else { throw LibrarySourceError.assetUnavailable }
+        let current = await Set(self.keywords(for: asset))
+        let wanted = Set(keywords)
+        let added = wanted.subtracting(current)
+        let removed = current.subtracting(wanted)
+        guard !added.isEmpty || !removed.isEmpty else { return }
+        try await PHPhotoLibrary.shared().performChanges { @Sendable in
+            let request = PHAssetChangeRequest(for: phAsset)
+            added.forEach { request.addKeyword($0) }
+            removed.forEach { request.removeKeyword($0) }
+        }
+        logger.notice("Keywords of \(asset.id, privacy: .public): +\(added.count) -\(removed.count)")
     }
 
     /// Thumbnail sized for display, in pixels (account for the screen's scale factor).

@@ -12,8 +12,8 @@ public protocol LibrarySource: AnyObject, Observable {
     var assets: [LibraryAsset] { get }
     /// Duration of the last listing, for performance tracking.
     var lastLoadDuration: Duration? { get }
-    /// Whether `setRating(_:for:)` stores ratings for this source.
-    var canRate: Bool { get }
+    /// What this source can store about a photo.
+    var capabilities: Set<LibraryCapability> { get }
 
     /// Lists the photos. Calling it again once loaded is a no-op.
     func load() async
@@ -23,6 +23,10 @@ public protocol LibrarySource: AnyObject, Observable {
     func fullSizeImage(for asset: LibraryAsset) async -> CGImage?
     /// Sets the star rating (0 to 5) of a photo.
     func setRating(_ rating: Int, for asset: LibraryAsset) async throws
+    func setFlag(_ flag: ItemFlag, for asset: LibraryAsset) async throws
+    func setKeywords(_ keywords: [String], for asset: LibraryAsset) async throws
+    /// Keywords of a photo, fetched on demand when the listing doesn't carry them.
+    func keywords(for asset: LibraryAsset) async -> [String]
 
     /// Original pixels and previously saved recipe, to open the photo in the editor.
     func editingInput(for asset: LibraryAsset) async throws -> EditingInput
@@ -37,19 +41,41 @@ public protocol LibrarySource: AnyObject, Observable {
 public extension LibrarySource {
     func endEditing(_: LibraryAsset) {}
     func prioritize(_: LibraryAsset) {}
+    func setFlag(_: ItemFlag, for _: LibraryAsset) async throws {
+        throw LibrarySourceError.unsupported(.flag)
+    }
+
+    func setKeywords(_: [String], for _: LibraryAsset) async throws {
+        throw LibrarySourceError.unsupported(.keywords)
+    }
+
+    func keywords(for asset: LibraryAsset) async -> [String] {
+        asset.keywords
+    }
+}
+
+/// Decisions a source can persist about a photo.
+public nonisolated enum LibraryCapability: Sendable, Hashable {
+    case rating
+    case flag
+    case keywords
 }
 
 /// Errors shared by the library sources.
 public nonisolated enum LibrarySourceError: Error, LocalizedError, Sendable {
-    case ratingUnsupported
+    case unsupported(LibraryCapability)
     case folderUnreadable(URL)
     case assetUnavailable
     case editingFailed(String)
 
     public var errorDescription: String? {
         switch self {
-        case .ratingUnsupported:
-            "This library doesn't store ratings yet."
+        case let .unsupported(capability):
+            switch capability {
+            case .rating: "This library doesn't store ratings."
+            case .flag: "This library doesn't store flags."
+            case .keywords: "This library doesn't store keywords."
+            }
         case let .folderUnreadable(url):
             "The folder “\(url.lastPathComponent)” can't be read."
         case .assetUnavailable:
