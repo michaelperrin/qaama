@@ -23,9 +23,15 @@ Package tests: `swift test` inside `Packages/<Package>`.
 ## Layout
 
 - `Qaama/`: application target (SwiftUI, with AppKit where needed).
-- `Packages/LibraryKit`: photo library (PhotoKit, files). Its public API never exposes
-  AppKit, to keep it portable.
-- Further packages planned: `RenderEngine`, `EditModel`, `ImageIOKit`.
+- `Packages/EditModel`: the versioned edit recipe, pure Swift.
+- `Packages/RenderEngine`: Core Image on Metal, RAW decoding, canvas, export.
+- `Packages/LibraryKit`: photo sources (PhotoKit, folders), edit storage, preview cache.
+  Package APIs never expose AppKit, to keep them portable.
+- `Experiments/`: feasibility prototypes, not linked into the app.
+
+## Contributing
+
+Conventions, architecture rules and commands are in [AGENTS.md](AGENTS.md).
 
 ## Language
 
