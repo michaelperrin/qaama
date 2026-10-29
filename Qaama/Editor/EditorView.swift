@@ -34,6 +34,14 @@ struct EditorView: View {
         recipe != savedRecipe
     }
 
+    /// Slider binding on an optional adjustment of the global layer: absent reads as neutral.
+    private func adjustment(_ keyPath: WritableKeyPath<AdjustmentSet, Double?>) -> Binding<Double> {
+        Binding(
+            get: { recipe.global[keyPath: keyPath] ?? 0 },
+            set: { recipe.global[keyPath: keyPath] = $0 == 0 ? nil : $0 }
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HSplitView {
@@ -84,11 +92,11 @@ struct EditorView: View {
     private var inspector: some View {
         Form {
             Section("Light") {
-                AdjustmentSlider(title: "Exposure", value: $recipe.exposure, range: EditRecipe.exposureRange, unit: "EV")
-                AdjustmentSlider(title: "Contrast", value: $recipe.contrast, range: EditRecipe.contrastRange)
+                AdjustmentSlider(title: "Exposure", value: adjustment(\.exposure), range: AdjustmentSet.exposureRange, unit: "EV")
+                AdjustmentSlider(title: "Contrast", value: adjustment(\.contrast), range: AdjustmentSet.contrastRange)
             }
             Section("Color") {
-                AdjustmentSlider(title: "Saturation", value: $recipe.saturation, range: EditRecipe.saturationRange)
+                AdjustmentSlider(title: "Saturation", value: adjustment(\.saturation), range: AdjustmentSet.saturationRange)
             }
             Section {
                 Button("Reset Adjustments") { recipe = .identity }
@@ -172,8 +180,13 @@ struct EditorView: View {
                 baseName = url.deletingPathExtension().lastPathComponent
             }
             if let data = input.recipeData {
-                recipe = try EditRecipe(jsonData: data)
-                savedRecipe = recipe
+                if let saved = try? EditRecipe(jsonData: data) {
+                    recipe = saved
+                    savedRecipe = saved
+                } else {
+                    // No backward compatibility while the format is young: start from the original.
+                    statusMessage = "The saved edit uses an unsupported format; starting from the original."
+                }
             }
             let renderSource: RenderSource
             if let url = input.imageURL {

@@ -34,6 +34,12 @@ struct RenderPipelineTests {
         #expect(abs(after.g - after.b) < 0.02)
     }
 
+    @Test func disabledLayersAreSkipped() {
+        var recipe = EditRecipe(exposure: 2)
+        recipe.layers[0].isEnabled = false
+        #expect(RenderPipeline.apply(recipe, to: gray) === gray)
+    }
+
     @Test func factorsAreNeutralAtZero() {
         #expect(RenderPipeline.contrastFactor(0) == 1)
         #expect(RenderPipeline.saturationFactor(0) == 1)
