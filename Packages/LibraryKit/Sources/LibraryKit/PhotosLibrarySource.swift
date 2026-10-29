@@ -3,9 +3,9 @@ import Foundation
 import Observation
 import Photos
 
-/// Source « photothèque Apple » : liste les photos et fournit leurs images via PhotoKit.
+/// "Apple Photos library" source: lists photos and provides their images through PhotoKit.
 ///
-/// Première brique du POC. Le suivi des changements de la photothèque viendra avec le MVP.
+/// First building block of the proof of concept. Library change tracking comes with the MVP.
 @Observable
 public final class PhotosLibrarySource {
     public private(set) var assets: [LibraryAsset] = []
@@ -17,8 +17,8 @@ public final class PhotosLibrarySource {
 
     public init() {}
 
-    /// Demande l'accès si nécessaire puis charge les photos, les plus récentes d'abord.
-    /// - Parameter limit: nombre maximal de photos à lister (0 = toutes).
+    /// Requests access if needed, then loads the photos, newest first.
+    /// - Parameter limit: maximum number of photos to list (0 = all).
     public func load(limit: Int = 0) async {
         access = await PhotoLibraryAccess.request()
         guard access == .authorized || access == .limited else {
@@ -51,17 +51,17 @@ public final class PhotosLibrarySource {
         assets = listed
     }
 
-    /// Vignette adaptée à l'affichage, en pixels (penser au facteur d'échelle de l'écran).
+    /// Thumbnail sized for display, in pixels (account for the screen's scale factor).
     public func thumbnail(for asset: LibraryAsset, pixelSize: CGSize) async -> CGImage? {
         await requestImage(for: asset, targetSize: pixelSize, contentMode: .aspectFill)
     }
 
-    /// Image en pleine résolution, telle que Photos la fournit (ajustements Photos inclus).
+    /// Full-resolution image as Photos delivers it (Photos adjustments included).
     public func fullSizeImage(for asset: LibraryAsset) async -> CGImage? {
         await requestImage(for: asset, targetSize: PHImageManagerMaximumSize, contentMode: .aspectFit)
     }
 
-    /// Prépare le cache de vignettes pour les photos qui vont apparaître à l'écran.
+    /// Warms the thumbnail cache for photos about to appear on screen.
     public func prefetchThumbnails(for assets: [LibraryAsset], pixelSize: CGSize) {
         let phAssets = assets.compactMap { assetsByID[$0.id] }
         imageManager.startCachingImages(for: phAssets, targetSize: pixelSize, contentMode: .aspectFill, options: Self.requestOptions())
@@ -72,7 +72,7 @@ public final class PhotosLibrarySource {
         let options = Self.requestOptions()
         return await withCheckedContinuation { continuation in
             imageManager.requestImage(for: phAsset, targetSize: targetSize, contentMode: contentMode, options: options) { image, info in
-                // En mode haute qualité, PhotoKit n'appelle ce bloc qu'une fois, sauf annulation.
+                // In high-quality delivery mode PhotoKit calls this block once, unless the request is cancelled.
                 if let cancelled = info?[PHImageCancelledKey] as? Bool, cancelled {
                     continuation.resume(returning: nil)
                     return

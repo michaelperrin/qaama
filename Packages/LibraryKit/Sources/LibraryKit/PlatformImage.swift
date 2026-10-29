@@ -6,7 +6,7 @@ import AppKit
 typealias PlatformImage = NSImage
 
 extension NSImage {
-    /// Convertit l'image AppKit fournie par PhotoKit en `CGImage`, seul type exposé par LibraryKit.
+    /// Converts the AppKit image handed out by PhotoKit into a `CGImage`, the only image type LibraryKit exposes.
     var asCGImage: CGImage? {
         cgImage(forProposedRect: nil, context: nil, hints: nil)
     }

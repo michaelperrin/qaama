@@ -1,18 +1,18 @@
 import Photos
 
-/// État d'accès à la photothèque Apple, exprimé sans exposer PhotoKit aux appelants.
+/// Access state for the Apple Photos library, expressed without exposing PhotoKit to callers.
 nonisolated public enum PhotoLibraryAccess: Sendable {
     case notDetermined
     case authorized
     case limited
     case denied
 
-    /// État courant, sans déclencher de demande.
+    /// Current state, without prompting the user.
     public static var current: PhotoLibraryAccess {
         PhotoLibraryAccess(PHPhotoLibrary.authorizationStatus(for: .readWrite))
     }
 
-    /// Demande l'accès en lecture/écriture si l'utilisateur ne s'est pas encore prononcé.
+    /// Requests read/write access if the user has not decided yet.
     public static func request() async -> PhotoLibraryAccess {
         PhotoLibraryAccess(await PHPhotoLibrary.requestAuthorization(for: .readWrite))
     }

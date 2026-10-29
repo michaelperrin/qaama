@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>Qaama</string>
 	<key>CFBundleExecutable</key>
@@ -27,6 +27,6 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Michaël Perrin</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Qaama a besoin d'accéder à votre photothèque pour afficher et retoucher vos photos.</string>
+	<string>Qaama needs access to your photo library to browse and edit your photos.</string>
 </dict>
 </plist>

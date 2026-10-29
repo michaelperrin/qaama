@@ -1,7 +1,7 @@
 import LibraryKit
 import SwiftUI
 
-/// Grille de la photothèque Apple : première brique du POC.
+/// Apple Photos library grid: first building block of the proof of concept.
 struct LibraryView: View {
     let source: PhotosLibrarySource
     @State private var selectedAsset: LibraryAsset?
@@ -14,7 +14,7 @@ struct LibraryView: View {
             case .denied:
                 accessDeniedView
             case .notDetermined:
-                ProgressView("Demande d'accès à la photothèque…")
+                ProgressView("Requesting access to your photo library…")
             case .authorized, .limited:
                 grid
             }
@@ -23,7 +23,7 @@ struct LibraryView: View {
         .sheet(item: $selectedAsset) { asset in
             AssetDetailView(asset: asset, source: source)
         }
-        .navigationTitle("Photothèque")
+        .navigationTitle("Library")
     }
 
     private var grid: some View {
@@ -38,19 +38,19 @@ struct LibraryView: View {
         }
         .overlay {
             if source.assets.isEmpty {
-                ContentUnavailableView("Aucune photo", systemImage: "photo.on.rectangle",
-                                       description: Text("La photothèque ne contient aucune image."))
+                ContentUnavailableView("No Photos", systemImage: "photo.on.rectangle",
+                                       description: Text("Your photo library doesn't contain any images."))
             }
         }
     }
 
     private var accessDeniedView: some View {
         ContentUnavailableView {
-            Label("Accès à la photothèque refusé", systemImage: "lock.fill")
+            Label("Photo Library Access Denied", systemImage: "lock.fill")
         } description: {
-            Text("Autorisez Qaama dans Réglages Système › Confidentialité et sécurité › Photos.")
+            Text("Allow Qaama in System Settings › Privacy & Security › Photos.")
         } actions: {
-            Button("Ouvrir les Réglages Système") {
+            Button("Open System Settings") {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Photos") {
                     NSWorkspace.shared.open(url)
                 }

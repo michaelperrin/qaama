@@ -1,9 +1,9 @@
 import Foundation
 
-/// Une photo de la bibliothèque, indépendante de sa source (Photos, fichier).
+/// A photo in the library, independent of its source (Photos library, file on disk).
 ///
-/// Volontairement sans référence à PhotoKit ni à AppKit pour rester portable :
-/// l'identifiant suffit à retrouver l'objet d'origine dans la source.
+/// Deliberately free of PhotoKit and AppKit types so it stays portable:
+/// the identifier is enough for the source to find the underlying object again.
 nonisolated public struct LibraryAsset: Identifiable, Hashable, Sendable {
     public let id: String
     public let pixelWidth: Int
@@ -19,7 +19,7 @@ nonisolated public struct LibraryAsset: Identifiable, Hashable, Sendable {
         self.isFavorite = isFavorite
     }
 
-    /// Ratio largeur / hauteur, ou 1 si les dimensions sont inconnues.
+    /// Width / height ratio, or 1 when the dimensions are unknown.
     public var aspectRatio: Double {
         guard pixelWidth > 0, pixelHeight > 0 else { return 1 }
         return Double(pixelWidth) / Double(pixelHeight)

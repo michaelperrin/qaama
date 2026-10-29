@@ -1,7 +1,7 @@
 import LibraryKit
 import SwiftUI
 
-/// Vignette carrée d'une photo, chargée à la demande.
+/// Square thumbnail of a photo, loaded on demand.
 struct AssetThumbnailView: View {
     let asset: LibraryAsset
     let source: PhotosLibrarySource

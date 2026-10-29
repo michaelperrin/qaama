@@ -1,7 +1,7 @@
 import LibraryKit
 import SwiftUI
 
-/// Affichage pleine taille d'une photo. Le vrai canevas Metal viendra avec la brique rendu.
+/// Full-size display of a photo. The real Metal canvas arrives with the rendering building block.
 struct AssetDetailView: View {
     let asset: LibraryAsset
     let source: PhotosLibrarySource
@@ -22,11 +22,11 @@ struct AssetDetailView: View {
                 }
             }
             HStack {
-                Text(asset.creationDate?.formatted(date: .long, time: .shortened) ?? "Date inconnue")
+                Text(asset.creationDate?.formatted(date: .long, time: .shortened) ?? "Unknown date")
                 Spacer()
                 Text("\(asset.pixelWidth) × \(asset.pixelHeight) px")
                     .monospacedDigit()
-                Button("Fermer") { dismiss() }
+                Button("Close") { dismiss() }
                     .keyboardShortcut(.cancelAction)
             }
             .padding(12)

@@ -13,7 +13,9 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
     SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY: YES
-    # Signature ad hoc : suffisante en local avec un compte développeur gratuit.
+    # Extract SwiftUI string literals into the String Catalog so other languages can be added later.
+    SWIFT_EMIT_LOC_STRINGS: YES
+    # Ad hoc signing: enough for local runs with a free developer account.
     CODE_SIGN_STYLE: Manual
     CODE_SIGN_IDENTITY: "-"
     DEVELOPMENT_TEAM: ""
@@ -36,11 +38,12 @@ targets:
       path: Qaama/Info.plist
       properties:
         CFBundleDisplayName: Qaama
+        CFBundleDevelopmentRegion: en
         CFBundleShortVersionString: "0.1.0"
         CFBundleVersion: "1"
         LSApplicationCategoryType: public.app-category.photography
         LSMinimumSystemVersion: "27.0"
-        NSPhotoLibraryUsageDescription: Qaama a besoin d'accéder à votre photothèque pour afficher et retoucher vos photos.
+        NSPhotoLibraryUsageDescription: Qaama needs access to your photo library to browse and edit your photos.
         NSHumanReadableCopyright: "© 2026 Michaël Perrin"
     entitlements:
       path: Qaama/Qaama.entitlements
