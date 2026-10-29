@@ -231,6 +231,8 @@ maintenant (règles dans `AGENTS.md`).
 7. **Vues.** Découper `AssetGridView` et `EditorView` en composants, ajouter des aperçus
    SwiftUI avec des sources factices (`LibrarySource` est un protocole, c'est facile).
 
+Conception détaillée des fondations de données : `docs/catalogue.md`.
+
 **Décisions proposées pour le MVP**
 
 - Ordre : (a) dette 1, 2, 4 et 5 (fondations de données), (b) bibliothèque riche (albums,
