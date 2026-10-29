@@ -73,14 +73,7 @@ public final class PhotosLibrarySource: LibrarySource {
         logger.notice("Rated \(asset.id, privacy: .public) with \(rating) stars")
         // Reflect the new rating right away; the change observer confirms it a moment later.
         if let index = assets.firstIndex(where: { $0.id == asset.id }) {
-            assets[index] = LibraryAsset(
-                id: asset.id,
-                pixelWidth: asset.pixelWidth,
-                pixelHeight: asset.pixelHeight,
-                creationDate: asset.creationDate,
-                isFavorite: asset.isFavorite,
-                rating: value.rawValue
-            )
+            assets[index] = asset.withRating(value.rawValue)
         }
     }
 
@@ -152,6 +145,11 @@ public final class PhotosLibrarySource: LibrarySource {
         logger.notice("Saved edit to Photos for \(asset.id, privacy: .public)")
     }
 
+    /// Photos renders its thumbnails with the saved edit itself, so there is nothing to apply.
+    public func savedRecipeData(for _: LibraryAsset) async -> Data? {
+        nil
+    }
+
     /// Releases the original file access once the editor closes.
     public func endEditing(_ asset: LibraryAsset) {
         editingInputs[asset.id] = nil
@@ -211,7 +209,9 @@ public final class PhotosLibrarySource: LibrarySource {
             pixelHeight: asset.pixelHeight,
             creationDate: asset.creationDate,
             isFavorite: asset.isFavorite,
-            rating: asset.rating.rawValue
+            rating: asset.rating.rawValue,
+            modificationDate: asset.modificationDate,
+            hasEdit: asset.hasAdjustments
         )
     }
 

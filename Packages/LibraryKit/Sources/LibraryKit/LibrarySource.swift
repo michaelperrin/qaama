@@ -30,6 +30,8 @@ public protocol LibrarySource: AnyObject, Observable {
     func saveEdit(_ output: EditingOutput, for asset: LibraryAsset) async throws
     /// Called when the editor closes, so the source can release what it held for the edit.
     func endEditing(_ asset: LibraryAsset)
+    /// Saved recipe to apply on top of `thumbnail(for:pixelSize:)`, when the source doesn't apply it itself.
+    func savedRecipeData(for asset: LibraryAsset) async -> Data?
 }
 
 public extension LibrarySource {

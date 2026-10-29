@@ -79,7 +79,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
 
     public func editingInput(for asset: LibraryAsset) async throws -> EditingInput {
         let url = URL(filePath: asset.id)
-        let sidecar = Self.sidecarURL(for: url)
+        let sidecar = EditingFormat.sidecarURL(for: url)
         let recipeData = try? Data(contentsOf: sidecar)
         return EditingInput(imageURL: url, recipeData: recipeData)
     }
@@ -87,16 +87,21 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     /// Writes the recipe as `<image name>.qaama` next to the image. The rendered JPEG is not kept:
     /// the recipe is the edit, and the original stays the only pixel file.
     public func saveEdit(_ output: EditingOutput, for asset: LibraryAsset) async throws {
-        let sidecar = Self.sidecarURL(for: URL(filePath: asset.id))
+        let sidecar = EditingFormat.sidecarURL(for: URL(filePath: asset.id))
         do {
             try output.recipeData.write(to: sidecar, options: .atomic)
         } catch {
             throw LibrarySourceError.editingFailed(error.localizedDescription)
         }
         logger.notice("Saved recipe to \(sidecar.lastPathComponent, privacy: .public)")
+        if let index = assets.firstIndex(where: { $0.id == asset.id }) {
+            assets[index] = asset.withEdit(true, at: .now)
+        }
     }
 
-    static func sidecarURL(for imageURL: URL) -> URL {
-        imageURL.appendingPathExtension(EditingFormat.sidecarExtension)
+    public func savedRecipeData(for asset: LibraryAsset) async -> Data? {
+        guard asset.hasEdit else { return nil }
+        let sidecar = EditingFormat.sidecarURL(for: URL(filePath: asset.id))
+        return await Task.detached { try? Data(contentsOf: sidecar) }.value
     }
 }

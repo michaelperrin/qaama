@@ -56,6 +56,21 @@ struct FolderScannerTests {
         #expect(wide.rating == 0 && !wide.isFavorite)
     }
 
+    @Test func detectsSidecarEdits() throws {
+        let root = try makeFixtureFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let sidecar = EditingFormat.sidecarURL(for: root.appendingPathComponent("wide.png"))
+        try Data("{}".utf8).write(to: sidecar)
+
+        let assets = try FolderScanner.scan(root)
+        let wide = try #require(assets.first { $0.id.hasSuffix("wide.png") })
+        let tall = try #require(assets.first { $0.id.hasSuffix("tall.jpg") })
+
+        #expect(wide.hasEdit && wide.modificationDate != nil)
+        #expect(!tall.hasEdit)
+        #expect(sidecar.lastPathComponent == "wide.png.qaama")
+    }
+
     @Test func failsOnMissingFolder() {
         let missing = FileManager.default.temporaryDirectory.appendingPathComponent("does-not-exist-\(UUID().uuidString)")
         #expect(throws: LibrarySourceError.self) {

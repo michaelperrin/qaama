@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 ///
 /// Blocking file-system and image-header work: call it off the main actor.
 public nonisolated enum FolderScanner {
-    private static let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .contentTypeKey, .creationDateKey]
+    private static let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .contentTypeKey, .creationDateKey, .contentModificationDateKey]
 
     /// Returns one asset per image file found below `folder`, newest first.
     /// The asset identifier is the file path, so `URL(filePath: asset.id)` gets the file back.
@@ -33,14 +33,15 @@ public nonisolated enum FolderScanner {
             guard let values = try? url.resourceValues(forKeys: resourceKeys),
                   values.isRegularFile == true,
                   let type = values.contentType, type.conforms(to: .image) else { continue }
-            assets.append(makeAsset(for: url, fileCreationDate: values.creationDate, exifDateFormatter: exifDateFormatter))
+            assets.append(makeAsset(for: url, fileCreationDate: values.creationDate, fileModificationDate: values.contentModificationDate,
+                                    exifDateFormatter: exifDateFormatter))
         }
         assets.sort { ($0.creationDate ?? .distantPast) > ($1.creationDate ?? .distantPast) }
         return assets
     }
 
     /// Reads the image header only (dimensions, orientation, capture date); no pixels are decoded.
-    private static func makeAsset(for url: URL, fileCreationDate: Date?, exifDateFormatter: DateFormatter) -> LibraryAsset {
+    private static func makeAsset(for url: URL, fileCreationDate: Date?, fileModificationDate: Date?, exifDateFormatter: DateFormatter) -> LibraryAsset {
         var width = 0
         var height = 0
         var captureDate: Date?
@@ -62,12 +63,17 @@ public nonisolated enum FolderScanner {
             }
         }
 
+        // An edit lives in a sidecar next to the image; its date is what makes a thumbnail stale.
+        let sidecarDate = try? EditingFormat.sidecarURL(for: url).resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+
         return LibraryAsset(
             id: url.standardizedFileURL.path(percentEncoded: false),
             pixelWidth: width,
             pixelHeight: height,
             creationDate: captureDate ?? fileCreationDate,
-            isFavorite: false
+            isFavorite: false,
+            modificationDate: sidecarDate ?? fileModificationDate,
+            hasEdit: sidecarDate != nil
         )
     }
 }

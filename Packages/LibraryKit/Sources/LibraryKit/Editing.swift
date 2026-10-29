@@ -8,6 +8,10 @@ public nonisolated enum EditingFormat {
     public static let version = "1"
     /// Suffix appended to an image file name for its sidecar, e.g. `DSCF0001.RAF.qaama`.
     public static let sidecarExtension = "qaama"
+
+    public static func sidecarURL(for imageURL: URL) -> URL {
+        imageURL.appendingPathExtension(sidecarExtension)
+    }
 }
 
 /// What the editor needs to open a photo: the original pixels and the recipe saved last time, if any.
