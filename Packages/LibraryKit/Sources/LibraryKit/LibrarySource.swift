@@ -8,8 +8,10 @@ import Observation
 public protocol LibrarySource: AnyObject, Observable {
     /// Name shown in the sidebar and as the window title.
     var displayName: String { get }
-    /// Photos of this source, newest first.
-    var assets: [LibraryAsset] { get }
+    /// Photos of this source, newest first. Random access only: large sources compute rows on demand.
+    var assets: AssetCollection { get }
+    /// One photo by identifier, without scanning the collection.
+    func asset(id: LibraryAsset.ID) -> LibraryAsset?
     /// Duration of the last listing, for performance tracking.
     var lastLoadDuration: Duration? { get }
     /// What this source can store about a photo.

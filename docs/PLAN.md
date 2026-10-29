@@ -231,7 +231,13 @@ maintenant (règles dans `AGENTS.md`).
 7. **Vues.** Découper `AssetGridView` et `EditorView` en composants, ajouter des aperçus
    SwiftUI avec des sources factices (`LibrarySource` est un protocole, c'est facile).
 
-Conception détaillée des fondations de données : `docs/catalogue.md`.
+Conception détaillée des fondations de données : `docs/catalogue.md`. Réalisée le 29/10/2026 :
+catalogue SQLite (GRDB) derrière `CatalogStore`, sidecar v2 (identifiant, note, drapeau,
+mots-clés, recette), listage en deux phases avec identité stable au renommage et au
+déplacement (le sidecar suit l'image), notes, drapeaux et mots-clés dans l'interface pour les
+dossiers (mots-clés aussi pour Photos, en natif), listage paresseux de Photos (74 000 photos
+en 0,7 s, lignes construites à l'affichage). Points 1, 2, 4 et 6 de la dette remboursés ;
+restent 3 (recette extensible), 5 (modèle de l'éditeur) et 7 (découpage des vues).
 
 **Décisions proposées pour le MVP**
 

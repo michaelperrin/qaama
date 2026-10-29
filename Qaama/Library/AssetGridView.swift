@@ -22,7 +22,10 @@ struct AssetGridView: View {
     private var grid: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: thumbnailSide), spacing: 8)], spacing: 8) {
-                ForEach(source.assets) { asset in
+                // Iterate indices, not elements: ForEach over elements walks the whole collection to compute
+                // identities, which is far too slow for a lazily computed library of tens of thousands of rows.
+                ForEach(source.assets.indices, id: \.self) { index in
+                    let asset = source.assets[index]
                     AssetThumbnailView(asset: asset, source: source, side: thumbnailSide)
                         .onTapGesture { editedAssetID = asset.id }
                 }

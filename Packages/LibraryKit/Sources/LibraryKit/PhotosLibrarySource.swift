@@ -9,7 +9,7 @@ import Photos
 /// Keeps the list in sync with the library through `PHPhotoLibraryChangeObserver`.
 @Observable
 public final class PhotosLibrarySource: LibrarySource {
-    public private(set) var assets: [LibraryAsset] = []
+    public private(set) var assets: AssetCollection = .empty
     public private(set) var access: PhotoLibraryAccess = .current
     /// Duration of the last full listing, for performance tracking.
     public private(set) var lastLoadDuration: Duration?
@@ -23,7 +23,9 @@ public final class PhotosLibrarySource: LibrarySource {
     }
 
     private var fetchResult: PHFetchResult<PHAsset>?
-    private var assetsByID: [String: PHAsset] = [:]
+    /// PHAssets fetched by identifier, kept for image requests and edits. Not observed: it is filled
+    /// while views are being built, and mutating observed state there would invalidate them in a loop.
+    @ObservationIgnored private var materialized: [String: PHAsset] = [:]
     private let imageManager = PHCachingImageManager()
     private var changeRelay: PhotoLibraryChangeRelay?
     /// Editing inputs kept alive while a photo is open: they hold the access to the original file.
@@ -38,7 +40,7 @@ public final class PhotosLibrarySource: LibrarySource {
         access = await PhotoLibraryAccess.request()
         logger.notice("Photo library access: \(String(describing: self.access), privacy: .public)")
         guard access == .authorized || access == .limited else {
-            assets = []
+            assets = .empty
             return
         }
 
@@ -51,7 +53,7 @@ public final class PhotosLibrarySource: LibrarySource {
         let result = PHAsset.fetchAssets(with: options)
         apply(fetchResult: result)
         lastLoadDuration = clock.now - start
-        logger.notice("Listed \(self.assets.count) photos in \(self.lastLoadDuration!.formatted(.units(allowed: [.milliseconds])), privacy: .public)")
+        logger.notice("Fetched \(self.assets.count) photos in \(self.lastLoadDuration!.formatted(.units(allowed: [.milliseconds])), privacy: .public)")
 
         if changeRelay == nil {
             changeRelay = PhotoLibraryChangeRelay { [weak self] change in
@@ -63,7 +65,7 @@ public final class PhotosLibrarySource: LibrarySource {
     /// Sets the star rating (0 to 5) of a photo, stored natively by Photos (macOS 27).
     /// The list is refreshed through the change observer once Photos commits the change.
     public func setRating(_ rating: Int, for asset: LibraryAsset) async throws {
-        guard let phAsset = assetsByID[asset.id],
+        guard let phAsset = phAsset(for: asset.id),
               let value = PHAsset.Rating(rawValue: min(max(rating, 0), 5)) else { return }
         // PhotoKit runs the change block on its own queue, so it must not inherit the main-actor isolation
         // this module defaults to. PHAsset is an immutable, Sendable snapshot and is safe to hand over.
@@ -71,20 +73,16 @@ public final class PhotosLibrarySource: LibrarySource {
             PHAssetChangeRequest(for: phAsset).rating = value
         }
         logger.notice("Rated \(asset.id, privacy: .public) with \(rating) stars")
-        // Reflect the new rating right away; the change observer confirms it a moment later.
-        if let index = assets.firstIndex(where: { $0.id == asset.id }) {
-            assets[index].rating = value.rawValue
-        }
     }
 
     /// Keywords live in Photos' extended metadata, fetched per asset rather than for the whole listing.
     public func keywords(for asset: LibraryAsset) async -> [String] {
-        guard let phAsset = assetsByID[asset.id] else { return [] }
+        guard let phAsset = phAsset(for: asset.id) else { return [] }
         return await Task.detached { phAsset.extendedMetadata.keywords }.value
     }
 
     public func setKeywords(_ keywords: [String], for asset: LibraryAsset) async throws {
-        guard let phAsset = assetsByID[asset.id] else { throw LibrarySourceError.assetUnavailable }
+        guard let phAsset = phAsset(for: asset.id) else { throw LibrarySourceError.assetUnavailable }
         let current = await Set(self.keywords(for: asset))
         let wanted = Set(keywords)
         let added = wanted.subtracting(current)
@@ -110,7 +108,7 @@ public final class PhotosLibrarySource: LibrarySource {
 
     /// Warms the thumbnail cache for photos about to appear on screen.
     public func prefetchThumbnails(for assets: [LibraryAsset], pixelSize: CGSize) {
-        let phAssets = assets.compactMap { assetsByID[$0.id] }
+        let phAssets = assets.compactMap { phAsset(for: $0.id) }
         imageManager.startCachingImages(for: phAssets, targetSize: pixelSize, contentMode: .aspectFill, options: Self.requestOptions())
     }
 
@@ -119,7 +117,7 @@ public final class PhotosLibrarySource: LibrarySource {
     /// Asks Photos for the original (RAW included) and for Qaama's own adjustment data, if the photo
     /// was last edited here. Edits made by other apps are baked into the image Photos hands back.
     public func editingInput(for asset: LibraryAsset) async throws -> EditingInput {
-        guard let phAsset = assetsByID[asset.id] else { throw LibrarySourceError.assetUnavailable }
+        guard let phAsset = phAsset(for: asset.id) else { throw LibrarySourceError.assetUnavailable }
         let options = PHContentEditingInputRequestOptions()
         options.isNetworkAccessAllowed = true
         options.canHandleAdjustmentData = { @Sendable data in data.formatIdentifier == EditingFormat.identifier }
@@ -144,7 +142,7 @@ public final class PhotosLibrarySource: LibrarySource {
     /// Stores the recipe as `PHAdjustmentData` and the rendered JPEG as the photo's current version,
     /// the standard non-destructive path: Photos keeps the original and can revert at any time.
     public func saveEdit(_ output: EditingOutput, for asset: LibraryAsset) async throws {
-        guard let phAsset = assetsByID[asset.id] else { throw LibrarySourceError.assetUnavailable }
+        guard let phAsset = phAsset(for: asset.id) else { throw LibrarySourceError.assetUnavailable }
         guard let input = editingInputs[asset.id] else { throw LibrarySourceError.editingFailed("the photo wasn't opened for editing") }
         if output.isReset {
             try await PHPhotoLibrary.shared().performChanges { @Sendable in
@@ -187,47 +185,39 @@ public final class PhotosLibrarySource: LibrarySource {
 
     private func handle(_ change: PHChange) {
         guard let fetchResult, let details = change.changeDetails(for: fetchResult) else { return }
-        let clock = ContinuousClock()
-        let start = clock.now
-        if !applyIncrementally(details) {
-            apply(fetchResult: details.fetchResultAfterChanges)
+        // Nothing is materialized up front, so applying a change is just swapping the fetch result;
+        // changed assets are dropped from the cache and re-read on their next access.
+        for changed in details.changedObjects {
+            materialized[changed.localIdentifier] = nil
         }
-        logger.notice("Applied library change (\(details.insertedObjects.count) inserted, \(details.removedObjects.count) removed, \(details.changedObjects.count) changed) in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
+        for removed in details.removedObjects {
+            materialized[removed.localIdentifier] = nil
+        }
+        apply(fetchResult: details.fetchResultAfterChanges)
+        logger.notice("Applied library change (\(details.insertedObjects.count) inserted, \(details.removedObjects.count) removed, \(details.changedObjects.count) changed)")
     }
 
-    /// Patches only the rows whose attributes changed (rating, favorite…), which is the common case after
-    /// an edit. Returns false when photos were added, removed or reordered, so the caller rebuilds the list.
-    private func applyIncrementally(_ details: PHFetchResultChangeDetails<PHAsset>) -> Bool {
-        guard details.hasIncrementalChanges, !details.hasMoves,
-              details.insertedIndexes?.isEmpty ?? true,
-              details.removedIndexes?.isEmpty ?? true,
-              let changedIndexes = details.changedIndexes else { return false }
-        let result = details.fetchResultAfterChanges
-        guard result.count == assets.count else { return false }
-        var updated = assets
-        for index in changedIndexes {
-            let phAsset = result.object(at: index)
-            guard updated[index].id == phAsset.localIdentifier else { return false }
-            assetsByID[phAsset.localIdentifier] = phAsset
-            updated[index] = Self.makeAsset(phAsset)
-        }
-        fetchResult = result
-        assets = updated
-        return true
-    }
-
-    /// Rebuilds the lightweight asset list from a fetch result. Linear in the library size; measured by `lastLoadDuration`.
+    /// Exposes the fetch result as a lazy collection: a row is built only when the grid asks for it.
     private func apply(fetchResult result: PHFetchResult<PHAsset>) {
         fetchResult = result
-        var listed: [LibraryAsset] = []
-        var byID: [String: PHAsset] = [:]
-        listed.reserveCapacity(result.count)
-        result.enumerateObjects { asset, _, _ in
-            byID[asset.localIdentifier] = asset
-            listed.append(Self.makeAsset(asset))
+        // The row closure must stay free of side effects: SwiftUI may walk the whole collection.
+        assets = AssetCollection(count: result.count) { index in
+            Self.makeAsset(result.object(at: index))
         }
-        assetsByID = byID
-        assets = listed
+    }
+
+    public func asset(id: LibraryAsset.ID) -> LibraryAsset? {
+        phAsset(for: id).map(Self.makeAsset)
+    }
+
+    /// The PHAsset behind an identifier: from the rows already shown, or fetched on its own (a few ms).
+    private func phAsset(for id: String) -> PHAsset? {
+        if let cached = materialized[id] {
+            return cached
+        }
+        guard let fetched = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return nil }
+        materialized[id] = fetched
+        return fetched
     }
 
     private static func makeAsset(_ asset: PHAsset) -> LibraryAsset {
@@ -244,7 +234,7 @@ public final class PhotosLibrarySource: LibrarySource {
     }
 
     private func requestImage(for asset: LibraryAsset, targetSize: CGSize, contentMode: PHImageContentMode) async -> CGImage? {
-        guard let phAsset = assetsByID[asset.id] else { return nil }
+        guard let phAsset = phAsset(for: asset.id) else { return nil }
         let options = Self.requestOptions()
         return await withCheckedContinuation { continuation in
             // Delivered on an arbitrary queue: the handler must stay out of the main-actor isolation this module defaults to.

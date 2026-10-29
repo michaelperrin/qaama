@@ -27,7 +27,7 @@ struct EditorView: View {
 
     /// Live copy of the asset, so the rating reflects library changes.
     private var asset: LibraryAsset? {
-        source.assets.first { $0.id == assetID }
+        source.asset(id: assetID)
     }
 
     private var hasUnsavedChanges: Bool {

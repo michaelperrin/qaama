@@ -14,7 +14,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     public let id: UUID
     public let folderURL: URL
     public let displayName: String
-    public private(set) var assets: [LibraryAsset] = []
+    public private(set) var assets: AssetCollection = .empty
     /// Duration of the listing phase of the last scan.
     public private(set) var lastLoadDuration: Duration?
     /// True once the catalog has delivered the items (even if a scan is still running).
@@ -113,8 +113,13 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
 
     private func apply(_ items: [CatalogItem]) {
         itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
-        assets = items.map(LibraryAsset.init)
+        assets = AssetCollection(items.map(LibraryAsset.init))
         prioritized.subtract(items.filter { !$0.needsMetadata }.map(\.id))
+    }
+
+    public func asset(id: LibraryAsset.ID) -> LibraryAsset? {
+        guard let uuid = UUID(uuidString: id), let item = itemsByID[uuid] else { return nil }
+        return LibraryAsset(item)
     }
 
     public func prioritize(_ asset: LibraryAsset) {

@@ -161,7 +161,7 @@ tris natifs), ce qui évite de les dupliquer.
   le lot.
 - Catalogue : migrations GRDB appliquées sur une base vide et sur une base v1 remplie.
 
-## 9. Ordre de réalisation
+## 9. Ordre de réalisation (toutes les étapes faites le 29/10/2026)
 
 1. Schéma GRDB + `CatalogStore` (CRUD, requêtes, observation) + tests en mémoire.
 2. Sidecar v2 + migration v1 + tests.

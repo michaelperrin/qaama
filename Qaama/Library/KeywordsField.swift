@@ -17,14 +17,20 @@ struct KeywordsField: View {
             .focused($isFocused)
             .onSubmit(commit)
             .onChange(of: text) { _, new in
-                if new.hasSuffix(",") { commit() }
+                if new.hasSuffix(",") {
+                    commit()
+                }
             }
             .onChange(of: isFocused) { _, focused in
-                if !focused { commit() }
+                if !focused {
+                    commit()
+                }
             }
             .onChange(of: keywords, initial: true) { _, new in
                 // Don't disturb a keyword being typed; the committed ones are already in the text.
-                if !isFocused { text = new.joined(separator: ", ") }
+                if !isFocused {
+                    text = new.joined(separator: ", ")
+                }
             }
             .onDisappear(perform: commit)
             .help("Keywords (comma separated). Return or a comma saves.")
