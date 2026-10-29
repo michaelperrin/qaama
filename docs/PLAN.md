@@ -182,7 +182,63 @@ But : prouver que les trois briques critiques tiennent, sans soin de l'UI.
       signets sécurisés dans `UserDefaults`, protocole `LibrarySource` commun aux deux
       sources. Reste : notes pour les fichiers (sidecar), vérifier le temps de scan et la
       qualité RAW sur les RAF du X-T30.
-- [ ] Bilan : ce qui marche, ce qui coince, décisions pour le MVP.
+- [x] Bilan : ce qui marche, ce qui coince, décisions pour le MVP (29/10/2026, ci-dessous).
+
+### Bilan du POC (29/10/2026)
+
+Principe retenu avec Michaël : le POC et le MVP ne sont pas du code jetable. Le projet peut
+devenir un vrai logiciel, donc l'architecture, les tests et la réutilisabilité comptent dès
+maintenant (règles dans `AGENTS.md`).
+
+**Ce qui marche**
+
+- Photothèque Apple : accès, grille de 74 000 photos, notation native, suivi des changements,
+  ouverture de l'original (RAW compris) et sauvegarde non destructive via `PHAdjustmentData`.
+- Dossiers : ajout, signets persistants, scan récursif, vignettes Quick Look, sidecar `.qaama`,
+  cache d'aperçus du vrai rendu.
+- Rendu : Core Image sur Metal, RAW par CIRAWFilter, trois curseurs fluides, export JPEG.
+- Masque ciel : faisable avec DETR (Apache 2.0) + segmentation par clic de Vision 27.
+- 16 tests unitaires hermétiques sur les modèles, le scanner, le cache, le pipeline et le
+  rendu hors écran.
+
+**Ce qui coince (mesuré)**
+
+- Listage complet de la photothèque : 1,6 à 2,8 s, en mémoire, refait à chaque lancement.
+- Scan de dossier : 15 à 20 ms par fichier (en-têtes ImageIO), inacceptable au-delà de
+  quelques centaines de RAW.
+- Sortie 8 bits sRGB seulement (pas d'EDR), pas de notes ni de drapeaux pour les fichiers.
+- Une `CAMetalLayer` ne s'affiche pas dans une feuille `.sheet` SwiftUI sur macOS 27.
+
+**Dette d'architecture à rembourser avant d'empiler des fonctions**
+
+1. **Identifiants stables.** `LibraryAsset.id` est le chemin du fichier : un renommage ou un
+   déplacement casse le sidecar, le cache d'aperçus et les futures notes. Introduire un
+   catalogue persistant (SwiftData) avec un identifiant propre à Qaama, le chemin et une
+   empreinte (taille + date + hachage partiel) pour retrouver les fichiers déplacés.
+2. **Listage en deux temps.** Lister d'abord (nom, type, dates système), lire les en-têtes
+   (dimensions, EXIF) en arrière-plan par lots et les conserver dans le catalogue. Même
+   logique côté Photos : index persistant et chargement paresseux de `PHFetchResult`.
+3. **Modèle de l'éditeur.** `EditorView` porte encore le chargement, le rendu, la
+   sauvegarde et l'export. Extraire un `EditorModel` observable testable, la vue ne gardant
+   que l'affichage.
+4. **Recette extensible.** `EditRecipe` est un struct à trois champs. Passer à une liste
+   ordonnée d'ajustements typés (avec activation, et plus tard masque) avant d'ajouter le
+   moindre réglage, pour ne pas migrer le format vingt fois ; le champ `version` existe déjà.
+5. **Sidecar = métadonnées, pas seulement recette.** Le fichier `.qaama` doit porter notes,
+   drapeaux, mots-clés et recette, versionné, pour les photos hors Photos.
+6. **Paquet `ImageIOKit`.** `FileImageLoader` et la lecture d'en-têtes de `FolderScanner`
+   vivent dans LibraryKit ; les regrouper dans le paquet prévu, réutilisable par l'éditeur.
+7. **Vues.** Découper `AssetGridView` et `EditorView` en composants, ajouter des aperçus
+   SwiftUI avec des sources factices (`LibrarySource` est un protocole, c'est facile).
+
+**Décisions proposées pour le MVP**
+
+- Ordre : (a) dette 1, 2, 4 et 5 (fondations de données), (b) bibliothèque riche (albums,
+  tri, filtres, notes et drapeaux partout), (c) éditeur : pile d'ajustements, balance des
+  blancs, hautes lumières/ombres, recadrage, avant/après, undo/redo, (d) masques.
+- EDR et couleur P3 : à la reprise du canevas, pas avant.
+- Photos reste la référence pour ses propres vignettes et métadonnées ; Qaama n'indexe que
+  ce qu'il faut pour trier et filtrer.
 
 ### Étude de faisabilité : masque « ciel » (29/10/2026)
 
