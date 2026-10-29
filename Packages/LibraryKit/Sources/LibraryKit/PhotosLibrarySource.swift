@@ -10,6 +10,8 @@ import Photos
 @Observable
 public final class PhotosLibrarySource: LibrarySource {
     public private(set) var assets: AssetCollection = .empty
+    /// Bumped on every library change, so views reading a single asset refresh with the library.
+    public private(set) var libraryVersion = 0
     public private(set) var access: PhotoLibraryAccess = .current
     /// Duration of the last full listing, for performance tracking.
     public private(set) var lastLoadDuration: Duration?
@@ -200,6 +202,7 @@ public final class PhotosLibrarySource: LibrarySource {
     /// Exposes the fetch result as a lazy collection: a row is built only when the grid asks for it.
     private func apply(fetchResult result: PHFetchResult<PHAsset>) {
         fetchResult = result
+        libraryVersion += 1
         // The row closure must stay free of side effects: SwiftUI may walk the whole collection.
         assets = AssetCollection(count: result.count) { index in
             Self.makeAsset(result.object(at: index))
@@ -207,7 +210,9 @@ public final class PhotosLibrarySource: LibrarySource {
     }
 
     public func asset(id: LibraryAsset.ID) -> LibraryAsset? {
-        phAsset(for: id).map(Self.makeAsset)
+        // Register the caller's dependency on the library: the cache below is not observed.
+        _ = libraryVersion
+        return phAsset(for: id).map(Self.makeAsset)
     }
 
     /// The PHAsset behind an identifier: from the rows already shown, or fetched on its own (a few ms).
