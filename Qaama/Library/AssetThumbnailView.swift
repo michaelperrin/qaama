@@ -4,7 +4,7 @@ import SwiftUI
 /// Square thumbnail of a photo, loaded on demand.
 struct AssetThumbnailView: View {
     let asset: LibraryAsset
-    let source: PhotosLibrarySource
+    let source: any LibrarySource
     let side: CGFloat
 
     @Environment(\.displayScale) private var displayScale

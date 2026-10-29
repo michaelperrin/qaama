@@ -3,12 +3,12 @@ import SwiftUI
 
 @main
 struct QaamaApp: App {
-    @State private var photosSource = PhotosLibrarySource()
+    @State private var catalog = LibraryCatalog()
 
     var body: some Scene {
         WindowGroup("Qaama") {
-            LibraryView(source: photosSource)
-                .frame(minWidth: 800, minHeight: 500)
+            MainWindowView(catalog: catalog)
+                .frame(minWidth: 900, minHeight: 550)
         }
         .windowStyle(.automatic)
     }

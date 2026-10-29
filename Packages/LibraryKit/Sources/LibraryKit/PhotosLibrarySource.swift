@@ -8,11 +8,19 @@ import Photos
 ///
 /// Keeps the list in sync with the library through `PHPhotoLibraryChangeObserver`.
 @Observable
-public final class PhotosLibrarySource {
+public final class PhotosLibrarySource: LibrarySource {
     public private(set) var assets: [LibraryAsset] = []
     public private(set) var access: PhotoLibraryAccess = .current
     /// Duration of the last full listing, for performance tracking.
     public private(set) var lastLoadDuration: Duration?
+
+    public var displayName: String {
+        "Photos"
+    }
+
+    public var canRate: Bool {
+        true
+    }
 
     private var fetchResult: PHFetchResult<PHAsset>?
     private var assetsByID: [String: PHAsset] = [:]
@@ -23,8 +31,8 @@ public final class PhotosLibrarySource {
     public init() {}
 
     /// Requests access if needed, then loads the photos, newest first, and starts tracking changes.
-    /// - Parameter limit: maximum number of photos to list (0 = all).
-    public func load(limit: Int = 0) async {
+    public func load() async {
+        guard fetchResult == nil else { return }
         access = await PhotoLibraryAccess.request()
         logger.notice("Photo library access: \(String(describing: self.access), privacy: .public)")
         guard access == .authorized || access == .limited else {
@@ -35,9 +43,6 @@ public final class PhotosLibrarySource {
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         options.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
-        if limit > 0 {
-            options.fetchLimit = limit
-        }
 
         let clock = ContinuousClock()
         let start = clock.now
@@ -64,6 +69,17 @@ public final class PhotosLibrarySource {
             PHAssetChangeRequest(for: phAsset).rating = value
         }
         logger.notice("Rated \(asset.id, privacy: .public) with \(rating) stars")
+        // Reflect the new rating right away; the change observer confirms it a moment later.
+        if let index = assets.firstIndex(where: { $0.id == asset.id }) {
+            assets[index] = LibraryAsset(
+                id: asset.id,
+                pixelWidth: asset.pixelWidth,
+                pixelHeight: asset.pixelHeight,
+                creationDate: asset.creationDate,
+                isFavorite: asset.isFavorite,
+                rating: value.rawValue
+            )
+        }
     }
 
     /// Thumbnail sized for display, in pixels (account for the screen's scale factor).
@@ -88,8 +104,31 @@ public final class PhotosLibrarySource {
         guard let fetchResult, let details = change.changeDetails(for: fetchResult) else { return }
         let clock = ContinuousClock()
         let start = clock.now
-        apply(fetchResult: details.fetchResultAfterChanges)
+        if !applyIncrementally(details) {
+            apply(fetchResult: details.fetchResultAfterChanges)
+        }
         logger.notice("Applied library change (\(details.insertedObjects.count) inserted, \(details.removedObjects.count) removed, \(details.changedObjects.count) changed) in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
+    }
+
+    /// Patches only the rows whose attributes changed (rating, favorite…), which is the common case after
+    /// an edit. Returns false when photos were added, removed or reordered, so the caller rebuilds the list.
+    private func applyIncrementally(_ details: PHFetchResultChangeDetails<PHAsset>) -> Bool {
+        guard details.hasIncrementalChanges, !details.hasMoves,
+              details.insertedIndexes?.isEmpty ?? true,
+              details.removedIndexes?.isEmpty ?? true,
+              let changedIndexes = details.changedIndexes else { return false }
+        let result = details.fetchResultAfterChanges
+        guard result.count == assets.count else { return false }
+        var updated = assets
+        for index in changedIndexes {
+            let phAsset = result.object(at: index)
+            guard updated[index].id == phAsset.localIdentifier else { return false }
+            assetsByID[phAsset.localIdentifier] = phAsset
+            updated[index] = Self.makeAsset(phAsset)
+        }
+        fetchResult = result
+        assets = updated
+        return true
     }
 
     /// Rebuilds the lightweight asset list from a fetch result. Linear in the library size; measured by `lastLoadDuration`.
@@ -100,17 +139,21 @@ public final class PhotosLibrarySource {
         listed.reserveCapacity(result.count)
         result.enumerateObjects { asset, _, _ in
             byID[asset.localIdentifier] = asset
-            listed.append(LibraryAsset(
-                id: asset.localIdentifier,
-                pixelWidth: asset.pixelWidth,
-                pixelHeight: asset.pixelHeight,
-                creationDate: asset.creationDate,
-                isFavorite: asset.isFavorite,
-                rating: asset.rating.rawValue
-            ))
+            listed.append(Self.makeAsset(asset))
         }
         assetsByID = byID
         assets = listed
+    }
+
+    private static func makeAsset(_ asset: PHAsset) -> LibraryAsset {
+        LibraryAsset(
+            id: asset.localIdentifier,
+            pixelWidth: asset.pixelWidth,
+            pixelHeight: asset.pixelHeight,
+            creationDate: asset.creationDate,
+            isFavorite: asset.isFavorite,
+            rating: asset.rating.rawValue
+        )
     }
 
     private func requestImage(for asset: LibraryAsset, targetSize: CGSize, contentMode: PHImageContentMode) async -> CGImage? {

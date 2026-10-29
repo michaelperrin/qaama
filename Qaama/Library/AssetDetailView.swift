@@ -4,7 +4,7 @@ import SwiftUI
 /// Full-size display of a photo with its rating. The real Metal canvas arrives with the rendering building block.
 struct AssetDetailView: View {
     let assetID: LibraryAsset.ID
-    let source: PhotosLibrarySource
+    let source: any LibrarySource
 
     @Environment(\.dismiss) private var dismiss
     @State private var image: CGImage?
@@ -33,8 +33,10 @@ struct AssetDetailView: View {
                     Text("\(asset.pixelWidth) × \(asset.pixelHeight) px")
                         .monospacedDigit()
                     Spacer()
-                    RatingView(rating: asset.rating) { rate($0) }
-                    ratingShortcuts
+                    if source.canRate {
+                        RatingView(rating: asset.rating) { rate($0) }
+                        ratingShortcuts
+                    }
                 }
                 if let errorMessage {
                     Text(errorMessage).foregroundStyle(.red)

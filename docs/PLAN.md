@@ -159,9 +159,17 @@ But : prouver que les trois briques critiques tiennent, sans soin de l'UI.
       Fait le 29/10/2026 : accès, grille de toute la photothèque, vue pleine taille,
       note par étoiles native (PhotoKit 27, touches 0–5), suivi des changements de la
       photothèque, mesure du temps de listage (journal `OSLog`, sous-titre de fenêtre).
+      Mesuré : 74 000 photos listées en 2,8 s ; la notation rafraîchit la liste de façon
+      incrémentale (avant : reconstruction complète, ~1,5 s de latence perçue).
       Reste : `PHAdjustmentData`, à faire avec la brique rendu (il faut une image rendue).
 - [ ] **Brique fichiers** : choisir un dossier, le scanner récursivement, afficher les
       vignettes, conserver l'accès au redémarrage (bookmark).
+      Fait le 29/10/2026 : barre latérale Photos + dossiers, ajout via `fileImporter`,
+      scan récursif (`FileManager` + en-têtes ImageIO : dimensions, orientation, date
+      EXIF), vignettes Quick Look, pleine taille via ImageIO (moteur RAW d'Apple),
+      signets sécurisés dans `UserDefaults`, protocole `LibrarySource` commun aux deux
+      sources. Reste : notes pour les fichiers (sidecar), vérifier le temps de scan et la
+      qualité RAW sur les RAF du X-T30.
 - [ ] Bilan : ce qui marche, ce qui coince, décisions pour le MVP.
 
 ### Phase 2 — MVP (une appli utilisable au quotidien)
