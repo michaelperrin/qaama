@@ -22,10 +22,19 @@ rien n'est modifié dans la bibliothèque.
 - **Nommage** (lot) : noms d'origine conservés, seule l'extension change ; plus tard, nommage
   séquentiel avec préfixe et numéro, et autres schémas. Le schéma de nommage fera partie des
   préréglages d'export.
+- **Fichiers existants** : aujourd'hui un suffixe numérique évite d'écraser ; à prévoir un choix
+  « renommer » (comportement actuel) ou « écraser », mémorisé avec les préréglages.
 - Plus tard : **bordure** de couleur unie (épaisseur en %, rayon, couleur ; les autres styles
   de Photomator sont jugés gadget), **filigrane** texte ou image (position, taille, opacité,
   ombre, mosaïque), **préréglages d'export** (format + bordure + filigrane) choisis en haut de
   la fenêtre avec « Enregistrer le préréglage », nommage compris.
+
+### Disposition de la fenêtre (Michaël, 30/10/2026)
+
+Onglets en haut (Format, Border, Watermark, Naming, Metadata…, et plus tard le sélecteur de
+préréglages), grand aperçu à gauche de la photo choisie et formulaire de l'onglet actif à droite,
+bande de vignettes de toutes les photos en bas avec le nom de fichier de sortie sous chacune. Un
+clic dans la bande change l'aperçu, rendu à la demande et gardé le temps de la fenêtre.
 
 ## 2. Architecture
 
@@ -56,5 +65,5 @@ Qaama/Export
 2. Lot depuis la grille : dossier, noms d'origine, progression, menu contextuel et menu Fichier.
 3. Bordure de couleur unie.
 4. Filigrane texte et image.
-5. Choix de conserver ou non les métadonnées, schémas de nommage (séquentiel avec préfixe…),
-   puis préréglages d'export.
+5. Choix de conserver ou non les métadonnées, écraser ou renommer les fichiers existants, schémas
+   de nommage (séquentiel avec préfixe…), puis préréglages d'export.

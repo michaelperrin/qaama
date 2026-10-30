@@ -18,8 +18,8 @@ struct ExportModelTests {
         let image = CIImage(color: CIColor(red: 0.3, green: 0.6, blue: 0.9)).cropped(to: CGRect(x: 0, y: 0, width: 400, height: 200))
         var recipe = EditRecipe()
         recipe.geometry = Geometry(crop: UnitRect(x: 0, y: 0, width: 0.5, height: 1))
-        let input = ExportInput(image: image, recipe: recipe, baseName: "DSCF0001")
-        return ExportItem(id: "a") { input }
+        let input = ExportInput(image: image, recipe: recipe)
+        return ExportItem(id: "a", name: { "DSCF0001" }, load: { input })
     }
 
     private func makeFolder() throws -> URL {
@@ -51,7 +51,7 @@ struct ExportModelTests {
         let folder = try makeFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         try Data().write(to: folder.appendingPathComponent("DSCF0001.jpg"))
-        let broken = ExportItem(id: "broken") { throw LibrarySourceError.assetUnavailable }
+        let broken = ExportItem(id: "broken", name: { "broken" }, load: { throw LibrarySourceError.assetUnavailable })
         let model = ExportModel(items: [item, item, broken], defaults: defaults)
         model.settings = ExportSettings(format: .jpeg, size: .longEdge(40))
         let written = await model.exportAll(to: folder)
@@ -72,6 +72,7 @@ struct ExportModelTests {
         #expect(model.defaultFileName == "DSCF0001")
         #expect(model.sourcePixelSize == CGSize(width: 200, height: 200))
         #expect(model.preview?.width == 200)
+        #expect(model.outputFileName(for: model.items[0]) == "DSCF0001.jpg")
         model.settings.size = .longEdge(100)
         #expect(model.outputPixelSize == CGSize(width: 100, height: 100))
         #expect(!model.isUpscaling)
@@ -84,7 +85,7 @@ struct ExportModelTests {
         defer { cleanup() }
         let model = ExportModel(items: [item], defaults: defaults)
         model.settings = ExportSettings(format: .png, size: .longEdge(50))
-        let data = await model.encodeFirst()
+        let data = await model.encodeSelected()
         #expect(model.errorMessage == nil)
         // PNG signature
         #expect(data?.prefix(4) == Data([0x89, 0x50, 0x4E, 0x47]))

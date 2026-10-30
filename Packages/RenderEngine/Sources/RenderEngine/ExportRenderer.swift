@@ -7,21 +7,18 @@ import ImageIO
 import UniformTypeIdentifiers
 
 /// A photo to export: its decoded pixels, the recipe to render, the model masks already resolved
-/// (missing ones are resolved during the render), the name to write it under and, when the source
-/// is a file, where to read the metadata to carry over.
+/// (missing ones are resolved during the render) and, when the source is a file, where to read the
+/// metadata to carry over.
 public nonisolated struct ExportInput: Sendable {
     public var image: CIImage
     public var recipe: EditRecipe
     public var masks: [UUID: CIImage]
-    /// File name without extension; the export keeps it and only changes the extension.
-    public var baseName: String
     public var metadataURL: URL?
 
-    public init(image: CIImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:], baseName: String = "Photo", metadataURL: URL? = nil) {
+    public init(image: CIImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:], metadataURL: URL? = nil) {
         self.image = image
         self.recipe = recipe
         self.masks = masks
-        self.baseName = baseName
         self.metadataURL = metadataURL
     }
 }
