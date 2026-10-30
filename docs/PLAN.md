@@ -335,7 +335,9 @@ Export
       Conception dans `docs/export.md`. Étape 1 faite le 30/10/2026 : photo seule depuis
       l'éditeur, JPEG/PNG/HEIC/AVIF, qualité, taille par largeur, hauteur ou grand côté, aperçu,
       métadonnées recopiées, réglages mémorisés. WebP absent d'ImageIO en écriture (libwebp plus
-      tard si besoin). Reste : lot, bordure, filigrane, conserver ou non les métadonnées, nommage,
+      tard si besoin). Étape 2 le même jour : lot depuis la grille (menu contextuel, menu File),
+      dossier de destination, noms d'origine avec suffixe numérique, progression, arrêt, échecs
+      listés. Reste : bordure, filigrane, conserver ou non les métadonnées, nommage,
       préréglages d'export.
 - [ ] Enregistrement dans Photos ou dans un dossier, partage système.
 

@@ -221,6 +221,10 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         }
     }
 
+    public func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo {
+        AssetResourceInfo(isRAW: asset.isRAW, hasJPEGTwin: asset.pairedAssetID != nil, originalFileName: fileURL(for: asset)?.lastPathComponent)
+    }
+
     public func editingInput(for asset: LibraryAsset) async throws -> EditingInput {
         guard let url = fileURL(for: asset) else { throw LibrarySourceError.assetUnavailable }
         let recipeData = await Task.detached { try? Sidecar.read(forImageAt: url)?.recipeData }.value

@@ -105,7 +105,8 @@ public final class PhotosLibrarySource: LibrarySource {
             let photos = PHAssetResource.assetResources(for: phAsset).filter { $0.type == .photo || $0.type == .alternatePhoto }
             let raw = photos.contains { UTType($0.uniformTypeIdentifier)?.conforms(to: .rawImage) == true }
             let other = photos.contains { UTType($0.uniformTypeIdentifier)?.conforms(to: .rawImage) == false }
-            return AssetResourceInfo(isRAW: raw, hasJPEGTwin: raw && other)
+            let name = (photos.first { $0.type == .photo } ?? photos.first)?.originalFilename
+            return AssetResourceInfo(isRAW: raw, hasJPEGTwin: raw && other, originalFileName: name)
         }.value
         resourceInfos[asset.id] = info
         return info

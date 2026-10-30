@@ -31,6 +31,7 @@ struct EditorView: View {
             EditorBottomBar(model: model, onExport: openExport, onClose: onClose)
         }
         .focusedSceneValue(\.editor, model)
+        .focusedSceneValue(\.exportAction, model.canExport ? ExportAction(openExport) : nil)
         .onChange(of: undoManager, initial: true) { _, manager in model.undoManager = manager }
         .task { await model.open() }
         .onDisappear { model.close() }

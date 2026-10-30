@@ -102,6 +102,13 @@ can feed a website one day. Dates are when the feature landed.
 - EXIF, TIFF, GPS and IPTC metadata of the original file carried over, orientation reset
   (2026-10-30).
 - Settings remembered between exports (2026-10-30).
+- File › Export… (⇧⌘E) exports the open photo, or the grid selection (2026-10-30).
+
+### Batch
+- Export the selected photos from the grid (context menu or File › Export…) into a chosen folder,
+  with their saved edits, the same format and size settings, a progress bar and Stop; files keep
+  their original names with the new extension, a numeric suffix avoids overwriting; failures are
+  listed at the end (2026-10-30).
 
 ## Platform
 - Native macOS app (macOS 27), SwiftUI, Core Image on Metal, sandboxed (2026-10-29).

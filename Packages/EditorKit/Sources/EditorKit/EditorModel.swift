@@ -561,8 +561,8 @@ public final class EditorModel {
     /// The open photo with its current edit, saved or not, for the export window.
     public func exportItem() -> ExportItem? {
         guard let sourceImage else { return nil }
-        let input = ExportInput(image: sourceImage.image, recipe: recipe, masks: maskImages, metadataURL: imageURL)
-        return ExportItem(id: assetID, baseName: baseName) { input }
+        let input = ExportInput(image: sourceImage.image, recipe: recipe, masks: maskImages, baseName: baseName, metadataURL: imageURL)
+        return ExportItem(id: assetID) { input }
     }
 
     // MARK: - Decisions

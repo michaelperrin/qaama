@@ -14,6 +14,7 @@ struct AssetGridView: View {
     /// Index of the last plain click, where a ⇧-click range starts.
     @State private var anchorIndex: Int?
     @State private var batchError: String?
+    @State private var exportModel: ExportModel?
     @Environment(\.undoManager) private var undoManager
     @Environment(\.displayScale) private var displayScale
 
@@ -36,6 +37,16 @@ struct AssetGridView: View {
                 }
             }
             .padding(12)
+        }
+        .focusedSceneValue(\.exportAction, selection.isEmpty ? nil : ExportAction { export(selection.compactMap { source.asset(id: $0) }) })
+        .sheet(isPresented: Binding(get: { exportModel != nil }, set: {
+            if !$0 {
+                exportModel = nil
+            }
+        })) {
+            if let exportModel {
+                ExportView(model: exportModel) { self.exportModel = nil }
+            }
         }
         .background {
             // Keyboard: Escape clears the selection, ⌘A selects every photo shown.
@@ -114,6 +125,13 @@ struct AssetGridView: View {
             run { try await BatchEditing.pasteAdjustments(to: targets(for: asset), in: source, undoManager: undoManager) }
         }
         .disabled(AdjustmentsClipboard.shared.adjustments == nil)
+        Divider()
+        Button(actsOnSelection(asset) ? "Export \(selection.count) Photos…" : "Export…") { export(targets(for: asset)) }
+    }
+
+    private func export(_ assets: [LibraryAsset]) {
+        guard !assets.isEmpty else { return }
+        exportModel = ExportModel(items: assets.map { ExportItem.make(for: $0, in: source) })
     }
 }
 

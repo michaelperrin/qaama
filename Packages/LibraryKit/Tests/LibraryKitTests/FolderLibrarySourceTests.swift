@@ -47,6 +47,11 @@ struct FolderLibrarySourceTests {
         await wait { source.assets.allSatisfy { $0.pixelWidth == 12 } }
         #expect(source.assets.allSatisfy { $0.pixelWidth == 12 && $0.pixelHeight == 6 })
         #expect(source.lastLoadDuration != nil && source.loadError == nil)
+        var names: [String?] = []
+        for asset in source.assets {
+            await names.append(source.resourceInfo(for: asset).originalFileName)
+        }
+        #expect(names.allSatisfy { $0?.hasSuffix(".jpg") == true || $0?.hasSuffix(".png") == true || $0?.hasSuffix(".JPG") == true })
     }
 
     @Test func ratingWritesTheSidecarAndTheCatalog() async throws {

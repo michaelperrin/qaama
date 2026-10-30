@@ -1,6 +1,7 @@
 import EditorKit
 import RenderEngine
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Export sheet: the preview of the first photo on the left, the file settings on the right. A plain
 /// SwiftUI image for the preview, since a Metal layer shows nothing inside a sheet.
@@ -11,6 +12,9 @@ struct ExportView: View {
 
     @State private var document: ExportDocument?
     @State private var isSaving = false
+    @State private var isChoosingFolder = false
+    /// Set once a batch has run, to show its outcome in place of the settings.
+    @State private var batchWritten: Int?
 
     private enum SizeMode: String, CaseIterable, Identifiable {
         case original, width, height, longEdge
@@ -34,57 +38,36 @@ struct ExportView: View {
                 .frame(width: 440)
             Divider()
             VStack(alignment: .leading, spacing: 0) {
-                Text("Export Photo")
+                Text(model.isBatch ? "Export \(model.items.count) Photos" : "Export Photo")
                     .font(.title2.bold())
                     .padding()
-                Form {
-                    Section("File") {
-                        Picker("Format", selection: $model.settings.format) {
-                            ForEach(ExportFormat.allCases, id: \.self) { Text($0.displayName).tag($0) }
-                        }
-                        if model.settings.format.isLossy {
-                            LabeledContent("Quality") {
-                                HStack {
-                                    Slider(value: $model.settings.quality, in: ExportSettings.qualityRange)
-                                    Text(model.settings.quality, format: .percent.precision(.fractionLength(0)))
-                                        .monospacedDigit()
-                                        .frame(width: 44, alignment: .trailing)
-                                }
-                            }
-                        }
-                    }
-                    Section("Size") {
-                        Picker("Size", selection: sizeMode) {
-                            ForEach(SizeMode.allCases) { Text($0.title).tag($0) }
-                        }
-                        if model.settings.size != .original {
-                            LabeledContent("Pixels") {
-                                TextField("Pixels", value: pixels, format: .number.grouping(.never))
-                                    .multilineTextAlignment(.trailing)
-                                    .frame(width: 90)
-                            }
-                        }
-                        LabeledContent("Output") {
-                            Text(outputDescription)
-                                .foregroundStyle(model.isUpscaling ? .orange : .secondary)
-                                .monospacedDigit()
-                        }
-                    }
+                if let batchWritten {
+                    outcome(written: batchWritten)
+                } else {
+                    settingsForm
                 }
-                .formStyle(.grouped)
                 HStack {
                     if let message = model.errorMessage {
                         Text(message).foregroundStyle(.red).lineLimit(2)
                     }
                     Spacer()
-                    if model.isBusy {
+                    if model.isBusy, model.isBatch {
+                        ProgressView(value: Double(model.completedCount), total: Double(model.items.count))
+                            .frame(width: 160)
+                        Button("Stop") { model.cancel() }
+                    } else if model.isBusy {
                         ProgressView().controlSize(.small)
                     }
-                    Button("Cancel", action: onDone)
-                        .keyboardShortcut(.cancelAction)
-                    Button("Export…") { Task { await export() } }
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(model.isBusy || model.preview == nil)
+                    if batchWritten == nil {
+                        Button("Cancel", action: onDone)
+                            .keyboardShortcut(.cancelAction)
+                        Button("Export…") { Task { await export() } }
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(model.isBusy || model.preview == nil)
+                    } else {
+                        Button("Done", action: onDone)
+                            .keyboardShortcut(.defaultAction)
+                    }
                 }
                 .padding()
             }
@@ -99,6 +82,70 @@ struct ExportView: View {
                 onDone()
             }
         }
+        .fileImporter(isPresented: $isChoosingFolder, allowedContentTypes: [.folder]) { result in
+            if case let .success(folder) = result {
+                Task {
+                    let written = await model.exportAll(to: folder)
+                    if model.failures.isEmpty, written == model.items.count {
+                        onDone()
+                    } else {
+                        batchWritten = written
+                    }
+                }
+            }
+        }
+    }
+
+    private var settingsForm: some View {
+        Form {
+            Section("File") {
+                Picker("Format", selection: $model.settings.format) {
+                    ForEach(ExportFormat.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                }
+                if model.settings.format.isLossy {
+                    LabeledContent("Quality") {
+                        HStack {
+                            Slider(value: $model.settings.quality, in: ExportSettings.qualityRange)
+                            Text(model.settings.quality, format: .percent.precision(.fractionLength(0)))
+                                .monospacedDigit()
+                                .frame(width: 44, alignment: .trailing)
+                        }
+                    }
+                }
+            }
+            Section("Size") {
+                Picker("Size", selection: sizeMode) {
+                    ForEach(SizeMode.allCases) { Text($0.title).tag($0) }
+                }
+                if model.settings.size != .original {
+                    LabeledContent("Pixels") {
+                        TextField("Pixels", value: pixels, format: .number.grouping(.never))
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 90)
+                    }
+                }
+                LabeledContent("Output") {
+                    Text(outputDescription)
+                        .foregroundStyle(model.isUpscaling ? .orange : .secondary)
+                        .monospacedDigit()
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    /// What a batch left behind: how many files, and which photos failed.
+    private func outcome(written: Int) -> some View {
+        List {
+            Text("\(written) of \(model.items.count) photos exported.")
+            ForEach(model.failures) { failure in
+                Label {
+                    Text(failure.name).bold() + Text(": \(failure.message)")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                }
+            }
+        }
     }
 
     private var preview: some View {
@@ -110,6 +157,14 @@ struct ExportView: View {
                     .interpolation(.high)
                     .scaledToFit()
                     .padding(24)
+                    .overlay(alignment: .bottom) {
+                        if model.isBatch {
+                            Text("First of \(model.items.count) photos")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.8))
+                                .padding(.bottom, 6)
+                        }
+                    }
             } else if model.errorMessage == nil {
                 ProgressView("Rendering preview…")
                     .controlSize(.small)
@@ -165,6 +220,10 @@ struct ExportView: View {
     }
 
     private func export() async {
+        if model.isBatch {
+            isChoosingFolder = true
+            return
+        }
         guard let data = await model.encodeFirst() else { return }
         document = ExportDocument(data: data)
         isSaving = true

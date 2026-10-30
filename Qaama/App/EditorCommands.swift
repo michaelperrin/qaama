@@ -14,11 +14,38 @@ extension FocusedValues {
     }
 }
 
-/// Image › Adjustments: copy, paste, create a preset. Act on the focused editor.
+/// What File › Export… does in the key window: export the open photo, or the grid's selection.
+struct ExportAction {
+    let run: () -> Void
+
+    init(_ run: @escaping () -> Void) {
+        self.run = run
+    }
+}
+
+struct FocusedExportKey: FocusedValueKey {
+    typealias Value = ExportAction
+}
+
+extension FocusedValues {
+    var exportAction: ExportAction? {
+        get { self[FocusedExportKey.self] }
+        set { self[FocusedExportKey.self] = newValue }
+    }
+}
+
+/// File › Export…, and Image › Adjustments: copy, paste, create a preset. Act on the focused editor.
 struct EditorCommands: Commands {
     @FocusedValue(\.editor) private var editor
+    @FocusedValue(\.exportAction) private var exportAction
 
     var body: some Commands {
+        CommandGroup(after: .saveItem) {
+            Divider()
+            Button("Export…") { exportAction?.run() }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(exportAction == nil)
+        }
         CommandMenu("Image") {
             Menu("Adjustments") {
                 Button("Copy Adjustments") { editor?.copyAdjustments() }

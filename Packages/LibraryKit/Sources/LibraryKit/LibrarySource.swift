@@ -53,10 +53,13 @@ public nonisolated struct AssetResourceInfo: Hashable, Sendable {
     public var isRAW: Bool
     /// A JPEG shot together with the RAW: a paired file in a folder, an alternate resource in Photos.
     public var hasJPEGTwin: Bool
+    /// The file name the photo was imported or shot under, extension included; exports are named after it.
+    public var originalFileName: String?
 
-    public init(isRAW: Bool, hasJPEGTwin: Bool) {
+    public init(isRAW: Bool, hasJPEGTwin: Bool, originalFileName: String? = nil) {
         self.isRAW = isRAW
         self.hasJPEGTwin = hasJPEGTwin
+        self.originalFileName = originalFileName
     }
 
     public init(_ asset: LibraryAsset) {
