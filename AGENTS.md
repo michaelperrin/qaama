@@ -27,14 +27,15 @@ anyone, human or agent, contributing code. The roadmap lives in `docs/PLAN.md`.
 Qaama/            SwiftUI app: views, glue between packages, AppKit where unavoidable
 Packages/
   EditModel/      EditRecipe: the versioned JSON edit description, pure Swift
+  EditorKit/      EditorModel: editing workflow (open, preview, undo, save, export), testable without views
   ImageIOKit/     ImageIO and Quick Look: headers (EXIF), thumbnails, full-size decoding
   RenderEngine/   Core Image on Metal: decoding (CIRAWFilter for RAW), pipeline, canvas, export
   LibraryKit/     Sources of photos (Photos library, folders), SQLite catalog (GRDB), sidecars, caches
 Experiments/      Throwaway feasibility prototypes, never linked into the app
 ```
 
-- Dependency direction: app → everything; RenderEngine → EditModel; LibraryKit → ImageIOKit
-  and GRDB. LibraryKit never depends on RenderEngine: when it needs rendering (preview
+- Dependency direction: app → everything; EditorKit → LibraryKit + RenderEngine + EditModel;
+  RenderEngine → EditModel; LibraryKit → ImageIOKit and GRDB. LibraryKit never depends on RenderEngine: when it needs rendering (preview
   rebuilds), the app injects a closure (`PreviewRenderer`).
 - The catalog (`docs/catalogue.md`) is an index of the folders and sidecars, rebuildable at any
   time; the sidecar next to the image is the portable truth and wins on conflict. Scans run in
@@ -61,6 +62,7 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
 - `UncheckedSendable` and `nonisolated(unsafe)` are for documented single hand-overs of
   non-Sendable framework objects only; say why in a comment.
 - `@Observable` classes for state shown by SwiftUI. Property observers (`didSet`) are fine.
+  Views stay thin: behavior goes into an observable model in a package (see `EditorModel`).
 - Prefer SwiftUI; AppKit only in the app target and only when SwiftUI has no equivalent.
   A Metal layer shows nothing inside a SwiftUI `.sheet` on macOS 27: keep canvases in windows
   or columns.

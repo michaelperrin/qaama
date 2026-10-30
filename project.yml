@@ -27,6 +27,8 @@ packages:
     path: Packages/LibraryKit
   EditModel:
     path: Packages/EditModel
+  EditorKit:
+    path: Packages/EditorKit
   ImageIOKit:
     path: Packages/ImageIOKit
   RenderEngine:
@@ -41,6 +43,7 @@ targets:
     dependencies:
       - package: LibraryKit
       - package: EditModel
+      - package: EditorKit
       - package: ImageIOKit
       - package: RenderEngine
     info:

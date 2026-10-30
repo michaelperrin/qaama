@@ -6,6 +6,8 @@ struct AdjustmentSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     var unit: String = ""
+    /// Called when a drag ends, so the owner can record one undo step per gesture.
+    var onEditingEnded: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -20,8 +22,15 @@ struct AdjustmentSlider: View {
                 }
             }
             .font(.callout)
-            Slider(value: $value, in: range)
-                .onTapGesture(count: 2) { value = 0 }
+            Slider(value: $value, in: range) { editing in
+                if !editing {
+                    onEditingEnded()
+                }
+            }
+            .onTapGesture(count: 2) {
+                value = 0
+                onEditingEnded()
+            }
         }
     }
 }
