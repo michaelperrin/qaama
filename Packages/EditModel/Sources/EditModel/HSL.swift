@@ -62,64 +62,121 @@ public struct HSL: Codable, Hashable, Sendable {
 
     /// Weight of each range for a hue, in degrees: 1 at the center, falling to 0 at the neighbors.
     static func weights(forHue hue: Double) -> [ColorRange: Double] {
-        let ranges = ColorRange.allCases
+        let array = Evaluator.weights(forHue: hue)
         var result: [ColorRange: Double] = [:]
-        for (index, range) in ranges.enumerated() {
-            let previous = ranges[(index + ranges.count - 1) % ranges.count].hue
-            let next = ranges[(index + 1) % ranges.count].hue
-            let center = range.hue
-            let distance = shortestDistance(from: hue, to: center)
-            let halfWidth = distance >= 0 ? circularGap(from: center, to: next) : circularGap(from: previous, to: center)
-            let t = abs(distance) / max(halfWidth, 1)
-            if t < 1 {
-                // Smoothstep for seamless blends between neighbors.
-                result[range] = 1 - (3 * t * t - 2 * t * t * t)
-            }
+        for (index, range) in ColorRange.allCases.enumerated() where array[index] > 0 {
+            result[range] = array[index]
         }
         return result
     }
 
-    private static func circularGap(from a: Double, to b: Double) -> Double {
-        var gap = b - a
-        while gap < 0 {
-            gap += 360
-        }
-        return gap
-    }
-
-    private static func shortestDistance(from a: Double, to b: Double) -> Double {
-        var distance = a - b
-        while distance > 180 {
-            distance -= 360
-        }
-        while distance < -180 {
-            distance += 360
-        }
-        return distance
-    }
-
     /// Adjusted color for an input in 0…1 RGB (display values).
     public func apply(red: Double, green: Double, blue: Double) -> (red: Double, green: Double, blue: Double) {
-        guard !isIdentity else { return (red, green, blue) }
-        var (h, s, l) = Self.rgbToHSL(red, green, blue)
-        guard s > 0.001 else { return (red, green, blue) }
-        let weights = Self.weights(forHue: h)
-        var hueShift = 0.0, saturationShift = 0.0, luminanceShift = 0.0
-        for (range, weight) in weights {
-            guard let value = values[range] else { continue }
-            hueShift += weight * value.hue * Self.hueSpan
-            saturationShift += weight * value.saturation
-            luminanceShift += weight * value.luminance
+        Evaluator(self).apply(red: red, green: green, blue: blue)
+    }
+
+    /// Precomputed form of an `HSL`, for evaluating tens of thousands of colors (a 3D lookup table)
+    /// without dictionary lookups or allocations per color.
+    public struct Evaluator: Sendable {
+        static let centers: [Double] = ColorRange.allCases.map(\.hue)
+        /// Gap to the next center, going clockwise, for each range.
+        static let gapsToNext: [Double] = centers.indices.map { index in
+            let next = centers[(index + 1) % centers.count]
+            var gap = next - centers[index]
+            if gap < 0 {
+                gap += 360
+            }
+            return gap
         }
-        // Gray-ish pixels respond less: the shifts fade out with the saturation.
-        let influence = min(1, s * 2)
-        h = (h + hueShift * influence).truncatingRemainder(dividingBy: 360)
-        if h < 0 {
-            h += 360
+
+        private let hues: [Double]
+        private let saturations: [Double]
+        private let luminances: [Double]
+        /// Indices of the ranges that carry a value; the others are skipped.
+        private let active: [Int]
+        private let isIdentity: Bool
+
+        public init(_ hsl: HSL) {
+            var hues = [Double](repeating: 0, count: ColorRange.allCases.count)
+            var saturations = hues, luminances = hues
+            for (index, range) in ColorRange.allCases.enumerated() {
+                guard let value = hsl.values[range] else { continue }
+                hues[index] = value.hue * HSL.hueSpan
+                saturations[index] = value.saturation
+                luminances[index] = value.luminance
+            }
+            self.hues = hues
+            self.saturations = saturations
+            self.luminances = luminances
+            active = ColorRange.allCases.indices.filter { hsl.values[ColorRange.allCases[$0]] != nil }
+            isIdentity = hsl.isIdentity
         }
-        s = (s * (1 + saturationShift * influence)).clamped(to: 0 ... 1)
-        l = (l + luminanceShift * influence * 0.25 * (1 - abs(2 * l - 1) * 0.5)).clamped(to: 0 ... 1)
-        return Self.hslToRGB(h, s, l)
+
+        /// Weights of the eight ranges for a hue in degrees, smoothstepped between neighbors.
+        static func weights(forHue hue: Double) -> [Double] {
+            var result = [Double](repeating: 0, count: centers.count)
+            for index in centers.indices {
+                var distance = hue - centers[index]
+                while distance > 180 {
+                    distance -= 360
+                }
+                while distance < -180 {
+                    distance += 360
+                }
+                let halfWidth = distance >= 0 ? gapsToNext[index] : gapsToNext[(index + centers.count - 1) % centers.count]
+                let t = abs(distance) / max(halfWidth, 1)
+                if t < 1 {
+                    result[index] = 1 - (3 * t * t - 2 * t * t * t)
+                }
+            }
+            return result
+        }
+
+        public func apply(red: Double, green: Double, blue: Double) -> (red: Double, green: Double, blue: Double) {
+            guard !isIdentity else { return (red, green, blue) }
+            var (h, s, l) = HSL.rgbToHSL(red, green, blue)
+            guard s > 0.001 else { return (red, green, blue) }
+            // Accumulate the shifts of the ranges that have a value, without building a weights array:
+            // this runs for every entry of a lookup table.
+            var hueShift = 0.0, saturationShift = 0.0, luminanceShift = 0.0
+            let centers = Self.centers, gaps = Self.gapsToNext, count = centers.count
+            for index in active {
+                var distance = h - centers[index]
+                if distance > 180 {
+                    distance -= 360
+                } else if distance < -180 {
+                    distance += 360
+                }
+                let halfWidth = distance >= 0 ? gaps[index] : gaps[(index + count - 1) % count]
+                let t = abs(distance) / halfWidth
+                guard t < 1 else { continue }
+                let weight = 1 - (3 * t * t - 2 * t * t * t)
+                hueShift += weight * hues[index]
+                saturationShift += weight * saturations[index]
+                luminanceShift += weight * luminances[index]
+            }
+            // Gray-ish pixels respond less: the shifts fade out with the saturation.
+            let influence = s < 0.5 ? s * 2 : 1
+            h += hueShift * influence
+            if h >= 360 {
+                h -= 360
+            } else if h < 0 {
+                h += 360
+            }
+            s *= 1 + saturationShift * influence
+            if s > 1 {
+                s = 1
+            } else if s < 0 {
+                s = 0
+            }
+            l += luminanceShift * influence * 0.25 * (1 - abs(2 * l - 1) * 0.5)
+            if l > 1 {
+                l = 1
+            } else if l < 0 {
+                l = 0
+            }
+            return HSL.hslToRGB(h, s, l)
+        }
     }
 
     static func rgbToHSL(_ r: Double, _ g: Double, _ b: Double) -> (Double, Double, Double) {

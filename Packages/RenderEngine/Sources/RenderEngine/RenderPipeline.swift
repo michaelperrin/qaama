@@ -129,8 +129,7 @@ public nonisolated enum RenderPipeline {
         }
 
         if let hsl = adjustments.hsl, !hsl.isIdentity {
-            let cube = ColorCube.data { hslTransform(hsl, $0, $1, $2) }
-            output = ColorCube.apply(cube, to: output)
+            output = ColorCube.apply(ColorCube.data(for: hsl), to: output)
         }
 
         if let monochrome = adjustments.monochrome {
@@ -160,11 +159,6 @@ public nonisolated enum RenderPipeline {
             output = filter.outputImage ?? output
         }
         return output
-    }
-
-    /// Selective color evaluated per cube entry.
-    private static func hslTransform(_ hsl: HSL, _ r: Double, _ g: Double, _ b: Double) -> (red: Double, green: Double, blue: Double) {
-        hsl.apply(red: r, green: g, blue: b)
     }
 
     /// Film-like grain: position-based noise (so preview and export match), reduced to gray, centered on

@@ -86,6 +86,11 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   for failures, `.debug` for per-frame noise. Mark non-sensitive interpolations
   `privacy: .public` or they show as `<private>`.
 - Measure before optimizing: log durations with `ContinuousClock` and report them in the plan.
+- Anything that runs per slider move must stay well under a frame (16 ms): no per-pixel or
+  per-entry allocations, dictionaries or generic helpers in hot loops (precompute into arrays,
+  as `HSL.Evaluator` does), cache derived data keyed by the setting that produced it (as
+  `ColorCube.data(for:)` does), and remember the app is tested in Debug builds, which are
+  several times slower than Release. Measure with a temporary test before and after.
 
 ## Tests
 

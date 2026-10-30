@@ -2,6 +2,7 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import EditModel
 import Foundation
+import Synchronization
 
 /// Builds 3D lookup tables for per-color adjustments that Core Image has no filter for, and applies
 /// them with CIColorCubeWithColorSpace in sRGB.
@@ -28,6 +29,25 @@ nonisolated enum ColorCube {
         }
         return floats.withUnsafeBufferPointer { Data(buffer: $0) }
     }
+
+    /// Cube for a selective color setting, kept for the last few settings: moving another slider or
+    /// undoing shouldn't rebuild it, and the preview, the histogram and the export share it.
+    static func data(for hsl: HSL) -> Data {
+        if let cached = cache.withLock({ $0.first { $0.key == hsl }?.data }) {
+            return cached
+        }
+        let evaluator = HSL.Evaluator(hsl)
+        let built = data { evaluator.apply(red: $0, green: $1, blue: $2) }
+        cache.withLock { entries in
+            entries.insert((hsl, built), at: 0)
+            if entries.count > 4 {
+                entries.removeLast()
+            }
+        }
+        return built
+    }
+
+    private static let cache = Mutex<[(key: HSL, data: Data)]>([])
 
     static func apply(_ cube: Data, dimension: Int = dimension, to image: CIImage) -> CIImage {
         let filter = CIFilter.colorCubeWithColorSpace()
