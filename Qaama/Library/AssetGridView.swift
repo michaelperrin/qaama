@@ -93,20 +93,25 @@ struct AssetGridView: View {
     }
 
     /// The photos a context menu acts on: the whole selection when the clicked photo is part of it.
+    /// Resolved only when the action runs: SwiftUI may build menu content for every visible tile, and
+    /// walking a 74,000-photo collection there froze the grid on each click.
     private func targets(for asset: LibraryAsset) -> [LibraryAsset] {
-        guard selection.contains(asset.id), selection.count > 1 else { return [asset] }
-        return source.assets.filter { selection.contains($0.id) }
+        guard actsOnSelection(asset) else { return [asset] }
+        return selection.compactMap { source.asset(id: $0) }
+    }
+
+    private func actsOnSelection(_ asset: LibraryAsset) -> Bool {
+        selection.contains(asset.id) && selection.count > 1
     }
 
     @ViewBuilder
     private func contextMenu(for asset: LibraryAsset) -> some View {
-        let targets = targets(for: asset)
         Button("Open in Editor") { onOpen(asset.id) }
         Divider()
         Button("Copy Adjustments") { run { try await BatchEditing.copyAdjustments(of: asset, from: source) } }
             .disabled(!asset.hasEdit)
-        Button(targets.count > 1 ? "Paste Adjustments to \(targets.count) Photos" : "Paste Adjustments") {
-            run { try await BatchEditing.pasteAdjustments(to: targets, in: source, undoManager: undoManager) }
+        Button(actsOnSelection(asset) ? "Paste Adjustments to \(selection.count) Photos" : "Paste Adjustments") {
+            run { try await BatchEditing.pasteAdjustments(to: targets(for: asset), in: source, undoManager: undoManager) }
         }
         .disabled(AdjustmentsClipboard.shared.adjustments == nil)
     }
