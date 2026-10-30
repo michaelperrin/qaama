@@ -353,9 +353,14 @@ Interface
       Masques, étape 1 faite le 30/10/2026 (`docs/masques.md`) : modèle en composants,
       dégradés linéaire et radial, plages de luminance et de couleur, fusion par masque,
       géométrie en deux temps, calques dans l'inspecteur avec menu Add/Subtract/Rename/
-      Duplicate/Invert/Delete, curseurs par calque, superposition rouge. Reste : sujet,
-      arrière-plan, personnes (Vision), ciel et scène (DETR embarqué), pinceau, poignées des
-      dégradés sur le canevas.
+      Duplicate/Invert/Delete, curseurs par calque, superposition rouge. Étapes 2 à 4 le même jour :
+      sujet, arrière-plan, personnes (Vision), ciel et seize classes de scène (DETR embarqué,
+      affinage Vision), pinceau et poignées des dégradés sur le canevas (une poignée, une
+      fonction : largeur, hauteur et rotation séparées). Reste : pipette de luminance et de
+      couleur, choix d'une instance de sujet au clic, masques en vignette dans la liste des
+      calques. Retour de Michaël le 30/10/2026 : le pinceau est « un peu lent au dessin, mais
+      acceptable » (chaque point relance le rendu complet ; à mesurer, puis ne retracer que le
+      masque pendant le trait) et l'UI/UX des masques sera revue plus tard, sans priorité.
 - [ ] Super‑résolution et débruitage via modèles open source convertis en Core ML.
 - [ ] Outil de retouche/suppression d'objets (approche simple d'abord : clonage,
       inpainting basique).

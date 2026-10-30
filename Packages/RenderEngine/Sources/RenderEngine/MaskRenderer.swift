@@ -44,9 +44,11 @@ public nonisolated enum MaskRenderer {
     static func render(_ kind: MaskKind, reference: CIImage, resolved: CIImage?) -> CIImage? {
         let extent = reference.extent
         switch kind {
-        case .subject, .background, .people, .sky, .scene, .brush:
-            // Model-based (and painted) components arrive ready; the brush gets its own renderer later.
+        case .subject, .background, .people, .sky, .scene:
+            // Model-based components arrive precomputed.
             return resolved.map { $0.cropped(to: extent) }
+        case let .brush(brush):
+            return BrushRenderer.render(brush, extent: extent)
         case let .linearGradient(gradient):
             return linearGradient(gradient, extent: extent)
         case let .radialGradient(gradient):

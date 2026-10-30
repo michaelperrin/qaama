@@ -231,6 +231,34 @@ struct EditorModelTests {
         #expect(model.recipe.layers.count == 1, "the global layer can't be removed")
     }
 
+    @Test func brushStrokesGoIntoTheSelectedLayer() {
+        let model = EditorModel(assetID: "sample-0", source: SampleLibrarySource(count: 1), renderer: nil)
+        model.startBrush()
+        #expect(model.recipe.layers.count == 2 && model.brushTool != nil && model.isEditingMask)
+        model.beginStroke(at: UnitPoint2D(x: 0.1, y: 0.1))
+        model.extendStroke(to: UnitPoint2D(x: 0.2, y: 0.2))
+        model.extendStroke(to: UnitPoint2D(x: 0.3, y: 0.3))
+        model.endStroke()
+        guard case let .brush(brush)? = model.recipe.layers[1].mask?.components.first?.kind else {
+            Issue.record("no brush component")
+            return
+        }
+        #expect(brush.strokes.count == 1 && brush.strokes[0].points.count == 3)
+
+        model.brushTool?.erases = true
+        model.beginStroke(at: UnitPoint2D(x: 0.5, y: 0.5))
+        model.endStroke()
+        guard case let .brush(brush2)? = model.recipe.layers[1].mask?.components.first?.kind else { return }
+        #expect(brush2.strokes.count == 2 && brush2.strokes[1].erases)
+
+        // Cropped photo: a displayed point maps into the uncropped reference frame and back.
+        model.recipe.geometry = Geometry(crop: UnitRect(x: 0.5, y: 0, width: 0.5, height: 1))
+        let reference = model.referencePoint(fromDisplayed: UnitPoint2D(x: 0.5, y: 0.5))
+        #expect(abs(reference.x - 0.75) < 0.0001 && reference.y == 0.5)
+        let back = model.displayedPoint(fromReference: reference)
+        #expect(abs(back.x - 0.5) < 0.0001)
+    }
+
     @Test func unsupportedRecipeOpensTheOriginal() async throws {
         let url = try makeImage()
         defer { try? FileManager.default.removeItem(at: url) }

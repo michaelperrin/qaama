@@ -289,6 +289,24 @@ struct MaskRendererTests {
         #expect(gray(soft, x: 100, y: 74) > 0.03 && gray(soft, x: 100, y: 74) < 0.9, "feathering spreads the edge")
     }
 
+    @Test func brushStrokesPaintAndErase() throws {
+        var brush = BrushMask()
+        brush.strokes.append(BrushMask.Stroke(points: [UnitPoint2D(x: 0.1, y: 0.5), UnitPoint2D(x: 0.4, y: 0.5)], radius: 0.05, hardness: 1))
+        let painted = try #require(MaskRenderer.render(Mask(.brush(brush)), reference: flat))
+        #expect(gray(painted, x: 50, y: 50) > 0.9, "on the stroke")
+        #expect(gray(painted, x: 150, y: 50) < 0.05, "away from it")
+        #expect(gray(painted, x: 50, y: 5) < 0.05, "outside the brush radius")
+
+        brush.strokes.append(BrushMask.Stroke(points: [UnitPoint2D(x: 0.25, y: 0.5)], radius: 0.03, hardness: 1, erases: true))
+        let erased = try #require(MaskRenderer.render(Mask(.brush(brush)), reference: flat))
+        #expect(gray(erased, x: 50, y: 50) < 0.05, "the eraser clears the middle of the stroke")
+        #expect(gray(erased, x: 25, y: 50) > 0.9, "the rest of the stroke stays")
+
+        let soft = BrushMask(strokes: [BrushMask.Stroke(points: [UnitPoint2D(x: 0.5, y: 0.5)], radius: 0.1, hardness: 0)])
+        let softMask = try #require(MaskRenderer.render(Mask(.brush(soft)), reference: flat))
+        #expect(gray(softMask, x: 100, y: 50) > 0.6 && gray(softMask, x: 118, y: 50) < gray(softMask, x: 100, y: 50), "a soft brush fades outward")
+    }
+
     @Test func maskedLayerChangesOnlyItsRegionAndSurvivesCropping() {
         var recipe = EditRecipe()
         var layer = AdjustmentLayer(mask: Mask(.linearGradient(LinearGradientMask(start: UnitPoint2D(x: 0.5, y: 0.3), end: UnitPoint2D(x: 0.5, y: 0.31)))))

@@ -34,6 +34,8 @@ struct MasksSection: View {
                         Button(Self.availableKinds[index].title) { model.addMaskLayer(Self.availableKinds[index].kind) }
                     }
                     sceneMenu { model.addMaskLayer(.scene(classes: [$0])) }
+                    Divider()
+                    Button("Brush") { model.startBrush() }
                 }
                 .disabled(!model.isOpen)
                 Spacer()
@@ -48,6 +50,9 @@ struct MasksSection: View {
             .controlSize(.small)
             if let layer = model.selectedLayer, let mask = layer.mask {
                 maskControls(layer: layer, mask: mask)
+                if model.brushTool != nil {
+                    brushControls
+                }
             }
         } header: {
             Text("Masks")
@@ -117,12 +122,22 @@ struct MasksSection: View {
                 Button(Self.availableKinds[index].title) { model.addComponent(Self.availableKinds[index].kind, operation: .add, toLayer: layer.id) }
             }
             sceneMenu { model.addComponent(.scene(classes: [$0]), operation: .add, toLayer: layer.id) }
+            Divider()
+            Button("Brush") {
+                model.selectedLayerID = layer.id
+                model.startBrush(operation: .add)
+            }
         }
         Menu("Subtract") {
             ForEach(Self.availableKinds.indices, id: \.self) { index in
                 Button(Self.availableKinds[index].title) { model.addComponent(Self.availableKinds[index].kind, operation: .subtract, toLayer: layer.id) }
             }
             sceneMenu { model.addComponent(.scene(classes: [$0]), operation: .subtract, toLayer: layer.id) }
+            Divider()
+            Button("Brush") {
+                model.selectedLayerID = layer.id
+                model.startBrush(operation: .subtract)
+            }
         }
         Divider()
         Button("Rename…") {
@@ -137,6 +152,31 @@ struct MasksSection: View {
         }
         Divider()
         Button("Delete", role: .destructive) { model.removeLayer(layer.id) }
+    }
+
+    // MARK: - Brush
+
+    @ViewBuilder
+    private var brushControls: some View {
+        Divider()
+        HStack {
+            Label("Brush", systemImage: "paintbrush.pointed")
+                .font(.callout.weight(.semibold))
+            Spacer()
+            Toggle("Erase", isOn: Binding(get: { model.brushTool?.erases ?? false }, set: { model.brushTool?.erases = $0 }))
+                .toggleStyle(.button)
+                .controlSize(.small)
+            Button("Done") { model.brushTool = nil }
+                .controlSize(.small)
+        }
+        AdjustmentSlider(title: "Size", value: Binding(get: { model.brushTool?.radius ?? 0.03 }, set: { model.brushTool?.radius = $0 }),
+                         range: 0.002 ... 0.25)
+        AdjustmentSlider(title: "Hardness", value: Binding(get: { model.brushTool?.hardness ?? 0.5 }, set: { model.brushTool?.hardness = $0 }),
+                         range: 0 ... 1)
+        // Keyboard: [ and ] change the size, E toggles erasing.
+        Button("") { model.brushTool?.radius = max(0.002, (model.brushTool?.radius ?? 0.03) / 1.25) }.keyboardShortcut("[", modifiers: []).hidden()
+        Button("") { model.brushTool?.radius = min(0.25, (model.brushTool?.radius ?? 0.03) * 1.25) }.keyboardShortcut("]", modifiers: []).hidden()
+        Button("") { model.brushTool?.erases.toggle() }.keyboardShortcut("e", modifiers: []).hidden()
     }
 
     // MARK: - Selected mask
@@ -349,6 +389,19 @@ struct MasksSection: View {
                 }
                 return kind
             }
+        case let .brush(brush):
+            HStack {
+                Text("\(brush.strokes.count) strokes").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button(model.brushTool?.componentID == component.id ? "Painting…" : "Paint") {
+                    model.selectedLayerID = layer.id
+                    model.brushTool = EditorModel.BrushTool(componentID: component.id)
+                    model.showsMaskOverlay = true
+                }
+                .controlSize(.small)
+                .disabled(model.brushTool?.componentID == component.id)
+            }
+            .padding(.leading, 16)
         default:
             EmptyView()
         }

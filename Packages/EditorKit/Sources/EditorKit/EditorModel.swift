@@ -53,6 +53,91 @@ public final class EditorModel {
         didSet { renderPreview() }
     }
 
+    /// The brush being painted with, when a brush component is active on the selected layer.
+    public struct BrushTool: Hashable, Sendable {
+        public var componentID: UUID
+        /// Radius as a fraction of the reference image's long edge.
+        public var radius: Double = 0.03
+        public var hardness: Double = 0.5
+        public var erases = false
+
+        public init(componentID: UUID, radius: Double = 0.03, hardness: Double = 0.5, erases: Bool = false) {
+            self.componentID = componentID
+            self.radius = radius
+            self.hardness = hardness
+            self.erases = erases
+        }
+    }
+
+    public var brushTool: BrushTool?
+    private var currentStroke: BrushMask.Stroke?
+
+    /// True while a masked layer is selected and shown: canvas gestures go to the mask, not to zoom/pan.
+    public var isEditingMask: Bool {
+        selectedLayer != nil && showsMaskOverlay
+    }
+
+    /// Adds a brush component to the selected layer (or a new layer) and starts painting with it.
+    public func startBrush(operation: MaskComponent.Operation = .add) {
+        let component = MaskComponent(operation: operation, kind: .brush(BrushMask()))
+        if let layer = selectedLayer {
+            updateMask(layer.id) { $0.components.append(component) }
+        } else {
+            let layer = AdjustmentLayer(mask: Mask(components: [component]))
+            recipe.layers.append(layer)
+            selectedLayerID = layer.id
+        }
+        commitChange()
+        brushTool = BrushTool(componentID: component.id)
+        showsMaskOverlay = true
+    }
+
+    /// Paints with the brush tool; `point` is in the reference frame's unit coordinates.
+    public func beginStroke(at point: UnitPoint2D) {
+        guard let tool = brushTool else { return }
+        currentStroke = BrushMask.Stroke(points: [point], radius: tool.radius, hardness: tool.hardness, opacity: 1, erases: tool.erases)
+        appendCurrentStroke(replacingLast: false)
+    }
+
+    public func extendStroke(to point: UnitPoint2D) {
+        guard currentStroke != nil else { return }
+        currentStroke?.points.append(point)
+        appendCurrentStroke(replacingLast: true)
+    }
+
+    public func endStroke() {
+        guard currentStroke != nil else { return }
+        currentStroke = nil
+        commitChange()
+    }
+
+    private func appendCurrentStroke(replacingLast: Bool) {
+        guard let tool = brushTool, let stroke = currentStroke, let layer = selectedLayer else { return }
+        updateMask(layer.id) { mask in
+            guard let index = mask.components.firstIndex(where: { $0.id == tool.componentID }),
+                  case var .brush(brush) = mask.components[index].kind else { return }
+            if replacingLast, !brush.strokes.isEmpty {
+                brush.strokes.removeLast()
+            }
+            brush.strokes.append(stroke)
+            mask.components[index].kind = .brush(brush)
+        }
+    }
+
+    // MARK: - Reference frame
+
+    /// Maps a point of the displayed image (unit, origin top-left) to the mask reference frame, which
+    /// is the straightened image before cropping. While cropping, the displayed image is the frame.
+    public func referencePoint(fromDisplayed point: UnitPoint2D) -> UnitPoint2D {
+        guard !isCropping, let crop = recipe.geometry?.crop, !crop.isFull else { return point }
+        return UnitPoint2D(x: crop.x + point.x * crop.width, y: crop.y + point.y * crop.height)
+    }
+
+    public func displayedPoint(fromReference point: UnitPoint2D) -> UnitPoint2D {
+        guard !isCropping, let crop = recipe.geometry?.crop, !crop.isFull else { return point }
+        return UnitPoint2D(x: (point.x - crop.x) / crop.width, y: (point.y - crop.y) / crop.height)
+    }
+
     /// Precomputed images of model-based mask components (subject, sky…), by component id.
     public private(set) var maskImages: [UUID: CIImage] = [:]
     /// Number of model-based components being computed; the UI shows a spinner while it is non-zero.
@@ -100,6 +185,7 @@ public final class EditorModel {
         recipe.layers.remove(at: index)
         if selectedLayerID == id {
             selectedLayerID = nil
+            brushTool = nil
         }
         commitChange()
     }
