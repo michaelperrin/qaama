@@ -20,6 +20,8 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     /// True once the catalog has delivered the items (even if a scan is still running).
     public private(set) var isLoaded = false
     public private(set) var isScanning = false
+    /// Directory tree of the folder, refreshed after each scan.
+    public private(set) var subfolders: [FolderNode] = []
     /// Message to show when the folder could not be listed.
     public private(set) var loadError: String?
 
@@ -119,6 +121,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
             _ = try await FolderIndexer(store: store).index(folder: folder, at: folderURL)
             loadError = nil
             lastLoadDuration = clock.now - start
+            subfolders = try await FolderNode.tree(fromFilePaths: store.relativePaths(inFolder: id))
             try await MetadataIndexer(store: store).run(folder: folder, at: folderURL) { [weak self] in
                 await self?.currentPrioritized() ?? []
             }

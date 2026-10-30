@@ -72,6 +72,7 @@ struct LibraryQueryToolbar: ToolbarContent {
                         var cleared = LibraryQuery()
                         cleared.sort = source.query.sort
                         cleared.ascending = source.query.ascending
+                        cleared.folderPath = source.query.folderPath
                         source.query = cleared
                     }
                 }

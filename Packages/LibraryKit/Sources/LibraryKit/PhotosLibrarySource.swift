@@ -18,7 +18,7 @@ public final class PhotosLibrarySource: LibrarySource {
     public private(set) var lastLoadDuration: Duration?
 
     public var displayName: String {
-        "Photos"
+        album?.title ?? "Photos"
     }
 
     public var capabilities: Set<LibraryCapability> {
@@ -47,7 +47,12 @@ public final class PhotosLibrarySource: LibrarySource {
     private var editingInputs: [String: PHContentEditingInput] = [:]
     private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "PhotosLibrarySource")
 
-    public init() {}
+    /// The album this source shows, or nil for the whole library.
+    public let album: PhotosAlbum?
+
+    public init(album: PhotosAlbum? = nil) {
+        self.album = album
+    }
 
     /// Requests access if needed, then loads the photos, newest first, and starts tracking changes.
     public func load() async {
@@ -62,7 +67,7 @@ public final class PhotosLibrarySource: LibrarySource {
         probeNativeQueries()
         let clock = ContinuousClock()
         let start = clock.now
-        apply(fetchResult: PHAsset.fetchAssets(with: fetchOptions()))
+        apply(fetchResult: fetchAssets())
         lastLoadDuration = clock.now - start
         logger.notice("Fetched \(self.assets.count) photos in \(self.lastLoadDuration!.formatted(.units(allowed: [.milliseconds])), privacy: .public)")
 
@@ -230,6 +235,14 @@ public final class PhotosLibrarySource: LibrarySource {
         logger.notice("PhotoKit native queries: rating filter \(supported.contains(.rating)), rating sort \(supported.contains(.sortByRating))")
     }
 
+    /// All photos, or those of the album when this source is scoped to one.
+    private func fetchAssets() -> PHFetchResult<PHAsset> {
+        if let album, let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [album.id], options: nil).firstObject {
+            return PHAsset.fetchAssets(in: collection, options: fetchOptions())
+        }
+        return PHAsset.fetchAssets(with: fetchOptions())
+    }
+
     /// Translates the query into PhotoKit's own sorting and predicates.
     private func fetchOptions() -> PHFetchOptions {
         let options = PHFetchOptions()
@@ -259,7 +272,7 @@ public final class PhotosLibrarySource: LibrarySource {
         probeNativeQueries()
         let clock = ContinuousClock()
         let start = clock.now
-        apply(fetchResult: PHAsset.fetchAssets(with: fetchOptions()))
+        apply(fetchResult: fetchAssets())
         logger.notice("Refetched \(self.assets.count) photos in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
     }
 

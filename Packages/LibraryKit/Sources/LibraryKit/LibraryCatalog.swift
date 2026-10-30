@@ -7,7 +7,9 @@ import OSLog
 @Observable
 public final class LibraryCatalog {
     public let photos = PhotosLibrarySource()
+    public let photosAlbums = PhotosAlbumList()
     public private(set) var folders: [FolderLibrarySource] = []
+    private var albumSources: [String: PhotosLibrarySource] = [:]
     public private(set) var isLoaded = false
 
     /// Renders full-size edits for sources that cache previews. Set once by the app.
@@ -73,6 +75,16 @@ public final class LibraryCatalog {
     public func removeFolder(_ folder: FolderLibrarySource) async throws {
         try await store.deleteFolder(id: folder.id)
         folders.removeAll { $0 === folder }
+    }
+
+    /// A source scoped to a Photos album, created on first use and kept for the session.
+    public func photosSource(for album: PhotosAlbum) -> PhotosLibrarySource {
+        if let existing = albumSources[album.id] {
+            return existing
+        }
+        let source = PhotosLibrarySource(album: album)
+        albumSources[album.id] = source
+        return source
     }
 
     private func makeSource(folder: CatalogFolder, url: URL) -> FolderLibrarySource {

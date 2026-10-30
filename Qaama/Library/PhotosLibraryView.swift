@@ -4,6 +4,8 @@ import SwiftUI
 /// Apple Photos library: handles the access request, then shows the grid.
 struct PhotosLibraryView: View {
     let source: PhotosLibrarySource
+    /// Album list to load once access is granted; the sidebar shows it.
+    var albums: PhotosAlbumList?
 
     var body: some View {
         Group {
@@ -16,7 +18,12 @@ struct PhotosLibraryView: View {
                 LibraryContentView(source: source)
             }
         }
-        .task { await source.load() }
+        .task {
+            await source.load()
+            if source.access == .authorized || source.access == .limited {
+                albums?.load()
+            }
+        }
     }
 
     private var accessDeniedView: some View {

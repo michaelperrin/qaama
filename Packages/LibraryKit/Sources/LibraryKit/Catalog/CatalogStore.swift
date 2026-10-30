@@ -192,6 +192,13 @@ public final nonisolated class CatalogStore: Sendable {
         }
     }
 
+    /// Relative paths of every file in the folder, for building the directory tree.
+    public func relativePaths(inFolder folderID: UUID) async throws -> [String] {
+        try await writer.read { db in
+            try String.fetchAll(db, sql: "SELECT relativePath FROM item WHERE folderID = ? AND isMissing = 0", arguments: [folderID])
+        }
+    }
+
     // MARK: - Queries
 
     /// Builds the SQL of a `LibraryQuery` on a folder. Hand-written so the full-text join and the
@@ -206,6 +213,12 @@ public final nonisolated class CatalogStore: Sendable {
             sql += " JOIN item_fts ON item_fts.rowid = item.rowid"
             clauses.append("item_fts MATCH ?")
             arguments += [pattern]
+        }
+        if let folderPath = query.folderPath, !folderPath.isEmpty {
+            clauses.append("item.relativePath LIKE ? ESCAPE '\\'")
+            let escaped = folderPath.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_")
+            arguments += ["\(escaped)/%"]
         }
         if query.minimumRating > 0 {
             clauses.append("item.rating >= ?")

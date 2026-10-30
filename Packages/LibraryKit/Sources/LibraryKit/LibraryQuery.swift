@@ -31,6 +31,9 @@ public nonisolated struct LibraryQuery: Hashable, Sendable {
     public var favoritesOnly = false
     /// Matches file names and keywords.
     public var searchText = ""
+    /// Restricts a folder source to one of its subdirectories (relative path); nil means the whole folder.
+    /// A scope, not a filter: `isUnfiltered` ignores it and "clear filters" keeps it.
+    public var folderPath: String?
 
     public init() {}
 

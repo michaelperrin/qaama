@@ -5,7 +5,10 @@ import UniformTypeIdentifiers
 /// Which library the sidebar shows in the detail column.
 enum LibrarySelection: Hashable {
     case photos
+    case photosAlbum(PhotosAlbum.ID)
     case folder(FolderLibrarySource.ID)
+    /// A subdirectory of a folder, by relative path.
+    case subfolder(FolderLibrarySource.ID, String)
 }
 
 /// Sidebar of libraries on the left, the selected library's grid on the right.
@@ -41,17 +44,31 @@ struct MainWindowView: View {
     private var detail: some View {
         switch selection {
         case .photos:
-            PhotosLibraryView(source: catalog.photos)
-        case let .folder(id):
-            if let folder = catalog.folders.first(where: { $0.id == id }) {
-                FolderLibraryView(source: folder)
-                    .id(folder.id)
+            PhotosLibraryView(source: catalog.photos, albums: catalog.photosAlbums)
+        case let .photosAlbum(id):
+            if let album = catalog.photosAlbums.albums.first(where: { $0.id == id }) {
+                PhotosLibraryView(source: catalog.photosSource(for: album))
+                    .id(album.id)
             } else {
-                ContentUnavailableView("Folder Removed", systemImage: "folder.badge.minus")
+                ContentUnavailableView("Album Removed", systemImage: "rectangle.stack.badge.minus")
             }
+        case let .folder(id):
+            folderView(id: id, path: nil)
+        case let .subfolder(id, path):
+            folderView(id: id, path: path)
         case nil:
             ContentUnavailableView("Select a Library", systemImage: "sidebar.left",
                                    description: Text("Choose Photos or a folder in the sidebar."))
+        }
+    }
+
+    @ViewBuilder
+    private func folderView(id: FolderLibrarySource.ID, path: String?) -> some View {
+        if let folder = catalog.folders.first(where: { $0.id == id }) {
+            FolderLibraryView(source: folder, path: path)
+                .id(folder.id)
+        } else {
+            ContentUnavailableView("Folder Removed", systemImage: "folder.badge.minus")
         }
     }
 
