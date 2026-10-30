@@ -69,6 +69,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: fr.michaelperrin.qaama
         GENERATE_INFOPLIST_FILE: NO
         COMBINE_HIDPI_IMAGES: YES
+        # The model is loaded by URL from RenderEngine; no generated Swift class needed.
+        COREML_CODEGEN_LANGUAGE: None
 
 schemes:
   Qaama:

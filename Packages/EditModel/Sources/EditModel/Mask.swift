@@ -85,7 +85,7 @@ public enum MaskKind: Codable, Hashable, Sendable {
         case .background: "Background"
         case .people: "People"
         case .sky: "Sky"
-        case let .scene(classes): classes.count == 1 ? classes[0].capitalized : "Scene"
+        case let .scene(classes): classes.count == 1 ? SceneClasses.displayName(for: classes[0]) : "Scene"
         case .luminosity: "Luminance Range"
         case .color: "Color Range"
         case .linearGradient: "Linear Gradient"

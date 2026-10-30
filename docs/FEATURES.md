@@ -78,6 +78,9 @@ can feed a website one day. Dates are when the feature landed.
   overlay on the canvas (O) (2026-10-30).
 - Subject, background and people masks computed on device by Vision, in the background, scaled
   from a 1024 px analysis (2026-10-30).
+- Sky and scene masks (grass, trees, mountains, sea, river, water, sand, snow, rocks, ground,
+  road, pavement, buildings, houses, walls, floor) from a bundled segmentation model (Apple's
+  DETR, Apache 2.0), with edges refined on device by Vision (2026-10-30).
 
 ### Information
 - Histogram of the current edit with clipping indicators (2026-10-30).

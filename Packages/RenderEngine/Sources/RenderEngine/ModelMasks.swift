@@ -3,6 +3,7 @@ import CoreImage
 import EditModel
 import Foundation
 import OSLog
+import Synchronization
 import Vision
 
 /// Computes the mask components that need a model: subject, background and people through Vision.
@@ -12,6 +13,12 @@ import Vision
 /// so the cost doesn't grow with the photo. Each call runs on the Neural Engine, off the main actor.
 public nonisolated enum ModelMasks {
     static let analysisSize: CGFloat = 1024
+
+    /// Points the sky and scene masks at the compiled segmentation model (set once by the app).
+    public static func useSceneModel(at url: URL?) {
+        SceneSegmenter.modelURL.withLock { $0 = url }
+    }
+
     private static let context = CIContext(options: [.cacheIntermediates: false, .name: "Qaama masks"])
     private static let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "ModelMasks")
 
@@ -45,8 +52,10 @@ public nonisolated enum ModelMasks {
             request.qualityLevel = .accurate
             let observation = try await handler.perform(request)
             mask = try CIImage(cgImage: observation.cgImage)
-        case .sky, .scene:
-            throw ResolveError.unavailable(kind.displayName)
+        case .sky:
+            mask = try await SceneSegmenter.mask(for: [SceneClasses.sky.label], analysis: analysis, handler: handler)
+        case let .scene(classes):
+            mask = try await SceneSegmenter.mask(for: classes, analysis: analysis, handler: handler)
         default:
             return nil
         }
@@ -100,6 +109,10 @@ public nonisolated enum ModelMasks {
         let maskExtent = mask.extent
         guard maskExtent.width > 0, maskExtent.height > 0 else { return mask }
         let transform = CGAffineTransform(scaleX: extent.width / maskExtent.width, y: extent.height / maskExtent.height)
-        return mask.movedToOrigin().transformed(by: transform).cropped(to: extent)
+        // Models leave their outermost rows and columns soft: trim them and replicate the next ones
+        // outward, so the mask reaches the image border without a faint unselected line.
+        let origin = mask.movedToOrigin()
+        let trimmed = origin.cropped(to: origin.extent.insetBy(dx: 2, dy: 2)).clampedToExtent().cropped(to: origin.extent)
+        return trimmed.transformed(by: transform).clampedToExtent().cropped(to: extent)
     }
 }

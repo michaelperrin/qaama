@@ -106,6 +106,11 @@ affine les bords. Deux questions ouvertes pour Michaël :
 2. Le même DETR donne aussi mer, herbe, route, bâtiment, neige, montagne : proposer plus tard
    un masque « Scène » avec choix de la classe.
 
+Constat du 30/10/2026 : `GenerateIterativeSegmentationRequest` échoue (statut 14) dès qu'on lui
+ajoute des points inclus ou exclus en plus du point de départ ; avec le seul point de départ,
+choisi bien à l'intérieur du masque DETR, le contour est propre (identique au prototype). Le
+masque grossier agrandi et flouté reste le secours.
+
 ## 6. Interface
 
 Section **Masks** de l'inspecteur, au-dessus des réglages :

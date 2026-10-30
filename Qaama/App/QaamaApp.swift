@@ -18,6 +18,8 @@ struct QaamaApp: App {
             Logger(subsystem: "fr.michaelperrin.qaama", category: "App").error("Catalog unavailable: \(error.localizedDescription, privacy: .public)")
             store = try! CatalogStore.inMemory()
         }
+        // The DETR segmentation model ships in the bundle (Apache 2.0, see Resources/Models/README.md).
+        ModelMasks.useSceneModel(at: Bundle.main.url(forResource: "DETRResnet50SemanticSegmentationF16", withExtension: "mlmodelc"))
         let catalog = LibraryCatalog(store: store)
         catalog.previewRenderer = { input, recipeData in
             let recipe = try EditRecipe(jsonData: recipeData)

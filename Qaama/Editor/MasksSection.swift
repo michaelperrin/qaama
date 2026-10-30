@@ -14,6 +14,7 @@ struct MasksSection: View {
         ("Select Subject", .subject(instances: nil)),
         ("Select Background", .background),
         ("Select People", .people),
+        ("Select Sky", .sky),
         ("Linear Gradient", .linearGradient(LinearGradientMask())),
         ("Radial Gradient", .radialGradient(RadialGradientMask())),
         ("Luminance Range", .luminosity(LuminosityRange(low: 0.5, high: 1, softness: 0.2))),
@@ -32,6 +33,7 @@ struct MasksSection: View {
                     ForEach(Self.availableKinds.indices, id: \.self) { index in
                         Button(Self.availableKinds[index].title) { model.addMaskLayer(Self.availableKinds[index].kind) }
                     }
+                    sceneMenu { model.addMaskLayer(.scene(classes: [$0])) }
                 }
                 .disabled(!model.isOpen)
                 Spacer()
@@ -64,6 +66,15 @@ struct MasksSection: View {
                 renamingLayerID = nil
             }
             Button("Cancel", role: .cancel) { renamingLayerID = nil }
+        }
+    }
+
+    /// Scene classes the segmentation model can isolate.
+    private func sceneMenu(_ action: @escaping (String) -> Void) -> some View {
+        Menu("Scene") {
+            ForEach(SceneClasses.all, id: \.label) { entry in
+                Button(entry.displayName) { action(entry.label) }
+            }
         }
     }
 
@@ -105,11 +116,13 @@ struct MasksSection: View {
             ForEach(Self.availableKinds.indices, id: \.self) { index in
                 Button(Self.availableKinds[index].title) { model.addComponent(Self.availableKinds[index].kind, operation: .add, toLayer: layer.id) }
             }
+            sceneMenu { model.addComponent(.scene(classes: [$0]), operation: .add, toLayer: layer.id) }
         }
         Menu("Subtract") {
             ForEach(Self.availableKinds.indices, id: \.self) { index in
                 Button(Self.availableKinds[index].title) { model.addComponent(Self.availableKinds[index].kind, operation: .subtract, toLayer: layer.id) }
             }
+            sceneMenu { model.addComponent(.scene(classes: [$0]), operation: .subtract, toLayer: layer.id) }
         }
         Divider()
         Button("Rename…") {
