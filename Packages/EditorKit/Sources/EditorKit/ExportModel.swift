@@ -139,12 +139,18 @@ public final class ExportModel {
 
     /// Suggested file name of the selected photo, without extension (the save panel adds it).
     public var defaultFileName: String {
-        selectedItemID.flatMap { names[$0] } ?? "Photo"
+        selectedItem.flatMap(baseName(for:)) ?? "Photo"
     }
 
-    /// The name a photo will be written under, once its name is resolved (`name(for:)`).
+    /// The name a photo will be written under, once its original name is resolved (`name(for:)`).
     public func outputFileName(for item: ExportItem) -> String? {
-        names[item.id].map { "\($0).\(settings.format.fileExtension)" }
+        baseName(for: item).map { "\($0).\(settings.format.fileExtension)" }
+    }
+
+    /// The naming scheme applied to a photo, at its position in the batch.
+    private func baseName(for item: ExportItem) -> String? {
+        guard let original = names[item.id], let index = items.firstIndex(where: { $0.id == item.id }) else { return nil }
+        return settings.naming.fileName(original: original, index: index)
     }
 
     public func name(for item: ExportItem) async -> String {
@@ -215,9 +221,9 @@ public final class ExportModel {
         }
     }
 
-    /// Writes every photo into `folder`, named after the original with the format's extension and a
-    /// numeric suffix when the name is taken. Failures are collected per photo; `cancel()` stops after
-    /// the current one. Returns the number of files written.
+    /// Writes every photo into `folder` under the naming scheme and the format's extension; existing
+    /// files are overwritten or avoided with a numeric suffix as the settings say. Failures are
+    /// collected per photo; `cancel()` stops after the current one. Returns the number of files written.
     @discardableResult
     public func exportAll(to folder: URL) async -> Int {
         isBusy = true
@@ -235,12 +241,17 @@ public final class ExportModel {
         var written = 0
         let clock = ContinuousClock()
         let start = clock.now
-        for item in items where !isCancelled {
-            let baseName = await name(for: item)
+        for (index, item) in items.enumerated() where !isCancelled {
+            let baseName = await settings.naming.fileName(original: name(for: item), index: index)
             do {
                 let data = try await encode(item)
-                let name = Self.uniqueFileName(base: baseName, extension: settings.format.fileExtension, taken: &taken)
-                try data.write(to: folder.appendingPathComponent(name), options: .withoutOverwriting)
+                switch settings.existingFiles {
+                case .rename:
+                    let name = Self.uniqueFileName(base: baseName, extension: settings.format.fileExtension, taken: &taken)
+                    try data.write(to: folder.appendingPathComponent(name), options: .withoutOverwriting)
+                case .overwrite:
+                    try data.write(to: folder.appendingPathComponent("\(baseName).\(settings.format.fileExtension)"), options: .atomic)
+                }
                 written += 1
             } catch {
                 failures.append(ExportFailure(name: baseName, message: error.localizedDescription))

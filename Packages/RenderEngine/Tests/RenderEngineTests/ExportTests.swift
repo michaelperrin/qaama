@@ -102,10 +102,38 @@ struct ExportTests {
         #expect(WatermarkRenderer.apply(watermark, to: photo, picture: nil) === photo)
     }
 
+    @Test func namingSchemesBuildTheBaseName() {
+        #expect(ExportNaming.original.fileName(original: "DSCF0001", index: 3) == "DSCF0001")
+        let sequence = ExportNaming.sequence(prefix: "Trip-", start: 1, digits: 3)
+        #expect(sequence.fileName(original: "DSCF0001", index: 0) == "Trip-001")
+        #expect(sequence.fileName(original: "DSCF0001", index: 11) == "Trip-012")
+        #expect(ExportNaming.sequence(prefix: "", start: 998, digits: 2).fileName(original: "x", index: 5) == "1003")
+    }
+
+    @Test func metadataPolicyStripsLocationOrEverything() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let original = folder.appendingPathComponent("original.jpg")
+        let image = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5)).cropped(to: CGRect(x: 0, y: 0, width: 16, height: 16))
+        try ExportRenderer.encode(image, settings: ExportSettings(format: .jpeg), metadata: [
+            kCGImagePropertyExifDictionary: [kCGImagePropertyExifFNumber: 4.0],
+            kCGImagePropertyGPSDictionary: [kCGImagePropertyGPSLatitude: 48.85, kCGImagePropertyGPSLatitudeRef: "N"],
+        ]).write(to: original)
+        let kept = try #require(ExportRenderer.metadata(of: original, policy: .keep))
+        #expect(kept[kCGImagePropertyGPSDictionary] != nil && kept[kCGImagePropertyExifDictionary] != nil)
+        let noLocation = try #require(ExportRenderer.metadata(of: original, policy: .stripLocation))
+        #expect(noLocation[kCGImagePropertyGPSDictionary] == nil && noLocation[kCGImagePropertyExifDictionary] != nil)
+        #expect(ExportRenderer.metadata(of: original, policy: .strip) == nil)
+    }
+
     @Test func settingsRoundTripThroughJSON() throws {
         var settings = ExportSettings(format: .avif, quality: 0.7, size: .longEdge(2048))
         settings.frame = ExportFrame(isEnabled: true, thickness: 0.1, aspectRatio: 1.5, cornerRadius: 0.1, color: ExportColor(red: 0.2, green: 0.3, blue: 0.4))
         settings.watermark = ExportWatermark(isEnabled: true, kind: .image("logo.png"), position: .top, size: 0.3, opacity: 0.4, isTiled: true)
+        settings.naming = .sequence(prefix: "Trip-", start: 1, digits: 3)
+        settings.existingFiles = .overwrite
+        settings.metadata = .stripLocation
         let data = try JSONEncoder().encode(settings)
         #expect(try JSONDecoder().decode(ExportSettings.self, from: data) == settings)
         #expect(ExportSettings(quality: 2).quality == 1)

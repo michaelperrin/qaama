@@ -15,11 +15,15 @@ struct ExportModelTests {
     }
 
     private var item: ExportItem {
+        makeItem(id: "a")
+    }
+
+    private func makeItem(id: String) -> ExportItem {
         let image = CIImage(color: CIColor(red: 0.3, green: 0.6, blue: 0.9)).cropped(to: CGRect(x: 0, y: 0, width: 400, height: 200))
         var recipe = EditRecipe()
         recipe.geometry = Geometry(crop: UnitRect(x: 0, y: 0, width: 0.5, height: 1))
         let input = ExportInput(image: image, recipe: recipe)
-        return ExportItem(id: "a", name: { "DSCF0001" }, load: { input })
+        return ExportItem(id: id, name: { "DSCF0001" }, load: { input })
     }
 
     /// A store in a temporary folder, so tests never touch the real watermarks.
@@ -64,6 +68,24 @@ struct ExportModelTests {
         let names = try Set(FileManager.default.contentsOfDirectory(atPath: folder.path))
         #expect(names == ["DSCF0001.jpg", "DSCF0001 2.jpg", "DSCF0001 3.jpg"])
         #expect(try Data(contentsOf: folder.appendingPathComponent("DSCF0001.jpg")).isEmpty)
+    }
+
+    @Test func batchCanOverwriteAndNumberTheFiles() async throws {
+        let (defaults, cleanup) = makeDefaults()
+        defer { cleanup() }
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try Data().write(to: folder.appendingPathComponent("Trip-01.png"))
+        let model = ExportModel(items: [makeItem(id: "a"), makeItem(id: "b")], defaults: defaults, watermarks: store)
+        model.settings = ExportSettings(format: .png, size: .longEdge(20), naming: .sequence(prefix: "Trip-", start: 1, digits: 2), existingFiles: .overwrite)
+        #expect(model.outputFileName(for: model.items[1]) == nil) // name not resolved yet
+        _ = await model.name(for: model.items[1])
+        #expect(model.outputFileName(for: model.items[1]) == "Trip-02.png")
+        let written = await model.exportAll(to: folder)
+        #expect(written == 2)
+        let names = try Set(FileManager.default.contentsOfDirectory(atPath: folder.path))
+        #expect(names == ["Trip-01.png", "Trip-02.png"])
+        #expect(try !Data(contentsOf: folder.appendingPathComponent("Trip-01.png")).isEmpty)
     }
 
     @Test func previewFollowsTheCropAndSizesReportTheOutput() async {

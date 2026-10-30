@@ -219,6 +219,43 @@ public nonisolated struct ExportWatermark: Codable, Sendable, Hashable {
     }
 }
 
+/// How exported files are named, before the format's extension.
+public nonisolated enum ExportNaming: Codable, Sendable, Hashable {
+    /// The original file name.
+    case original
+    /// `prefix` followed by a counter padded to `digits`, counting from `start` in batch order.
+    case sequence(prefix: String, start: Int, digits: Int)
+
+    public static let digitsRange: ClosedRange<Int> = 1 ... 6
+
+    /// The base name of the photo at `index` (0-based position in the batch) whose original name is `original`.
+    public func fileName(original: String, index: Int) -> String {
+        switch self {
+        case .original:
+            return original
+        case let .sequence(prefix, start, digits):
+            let number = String(max(0, start + index))
+            let padded = String(repeating: "0", count: max(0, min(digits, Self.digitsRange.upperBound) - number.count)) + number
+            return prefix + padded
+        }
+    }
+}
+
+/// What to do when a file with the chosen name already exists in the destination.
+public nonisolated enum ExportCollisionPolicy: String, Codable, CaseIterable, Sendable {
+    /// Add a counter to the new file's name.
+    case rename
+    case overwrite
+}
+
+/// Which metadata of the original the export keeps.
+public nonisolated enum ExportMetadataPolicy: String, Codable, CaseIterable, Sendable {
+    case keep
+    /// Everything but the GPS position.
+    case stripLocation
+    case strip
+}
+
 /// Everything that describes the file to write, independent of the edit. Remembered between exports.
 public nonisolated struct ExportSettings: Codable, Sendable, Hashable {
     public var format: ExportFormat
@@ -228,17 +265,24 @@ public nonisolated struct ExportSettings: Codable, Sendable, Hashable {
     public var size: ExportSize
     public var frame: ExportFrame
     public var watermark: ExportWatermark
+    public var naming: ExportNaming
+    public var existingFiles: ExportCollisionPolicy
+    public var metadata: ExportMetadataPolicy
 
     public static let qualityRange: ClosedRange<Double> = 0.3 ... 1
 
     public init(format: ExportFormat = .jpeg, quality: Double = 0.92, size: ExportSize = .original, frame: ExportFrame = ExportFrame(),
-                watermark: ExportWatermark = ExportWatermark())
+                watermark: ExportWatermark = ExportWatermark(), naming: ExportNaming = .original,
+                existingFiles: ExportCollisionPolicy = .rename, metadata: ExportMetadataPolicy = .keep)
     {
         self.format = format
         self.quality = min(max(quality, Self.qualityRange.lowerBound), Self.qualityRange.upperBound)
         self.size = size
         self.frame = frame
         self.watermark = watermark
+        self.naming = naming
+        self.existingFiles = existingFiles
+        self.metadata = metadata
     }
 
     /// The settings that change how the picture looks, as opposed to how its file is written. The

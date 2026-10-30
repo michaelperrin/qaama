@@ -19,9 +19,9 @@ struct ExportView: View {
     /// Set once a batch has run, to show its outcome in place of the settings.
     @State private var batchWritten: Int?
 
-    /// Settings pages; naming and metadata come next.
+    /// Settings pages.
     private enum Tab: String, CaseIterable, Identifiable {
-        case format, frame, watermark
+        case format, frame, watermark, files
         var id: Self {
             self
         }
@@ -31,7 +31,15 @@ struct ExportView: View {
             case .format: "Format"
             case .frame: "Frame"
             case .watermark: "Watermark"
+            case .files: "Files"
             }
+        }
+    }
+
+    private enum NamingMode: String, CaseIterable, Identifiable {
+        case original, sequence
+        var id: Self {
+            self
         }
     }
 
@@ -245,6 +253,44 @@ struct ExportView: View {
                     Toggle("Tile", isOn: $model.settings.watermark.isTiled)
                 }
                 .disabled(!model.settings.watermark.isEnabled)
+            case .files:
+                Section("Naming") {
+                    Picker("Names", selection: namingMode) {
+                        Text("Original Names").tag(NamingMode.original)
+                        Text("Sequence").tag(NamingMode.sequence)
+                    }
+                    if case let .sequence(prefix, start, digits) = model.settings.naming {
+                        TextField("Prefix", text: Binding(get: { prefix }, set: { model.settings.naming = .sequence(prefix: $0, start: start, digits: digits) }))
+                        LabeledContent("Start at") {
+                            TextField("Start", value: Binding(get: { start }, set: { model.settings.naming = .sequence(prefix: prefix, start: max(0, $0), digits: digits) }),
+                                      format: .number.grouping(.never))
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 70)
+                        }
+                        Stepper("Digits: \(digits)", value: Binding(get: { digits }, set: { model.settings.naming = .sequence(prefix: prefix, start: start, digits: $0) }),
+                                in: ExportNaming.digitsRange)
+                        LabeledContent("Example") {
+                            Text("\(model.settings.naming.fileName(original: "", index: 0)).\(model.settings.format.fileExtension)")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Section("Existing Files") {
+                    Picker("If a file exists", selection: $model.settings.existingFiles) {
+                        Text("Keep both, number the new one").tag(ExportCollisionPolicy.rename)
+                        Text("Overwrite").tag(ExportCollisionPolicy.overwrite)
+                    }
+                }
+                Section("Metadata") {
+                    Picker("Metadata", selection: $model.settings.metadata) {
+                        Text("Keep all").tag(ExportMetadataPolicy.keep)
+                        Text("Remove location").tag(ExportMetadataPolicy.stripLocation)
+                        Text("Remove all").tag(ExportMetadataPolicy.strip)
+                    }
+                    Text("Camera, exposure and keyword metadata of the original file are copied into the export. Photos from the Photos library carry none for now.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)
@@ -253,6 +299,18 @@ struct ExportView: View {
                 model.useWatermarkPicture(at: url)
             }
         }
+    }
+
+    private var namingMode: Binding<NamingMode> {
+        Binding(
+            get: { model.settings.naming == .original ? .original : .sequence },
+            set: { mode in
+                switch mode {
+                case .original: model.settings.naming = .original
+                case .sequence: model.settings.naming = .sequence(prefix: "Photo-", start: 1, digits: 3)
+                }
+            }
+        )
     }
 
     private var watermarkKind: Binding<WatermarkKind> {

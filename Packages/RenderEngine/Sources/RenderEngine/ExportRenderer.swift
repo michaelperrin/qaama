@@ -66,7 +66,21 @@ public nonisolated enum ExportRenderer {
     /// Full export to encoded bytes.
     public static func export(_ input: ExportInput, settings: ExportSettings, watermarkPicture: CIImage? = nil) async throws -> Data {
         let image = await render(input, settings: settings, watermarkPicture: watermarkPicture)
-        return try encode(image, settings: settings, metadata: input.metadataURL.flatMap(metadata(of:)))
+        return try encode(image, settings: settings, metadata: input.metadataURL.flatMap { metadata(of: $0, policy: settings.metadata) })
+    }
+
+    /// The original's metadata filtered by the policy; nil strips everything.
+    public static func metadata(of url: URL, policy: ExportMetadataPolicy) -> [CFString: Any]? {
+        switch policy {
+        case .keep:
+            return metadata(of: url)
+        case .stripLocation:
+            var kept = metadata(of: url)
+            kept?[kCGImagePropertyGPSDictionary] = nil
+            return kept
+        case .strip:
+            return nil
+        }
     }
 
     /// 8-bit sRGB pixels through a `CGImageDestination` of the requested type. `metadata` is merged

@@ -338,8 +338,8 @@ Export
       tard si besoin). Étape 2 le même jour : lot depuis la grille (menu contextuel, menu File),
       dossier de destination, noms d'origine avec suffixe numérique, progression, arrêt, échecs
       listés. Fenêtre réorganisée (onglets, aperçu, bande de vignettes) et étape 3, bordure de
-      couleur unie, puis étape 4, filigrane texte ou image, le même jour. Reste : conserver ou non
-      les métadonnées, écraser ou renommer, nommage, préréglages d'export.
+      couleur unie, étape 4, filigrane texte ou image, et étape 5, onglet Files (nommage
+      séquentiel, écraser ou renommer, métadonnées), le même jour. Reste : préréglages d'export.
 - [ ] Enregistrement dans Photos ou dans un dossier, partage système.
 
 Qualité

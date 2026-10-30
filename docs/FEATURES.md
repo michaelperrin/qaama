@@ -117,6 +117,12 @@ can feed a website one day. Dates are when the feature landed.
   their original names with the new extension, a numeric suffix avoids overwriting; failures are
   listed at the end (2026-10-30).
 
+### Files
+- Naming: original names, or a sequence with a prefix, a start number and a digit count
+  (2026-10-30).
+- Existing files: keep both and number the new one, or overwrite (2026-10-30).
+- Metadata: keep all, remove the location, or remove all (2026-10-30).
+
 ## Platform
 - Native macOS app (macOS 27), SwiftUI, Core Image on Metal, sandboxed (2026-10-29).
 - English interface, ready for localization (2026-10-29).
