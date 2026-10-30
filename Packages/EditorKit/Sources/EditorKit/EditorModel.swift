@@ -23,6 +23,8 @@ public final class EditorModel {
     public private(set) var sourceImage: SourceImage?
     /// File name without extension, for export suggestions.
     public private(set) var baseName = "Photo"
+    /// The original file, when the source exposes one: exports copy its metadata.
+    private var imageURL: URL?
     public private(set) var savedRecipe = EditRecipe.identity
     public private(set) var isBusy = false
     public private(set) var statusMessage: String?
@@ -371,6 +373,7 @@ public final class EditorModel {
             let input = try await source.editingInput(for: asset)
             if let url = input.imageURL {
                 baseName = url.deletingPathExtension().lastPathComponent
+                imageURL = url
             }
             if let data = input.recipeData {
                 if let saved = try? EditRecipe(jsonData: data) {
@@ -540,9 +543,7 @@ public final class EditorModel {
         let recipe = recipe
         let masks = maskImages
         return try await Task.detached(priority: .userInitiated) {
-            let reference = recipe.geometry.map { GeometryRenderer.straighten(sourceImage.image, with: $0) } ?? sourceImage.image
-            let resolved = await ModelMasks.resolveAll(in: recipe, reference: reference, existing: masks)
-            return try ImageExporter.jpegData(for: RenderPipeline.apply(recipe, to: sourceImage.image, geometry: recipe.geometry, masks: resolved))
+            try await ImageExporter.jpegData(for: EditRenderer.render(image: sourceImage.image, recipe: recipe, masks: masks))
         }.value
     }
 
@@ -557,11 +558,11 @@ public final class EditorModel {
         }
     }
 
-    /// JPEG bytes to hand to a file exporter, or nil on failure (the status message says why).
-    public func exportJPEG() async -> Data? {
-        var data: Data?
-        await busy { data = try await renderJPEG() }
-        return data
+    /// The open photo with its current edit, saved or not, for the export window.
+    public func exportItem() -> ExportItem? {
+        guard let sourceImage else { return nil }
+        let input = ExportInput(image: sourceImage.image, recipe: recipe, masks: maskImages, metadataURL: imageURL)
+        return ExportItem(id: assetID, baseName: baseName) { input }
     }
 
     // MARK: - Decisions

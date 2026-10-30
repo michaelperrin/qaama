@@ -11,8 +11,7 @@ struct EditorView: View {
     let onClose: () -> Void
 
     @State private var model: EditorModel
-    @State private var exportDocument: JPEGDocument?
-    @State private var isExporting = false
+    @State private var exportModel: ExportModel?
     @Environment(\.undoManager) private var undoManager
 
     init(assetID: LibraryAsset.ID, source: any LibrarySource, onClose: @escaping () -> Void) {
@@ -29,39 +28,25 @@ struct EditorView: View {
                     .frame(width: AdjustmentsInspector.width)
             }
             Divider()
-            EditorBottomBar(model: model, onExport: exportJPEG, onClose: onClose)
+            EditorBottomBar(model: model, onExport: openExport, onClose: onClose)
         }
         .focusedSceneValue(\.editor, model)
         .onChange(of: undoManager, initial: true) { _, manager in model.undoManager = manager }
         .task { await model.open() }
         .onDisappear { model.close() }
-        .fileExporter(isPresented: $isExporting, document: exportDocument, contentType: .jpeg,
-                      defaultFilename: "\(model.baseName) edited")
-        { result in
-            if case let .failure(error) = result {
-                // The model owns the status line; an export failure is the only error raised by the view.
-                exportError = error.localizedDescription
-            }
-        }
-        .alert("Export Failed", isPresented: Binding(get: { exportError != nil }, set: {
+        .sheet(isPresented: Binding(get: { exportModel != nil }, set: {
             if !$0 {
-                exportError = nil
+                exportModel = nil
             }
         })) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(exportError ?? "")
+            if let exportModel {
+                ExportView(model: exportModel) { self.exportModel = nil }
+            }
         }
     }
 
-    @State private var exportError: String?
-
-    private func exportJPEG() {
-        Task {
-            if let data = await model.exportJPEG() {
-                exportDocument = JPEGDocument(data: data)
-                isExporting = true
-            }
-        }
+    private func openExport() {
+        guard let item = model.exportItem() else { return }
+        exportModel = ExportModel(items: [item])
     }
 }

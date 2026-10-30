@@ -90,6 +90,19 @@ can feed a website one day. Dates are when the feature landed.
 - Histogram of the current edit with clipping indicators (2026-10-30).
 - Camera, lens, exposure settings, size and capture date from the file's EXIF (2026-10-30).
 
+## Export
+
+### Single photo
+- Export the open photo with its current edit, saved or not, from the editor (Export…, ⇧⌘E)
+  (2026-10-30).
+- Formats: JPEG and HEIC and AVIF with a quality slider, PNG lossless (2026-10-30).
+- Size: original, or a pixel width, height or long edge (the photo fits in a square); the output
+  dimensions are shown, enlargements flagged (2026-10-30).
+- Preview of the exported photo in the export window (2026-10-30).
+- EXIF, TIFF, GPS and IPTC metadata of the original file carried over, orientation reset
+  (2026-10-30).
+- Settings remembered between exports (2026-10-30).
+
 ## Platform
 - Native macOS app (macOS 27), SwiftUI, Core Image on Metal, sandboxed (2026-10-29).
 - English interface, ready for localization (2026-10-29).

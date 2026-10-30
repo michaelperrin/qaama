@@ -58,7 +58,8 @@ struct EditorBottomBar: View {
             .disabled(!model.isOpen)
             .help("Hold to see the original")
             .onLongPressGesture(minimumDuration: 0, pressing: { pressing in model.isShowingOriginal = pressing }, perform: {})
-            Button("Export JPEG…", action: onExport)
+            Button("Export…", action: onExport)
+                .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(!model.canExport)
             Button("Save") { Task { await model.save() } }
                 .keyboardShortcut("s")

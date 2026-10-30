@@ -25,8 +25,13 @@ public nonisolated enum EditRenderer {
             throw RenderError.noImage
         }
         let loaded = try SourceImageLoader.load(source)
-        let reference = recipe.geometry.map { GeometryRenderer.straighten(loaded.image, with: $0) } ?? loaded.image
+        return try await ImageExporter.jpegData(for: render(image: loaded.image, recipe: recipe, masks: masks))
+    }
+
+    /// The recipe applied to a decoded image, model masks resolved first (the ones in `masks` are reused).
+    public static func render(image: CIImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:]) async -> CIImage {
+        let reference = recipe.geometry.map { GeometryRenderer.straighten(image, with: $0) } ?? image
         let resolved = await ModelMasks.resolveAll(in: recipe, reference: reference, existing: masks)
-        return try ImageExporter.jpegData(for: RenderPipeline.apply(recipe, to: loaded.image, geometry: recipe.geometry, masks: resolved))
+        return RenderPipeline.apply(recipe, to: image, geometry: recipe.geometry, masks: resolved)
     }
 }

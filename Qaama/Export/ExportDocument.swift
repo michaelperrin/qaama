@@ -1,9 +1,11 @@
+import RenderEngine
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Wraps encoded JPEG bytes so SwiftUI's file exporter can write them.
-struct JPEGDocument: FileDocument {
-    static let readableContentTypes: [UTType] = [.jpeg]
+/// Encoded bytes of an export, in any of the formats the exporter writes, for SwiftUI's file exporter.
+struct ExportDocument: FileDocument {
+    static let readableContentTypes: [UTType] = ExportFormat.allCases.map(\.type)
+    static let writableContentTypes: [UTType] = readableContentTypes
 
     let data: Data
 
