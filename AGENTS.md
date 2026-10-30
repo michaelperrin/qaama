@@ -18,6 +18,8 @@ anyone, human or agent, contributing code. The roadmap lives in `docs/PLAN.md`.
   no AppKit in their public API, `#if canImport(AppKit)` where the implementation needs it.
 - **Pace.** Plan, proof of concept, MVP, then more. Keep `docs/PLAN.md` checklists current
   (French) when a step is done or a lesson is learned.
+- **Feature list.** Every user-visible feature goes into `docs/FEATURES.md` (English, by area and
+  sub-area, dated) in the same change that ships it. It is the source for a future website.
 - **Commits.** Only when the maintainer asks. English, imperative subject, body with bullet
   points, attribution trailers as configured.
 

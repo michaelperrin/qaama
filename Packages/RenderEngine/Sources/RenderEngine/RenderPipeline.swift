@@ -9,7 +9,16 @@ import EditModel
 /// recipe but not rendered yet.
 public nonisolated enum RenderPipeline {
     public static func apply(_ recipe: EditRecipe, to image: CIImage) -> CIImage {
-        recipe.layers.reduce(image) { current, layer in
+        apply(recipe, to: image, geometry: recipe.geometry)
+    }
+
+    /// Same, with the geometry overridden: the crop tool shows the straightened image without its crop.
+    public static func apply(_ recipe: EditRecipe, to image: CIImage, geometry: Geometry?) -> CIImage {
+        var current = image
+        if let geometry, !geometry.isIdentity {
+            current = GeometryRenderer.apply(geometry, to: current)
+        }
+        return recipe.layers.reduce(current) { current, layer in
             guard layer.isEnabled, !layer.adjustments.isIdentity else { return current }
             return apply(layer.adjustments, to: current)
         }

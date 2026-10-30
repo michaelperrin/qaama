@@ -177,6 +177,30 @@ struct EditorModelTests {
         #expect(histogram.luminance.max() == 1)
     }
 
+    @Test func cropModeKeepsGeometryUntilItIsIdentity() async throws {
+        let url = try makeImage()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let model = EditorModel(assetID: "stub", source: StubSource(imageURL: url), renderer: nil)
+        await model.open()
+
+        model.beginCropping()
+        #expect(model.isCropping && model.recipe.geometry == nil)
+        model.geometry.crop = UnitRect(x: 0.1, y: 0.1, width: 0.5, height: 0.5)
+        model.geometry.angle = 3
+        model.endCropping()
+        #expect(!model.isCropping && model.recipe.geometry?.angle == 3 && model.canUndo)
+
+        model.rotate(quarterTurns: -1)
+        #expect(model.geometry.quarterTurns == 3)
+        model.resetGeometry()
+        #expect(model.recipe.geometry == nil)
+
+        // Entering and leaving without touching anything leaves no trace.
+        model.beginCropping()
+        model.endCropping()
+        #expect(model.recipe.geometry == nil)
+    }
+
     @Test func unsupportedRecipeOpensTheOriginal() async throws {
         let url = try makeImage()
         defer { try? FileManager.default.removeItem(at: url) }

@@ -115,3 +115,34 @@ struct HistogramTests {
         #expect(HistogramComputer.compute(CIImage.empty()) == nil)
     }
 }
+
+struct GeometryRendererTests {
+    private let image = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5)).cropped(to: CGRect(x: 0, y: 0, width: 300, height: 200))
+
+    @Test func cropsInsideTheSafeAreaWithTopLeftOrigin() {
+        let geometry = Geometry(crop: UnitRect(x: 0.5, y: 0, width: 0.5, height: 0.5))
+        let output = GeometryRenderer.apply(geometry, to: image)
+        #expect(output.extent == CGRect(x: 0, y: 0, width: 150, height: 100))
+    }
+
+    @Test func straighteningShrinksToTheInscribedRectangle() {
+        let output = GeometryRenderer.apply(Geometry(angle: 10), to: image)
+        let scale = Geometry.inscribedScale(width: 300, height: 200, degrees: 10)
+        #expect(abs(output.extent.width - (300 * scale).rounded(.down)) <= 1)
+        #expect(abs(output.extent.width / output.extent.height - 1.5) < 0.02, "the aspect ratio is kept")
+        #expect(output.extent.origin == .zero)
+    }
+
+    @Test func quarterTurnsSwapTheSides() {
+        let output = GeometryRenderer.apply(Geometry(quarterTurns: 1), to: image)
+        #expect(output.extent.size == CGSize(width: 200, height: 300))
+        #expect(GeometryRenderer.apply(Geometry(quarterTurns: 2), to: image).extent.size == CGSize(width: 300, height: 200))
+    }
+
+    @Test func recipeAppliesGeometryBeforeAdjustments() {
+        var recipe = EditRecipe(exposure: 1)
+        recipe.geometry = Geometry(crop: UnitRect(x: 0, y: 0, width: 0.5, height: 1))
+        #expect(RenderPipeline.apply(recipe, to: image).extent.width == 150)
+        #expect(RenderPipeline.apply(recipe, to: image, geometry: nil).extent.width == 300)
+    }
+}

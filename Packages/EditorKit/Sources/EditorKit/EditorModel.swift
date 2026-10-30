@@ -37,6 +37,53 @@ public final class EditorModel {
         didSet { renderPreview() }
     }
 
+    /// While true the canvas shows the straightened image without its crop, under the crop frame.
+    public private(set) var isCropping = false
+
+    /// The recipe's geometry, or a blank one to start from; writing an identity stores nil.
+    public var geometry: Geometry {
+        get { recipe.geometry ?? Geometry() }
+        set { recipe.geometry = newValue.isIdentity && !isCropping ? nil : newValue }
+    }
+
+    public func beginCropping() {
+        guard !isCropping else { return }
+        isCropping = true
+        renderer?.zoom = 1
+        renderer?.panOffset = .zero
+        renderPreview()
+    }
+
+    public func endCropping() {
+        guard isCropping else { return }
+        isCropping = false
+        if recipe.geometry?.isIdentity == true {
+            recipe.geometry = nil
+        }
+        commitChange()
+        renderPreview()
+    }
+
+    public func toggleCropping() {
+        isCropping ? endCropping() : beginCropping()
+    }
+
+    /// Turns the image by a quarter clockwise (+1) or counterclockwise (-1), keeping the crop.
+    public func rotate(quarterTurns: Int) {
+        geometry.quarterTurns = ((geometry.quarterTurns + quarterTurns) % 4 + 4) % 4
+        commitChange()
+    }
+
+    public func flipHorizontally() {
+        geometry.isFlippedHorizontally.toggle()
+        commitChange()
+    }
+
+    public func resetGeometry() {
+        recipe.geometry = isCropping ? Geometry() : nil
+        commitChange()
+    }
+
     @ObservationIgnored private var histogramTask: Task<Void, Never>?
 
     /// The edit being made. Sliders write here continuously; call `commitChange()` when a gesture
@@ -190,9 +237,16 @@ public final class EditorModel {
 
     private func renderPreview() {
         guard let sourceImage else { return }
-        let edited = RenderPipeline.apply(recipe, to: sourceImage.image)
-        renderer?.image = isShowingOriginal ? sourceImage.image : edited
-        scheduleHistogram(of: isShowingOriginal ? sourceImage.image : edited)
+        let shown: CIImage = if isShowingOriginal {
+            sourceImage.image
+        } else if isCropping {
+            // The crop tool frames the straightened image: show it whole, the frame does the cropping.
+            RenderPipeline.apply(recipe, to: sourceImage.image, geometry: recipe.geometry?.withoutCrop)
+        } else {
+            RenderPipeline.apply(recipe, to: sourceImage.image)
+        }
+        renderer?.image = shown
+        scheduleHistogram(of: shown)
     }
 
     /// Recomputes the histogram once the sliders settle: one computation per burst of changes.

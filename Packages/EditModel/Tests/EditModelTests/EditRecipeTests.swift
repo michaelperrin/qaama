@@ -69,3 +69,33 @@ struct EditRecipeTests {
         #expect(try EditRecipe(jsonData: data).global.exposure == 3)
     }
 }
+
+struct GeometryTests {
+    @Test func identityAndClamping() {
+        #expect(Geometry().isIdentity)
+        let geometry = Geometry(angle: 90, quarterTurns: 5, crop: UnitRect(x: 0.9, y: -1, width: 0.5, height: 3))
+        #expect(geometry.angle == 45 && geometry.quarterTurns == 1)
+        #expect(geometry.crop == UnitRect(x: 0.5, y: 0, width: 0.5, height: 1))
+        #expect(!geometry.isIdentity && geometry.withoutCrop.crop.isFull)
+    }
+
+    @Test func inscribedScale() {
+        #expect(Geometry.inscribedScale(width: 300, height: 200, degrees: 0) == 1)
+        let square = Geometry.inscribedScale(width: 100, height: 100, degrees: 45)
+        #expect(abs(square - 1 / 2.0.squareRoot()) < 0.0001)
+        let landscape = Geometry.inscribedScale(width: 300, height: 200, degrees: 10)
+        #expect(landscape < 1 && landscape > 0.8)
+        #expect(Geometry.inscribedScale(width: 300, height: 200, degrees: -10) == landscape)
+    }
+
+    @Test func geometryRoundTripsAndCountsTowardIdentity() throws {
+        var recipe = EditRecipe()
+        #expect(recipe.isIdentity)
+        recipe.geometry = Geometry(angle: 2.5, crop: UnitRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8), aspectRatio: 1.5)
+        #expect(!recipe.isIdentity)
+        let reloaded = try EditRecipe(jsonData: recipe.jsonData())
+        #expect(reloaded.geometry == recipe.geometry)
+        recipe.geometry = Geometry()
+        #expect(try EditRecipe(jsonData: recipe.jsonData()).geometry == nil, "an identity geometry is dropped on read")
+    }
+}

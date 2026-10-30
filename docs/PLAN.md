@@ -314,6 +314,10 @@ Bibliothèque
       courbe), ombres, point noir (courbe tonale), contraste, vibrance, saturation. Reste : netteté, bruit, vignettage,
       grain, courbes, niveaux, TSL, noir et blanc.
 - [ ] Recadrage, redressement, rotation, perspective simple.
+      Fait le 30/10/2026 : cadre à poignées, grille des tiers, rapports verrouillables
+      (original, carré, 3:2, 4:3, 16:9, 5:4), redressement ±45° avec rognage automatique des
+      coins, quarts de tour, retournement. Reste : perspective, rapports personnalisés et
+      préréglages de rapports (demandé par Michaël, plus tard).
 - [ ] Préréglages (sauvegarde/import de recettes), copier/coller les ajustements.
 - [ ] Persistance : sidecar JSON pour les fichiers, `PHAdjustmentData` pour Photos.
 
@@ -327,6 +331,11 @@ Qualité
 - [ ] Tests unitaires `EditModel`/`RenderEngine` (rendu de référence par image
       golden), tests de la couche bibliothèque sur un dossier de fixtures.
 - [ ] Journalisation `OSLog`, mesures de performance (Instruments).
+
+Interface
+
+- [ ] Revue générale de l'interface une fois les fonctions du MVP en place (demandé par
+      Michaël le 30/10/2026) : histogramme, inspecteur, barre du bas, grille, barre latérale.
 
 ### Phase 3 — Au-delà du MVP (selon l'envie)
 

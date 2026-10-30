@@ -11,6 +11,10 @@ struct EditorCanvas: View {
             Color.black
             if let renderer = model.renderer {
                 MetalCanvasView(renderer: renderer)
+                    .disabled(model.isCropping)
+                if model.isCropping {
+                    CropOverlay(model: model)
+                }
             } else {
                 Text("Metal is not available on this Mac.").foregroundStyle(.white)
             }

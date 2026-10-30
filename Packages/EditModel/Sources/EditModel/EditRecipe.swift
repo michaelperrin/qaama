@@ -11,6 +11,8 @@ public struct EditRecipe: Codable, Hashable, Sendable {
 
     public var version: Int
     public var layers: [AdjustmentLayer]
+    /// Straighten, rotate and crop; nil when untouched.
+    public var geometry: Geometry?
 
     public static let identity = EditRecipe()
 
@@ -38,7 +40,7 @@ public struct EditRecipe: Codable, Hashable, Sendable {
 
     /// True when applying the recipe would leave the photo unchanged.
     public var isIdentity: Bool {
-        layers.allSatisfy { !$0.isEnabled || $0.adjustments.isIdentity }
+        (geometry?.isIdentity ?? true) && layers.allSatisfy { !$0.isEnabled || $0.adjustments.isIdentity }
     }
 
     // MARK: - Serialization
@@ -66,6 +68,12 @@ public struct EditRecipe: Codable, Hashable, Sendable {
         }
         for index in decoded.layers.indices {
             decoded.layers[index].adjustments.clamp()
+        }
+        if let geometry = decoded.geometry {
+            // Re-run the initializer's clamping on what came from disk; drop it when it does nothing.
+            let clean = Geometry(angle: geometry.angle, quarterTurns: geometry.quarterTurns, isFlippedHorizontally: geometry.isFlippedHorizontally,
+                                 crop: geometry.crop, aspectRatio: geometry.aspectRatio)
+            decoded.geometry = clean.isIdentity ? nil : clean
         }
         self = decoded
     }
