@@ -122,6 +122,57 @@ struct MonochromeTests {
     }
 }
 
+struct HSLTests {
+    @Test func colorSpaceConversionsRoundTrip() {
+        let (h, s, l) = HSL.rgbToHSL(0.8, 0.2, 0.2)
+        #expect(abs(h) < 0.001 && s > 0.5 && abs(l - 0.5) < 0.001)
+        let back = HSL.hslToRGB(h, s, l)
+        #expect(abs(back.red - 0.8) < 0.001 && abs(back.green - 0.2) < 0.001)
+        let gray = HSL.rgbToHSL(0.4, 0.4, 0.4)
+        #expect(gray.1 == 0)
+    }
+
+    @Test func weightsBlendBetweenNeighbors() {
+        let onRed = HSL.weights(forHue: 0)
+        #expect(abs((onRed[.red] ?? 0) - 1) < 0.001 && onRed[.orange] == nil)
+        let between = HSL.weights(forHue: 15)
+        #expect((between[.red] ?? 0) > 0.4 && (between[.orange] ?? 0) > 0.4 && between[.yellow] == nil)
+        let magentaSide = HSL.weights(forHue: 340)
+        #expect((magentaSide[.magenta] ?? 0) > 0 && (magentaSide[.red] ?? 0) > 0, "the wheel wraps around")
+    }
+
+    @Test func adjustsOnlyTheTargetedRange() {
+        var hsl = HSL()
+        hsl[.red] = HSLValue(saturation: -1)
+        let red = hsl.apply(red: 0.8, green: 0.2, blue: 0.2)
+        #expect(abs(red.red - red.green) < 0.01, "red loses its saturation")
+        let green = hsl.apply(red: 0.2, green: 0.8, blue: 0.2)
+        #expect(abs(green.green - 0.8) < 0.001, "green is untouched")
+        hsl = HSL()
+        hsl[.red] = HSLValue(hue: 1)
+        let shifted = hsl.apply(red: 0.8, green: 0.2, blue: 0.2)
+        #expect(shifted.green > 0.2 + 0.1 && abs(shifted.blue - 0.2) < 0.01, "red turns toward orange")
+        hsl = HSL()
+        hsl[.blue] = HSLValue(luminance: 1)
+        let brighter = hsl.apply(red: 0.2, green: 0.2, blue: 0.8)
+        #expect(brighter.blue + brighter.red > 1.0)
+        #expect(hsl.apply(red: 0.5, green: 0.5, blue: 0.5) == (0.5, 0.5, 0.5), "gray is left alone")
+    }
+
+    @Test func hslCountsTowardIdentityAndRoundTrips() throws {
+        var set = AdjustmentSet()
+        set.hsl = HSL()
+        set.clamp()
+        #expect(set.hsl == nil && set.isIdentity)
+        var hsl = HSL()
+        hsl[.aqua] = HSLValue(hue: 0.3, saturation: 0.2)
+        set.hsl = hsl
+        #expect(!set.isIdentity)
+        let reloaded = try EditRecipe(jsonData: EditRecipe(adjustments: set).jsonData())
+        #expect(reloaded.global.hsl == hsl)
+    }
+}
+
 struct ToneCurveTests {
     @Test func identityPassesInputsThrough() {
         let curve = ToneCurve()

@@ -29,6 +29,8 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
 
     /// Tone curves, after the light adjustments and before color.
     public var curves: Curves?
+    /// Selective color (hue, saturation, luminance per color range), after the global color controls.
+    public var hsl: HSL?
 
     /// Detail
     /// Sharpening strength, 0 to 1 (negative values soften).
@@ -87,7 +89,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
 
     /// True when every adjustment is absent or neutral.
     public var isIdentity: Bool {
-        Self.all.allSatisfy { (self[keyPath: $0] ?? 0) == 0 } && (curves?.isIdentity ?? true) && monochrome == nil
+        Self.all.allSatisfy { (self[keyPath: $0] ?? 0) == 0 } && (curves?.isIdentity ?? true) && (hsl?.isIdentity ?? true) && monochrome == nil
     }
 
     /// Brings every value back into its range and stores neutral values as absent, so equal edits give
@@ -100,6 +102,9 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
         }
         if curves?.isIdentity == true {
             curves = nil
+        }
+        if hsl?.isIdentity == true {
+            hsl = nil
         }
     }
 

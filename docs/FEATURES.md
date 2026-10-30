@@ -53,6 +53,8 @@ can feed a website one day. Dates are when the feature landed.
 - Tone curves: RGB and per-channel, monotone interpolation (no overshoot), points added by
   clicking, removed by double-clicking, applied in display values (2026-10-30).
 - Detail: sharpness (softening on the negative side), luminance noise reduction (2026-10-30).
+- Color mixer: hue, saturation and luminance per color range (red, orange, yellow, green,
+  aqua, blue, purple, magenta) with smooth blends between ranges (2026-10-30).
 - Black and white with a channel mixer (red, green, blue contributions) (2026-10-30).
 - Effects: vignette, darkening or brightening the corners; film-like grain (2026-10-30).
 

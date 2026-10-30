@@ -7,6 +7,11 @@ import SwiftUI
 /// The sliders of the global layer, grouped as the engine applies them: light, then color.
 struct AdjustmentsInspector: View {
     @Bindable var model: EditorModel
+    @State private var hslComponent = HSLComponent.saturation
+
+    enum HSLComponent: Hashable {
+        case hue, saturation, luminance
+    }
 
     /// Width of the inspector column; the editor lays it out at this exact width.
     static let width: CGFloat = 280
@@ -62,6 +67,30 @@ struct AdjustmentsInspector: View {
                 slider("Vibrance", \.vibrance)
                 slider("Saturation", \.saturation)
             }
+            Section("Color Mixer") {
+                // Short labels on purpose: a segmented control wider than the column makes the Form's
+                // layout oscillate while a slider is dragged.
+                Picker("Component", selection: $hslComponent) {
+                    Text("Hue").tag(HSLComponent.hue)
+                    Text("Sat").tag(HSLComponent.saturation)
+                    Text("Lum").tag(HSLComponent.luminance)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity)
+                ForEach(HSL.ColorRange.allCases, id: \.self) { range in
+                    AdjustmentSlider(title: LocalizedStringKey(range.rawValue.capitalized), value: hslValue(range, hslComponent),
+                                     range: HSLValue.range, onEditingEnded: model.commitChange)
+                        .tint(rangeColor(range))
+                }
+                if model.recipe.global.hsl != nil {
+                    Button("Reset Color Mixer") {
+                        model.recipe.global.hsl = nil
+                        model.commitChange()
+                    }
+                }
+            }
             Section("Detail") {
                 slider("Sharpness", \.sharpness)
                 slider("Noise Reduction", \.noiseReduction)
@@ -96,6 +125,34 @@ struct AdjustmentsInspector: View {
         }
         .formStyle(.grouped)
         .disabled(!model.isOpen)
+    }
+
+    private func hslValue(_ range: HSL.ColorRange, _ component: HSLComponent) -> Binding<Double> {
+        Binding(
+            get: {
+                let value = model.recipe.global.hsl?[range] ?? HSLValue()
+                switch component {
+                case .hue: return value.hue
+                case .saturation: return value.saturation
+                case .luminance: return value.luminance
+                }
+            },
+            set: { newValue in
+                var hsl = model.recipe.global.hsl ?? HSL()
+                var value = hsl[range]
+                switch component {
+                case .hue: value.hue = newValue
+                case .saturation: value.saturation = newValue
+                case .luminance: value.luminance = newValue
+                }
+                hsl[range] = value
+                model.recipe.global.hsl = hsl.isIdentity ? nil : hsl
+            }
+        )
+    }
+
+    private func rangeColor(_ range: HSL.ColorRange) -> Color {
+        Color(hue: range.hue / 360, saturation: 0.75, brightness: 0.9)
     }
 
     private var monochromeEnabled: Binding<Bool> {

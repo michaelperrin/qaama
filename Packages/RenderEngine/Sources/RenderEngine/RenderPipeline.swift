@@ -5,7 +5,7 @@ import EditModel
 /// Turns an `EditRecipe` into a Core Image filter chain. Pure function of its inputs.
 ///
 /// Layers are applied in order; within a layer the adjustments run in the engine's fixed order:
-/// white balance, exposure, highlights and shadows, black point, contrast, curves, color, detail, black and white, then effects. Masks are carried by the
+/// white balance, exposure, highlights and shadows, black point, contrast, curves, color, selective color, detail, black and white, then effects. Masks are carried by the
 /// recipe but not rendered yet.
 public nonisolated enum RenderPipeline {
     public static func apply(_ recipe: EditRecipe, to image: CIImage) -> CIImage {
@@ -128,6 +128,11 @@ public nonisolated enum RenderPipeline {
             }
         }
 
+        if let hsl = adjustments.hsl, !hsl.isIdentity {
+            let cube = ColorCube.data { hslTransform(hsl, $0, $1, $2) }
+            output = ColorCube.apply(cube, to: output)
+        }
+
         if let monochrome = adjustments.monochrome {
             let weights = monochrome.weights
             let mix = CIVector(x: weights.red, y: weights.green, z: weights.blue, w: 0)
@@ -155,6 +160,11 @@ public nonisolated enum RenderPipeline {
             output = filter.outputImage ?? output
         }
         return output
+    }
+
+    /// Selective color evaluated per cube entry.
+    private static func hslTransform(_ hsl: HSL, _ r: Double, _ g: Double, _ b: Double) -> (red: Double, green: Double, blue: Double) {
+        hsl.apply(red: r, green: g, blue: b)
     }
 
     /// Film-like grain: position-based noise (so preview and export match), reduced to gray, centered on

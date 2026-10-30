@@ -135,6 +135,26 @@ struct RenderPipelineTests {
         #expect(abs(mean - 0.5) < 0.1, "grain keeps the overall brightness")
     }
 
+    @Test func selectiveColorDesaturatesOnlyItsRange() {
+        var set = AdjustmentSet()
+        var hsl = HSL()
+        hsl[.red] = HSLValue(saturation: -1)
+        set.hsl = hsl
+        let recipe = EditRecipe(adjustments: set)
+        let redOut = color(of: RenderPipeline.apply(recipe, to: red))
+        #expect(abs(redOut.r - redOut.g) < 0.05, "red is desaturated through the cube")
+        let green = CIImage(color: CIColor(red: 0.2, green: 0.8, blue: 0.2)).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let greenOut = color(of: RenderPipeline.apply(recipe, to: green))
+        #expect(greenOut.g - greenOut.r > 0.5, "green keeps its saturation")
+    }
+
+    @Test func identityCubeIsTransparent() {
+        let cube = ColorCube.data(dimension: 9) { ($0, $1, $2) }
+        let output = ColorCube.apply(cube, dimension: 9, to: red)
+        let before = color(of: red), after = color(of: output)
+        #expect(abs(before.r - after.r) < 0.02 && abs(before.g - after.g) < 0.02)
+    }
+
     @Test func factorsAreNeutralAtZero() {
         #expect(RenderPipeline.contrastFactor(0) == 1)
         #expect(RenderPipeline.saturationFactor(0) == 1)

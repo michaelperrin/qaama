@@ -68,6 +68,10 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
 - Prefer SwiftUI; AppKit only in the app target and only when SwiftUI has no equivalent.
   A Metal layer shows nothing inside a SwiftUI `.sheet` on macOS 27: keep canvases in windows
   or columns.
+- In the editor inspector (a `Form`), never place a control whose natural width exceeds the
+  column (segmented pickers with long labels, wide buttons): the List renegotiates its insets on
+  every frame while a slider is dragged and the whole column wobbles. Keep segmented labels
+  short and `.controlSize(.small)`; prefer menus for long choices.
 
 ## Code quality
 

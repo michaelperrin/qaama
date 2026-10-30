@@ -315,7 +315,8 @@ Bibliothèque
       réduction de bruit et vignettage le 30/10/2026 (options du vignettage, rayon, dégradé,
       centre, à ajouter plus tard). Courbes le 30/10/2026 (RGB et par canal, spline monotone,
       `CIColorCurves` en sRGB), noir et blanc avec mélangeur de canaux et grain le 30/10/2026.
-      Reste : niveaux, TSL.
+      TSL le 30/10/2026 (huit plages, cube 3D `CIColorCubeWithColorSpace` construit en Swift).
+      Reste : niveaux.
 - [ ] Recadrage, redressement, rotation, perspective simple.
       Fait le 30/10/2026 : cadre à poignées, grille des tiers, rapports verrouillables
       (original, carré, 3:2, 4:3, 16:9, 5:4), redressement ±45° avec rognage automatique des
