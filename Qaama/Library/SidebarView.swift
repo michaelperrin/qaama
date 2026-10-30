@@ -47,3 +47,9 @@ struct SidebarView: View {
         Task { try? await catalog.removeFolder(folder) }
     }
 }
+
+#Preview {
+    @Previewable @State var selection: LibrarySelection? = .photos
+    SidebarView(catalog: LibraryCatalog(store: try! CatalogStore.inMemory()), selection: $selection) {}
+        .frame(width: 220, height: 400)
+}

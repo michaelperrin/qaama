@@ -1,25 +1,14 @@
 import LibraryKit
 import SwiftUI
 
-/// Thumbnail grid shared by every library source; tapping a photo opens the editor in its place.
+/// Thumbnail grid shared by every library source. Tapping a photo reports its identifier.
 struct AssetGridView: View {
     let source: any LibrarySource
-    @State private var editedAssetID: LibraryAsset.ID?
+    let onOpen: (LibraryAsset.ID) -> Void
 
     private let thumbnailSide: CGFloat = 160
 
     var body: some View {
-        if let editedAssetID {
-            EditorView(assetID: editedAssetID, source: source) { self.editedAssetID = nil }
-                .id(editedAssetID)
-                .navigationTitle(source.displayName)
-                .navigationSubtitle("Editing")
-        } else {
-            grid
-        }
-    }
-
-    private var grid: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: thumbnailSide), spacing: 8)], spacing: 8) {
                 // Iterate indices, not elements: ForEach over elements walks the whole collection to compute
@@ -27,7 +16,7 @@ struct AssetGridView: View {
                 ForEach(source.assets.indices, id: \.self) { index in
                     let asset = source.assets[index]
                     AssetThumbnailView(asset: asset, source: source, side: thumbnailSide)
-                        .onTapGesture { editedAssetID = asset.id }
+                        .onTapGesture { onOpen(asset.id) }
                 }
             }
             .padding(12)
@@ -38,16 +27,15 @@ struct AssetGridView: View {
                                        description: Text("This library doesn't contain any images."))
             }
         }
-        .navigationTitle(source.displayName)
-        .navigationSubtitle(subtitle)
     }
+}
 
-    private var subtitle: String {
-        guard !source.assets.isEmpty else { return "" }
-        var text = "\(source.assets.count) photos"
-        if let duration = source.lastLoadDuration {
-            text += " · listed in \(duration.formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow)))"
-        }
-        return text
-    }
+#Preview("Sample library") {
+    AssetGridView(source: SampleLibrarySource()) { _ in }
+        .frame(width: 720, height: 500)
+}
+
+#Preview("Empty") {
+    AssetGridView(source: SampleLibrarySource(count: 0)) { _ in }
+        .frame(width: 400, height: 300)
 }

@@ -23,3 +23,9 @@ struct RatingView: View {
         .accessibilityValue(rating == 0 ? "Unrated" : "\(rating) of 5")
     }
 }
+
+#Preview {
+    @Previewable @State var rating = 3
+    RatingView(rating: rating) { rating = $0 }
+        .padding()
+}

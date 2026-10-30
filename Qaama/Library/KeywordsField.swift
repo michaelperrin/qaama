@@ -43,3 +43,9 @@ struct KeywordsField: View {
         }
     }
 }
+
+#Preview {
+    @Previewable @State var keywords = ["lapland", "winter"]
+    KeywordsField(keywords: keywords) { keywords = $0 }
+        .padding()
+}

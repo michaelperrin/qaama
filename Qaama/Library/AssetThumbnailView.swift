@@ -60,3 +60,13 @@ struct AssetThumbnailView: View {
         }
     }
 }
+
+#Preview("Decisions") {
+    let source = SampleLibrarySource(count: 8)
+    HStack {
+        ForEach(source.assets.indices, id: \.self) { index in
+            AssetThumbnailView(asset: source.assets[index], source: source, side: 120)
+        }
+    }
+    .padding()
+}

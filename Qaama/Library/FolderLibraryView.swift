@@ -18,7 +18,7 @@ struct FolderLibraryView: View {
             } else if !source.isLoaded {
                 ProgressView("Scanning “\(source.displayName)”…")
             } else {
-                AssetGridView(source: source)
+                LibraryContentView(source: source)
             }
         }
         .task { await source.load() }

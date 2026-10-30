@@ -1,5 +1,6 @@
 import EditModel
 import EditorKit
+import LibraryKit
 import SwiftUI
 
 /// The sliders of the global layer, grouped as the engine applies them: light, then color.
@@ -42,4 +43,9 @@ struct AdjustmentsInspector: View {
             set: { model.recipe.global[keyPath: keyPath] = $0 == 0 ? nil : $0 }
         )
     }
+}
+
+#Preview {
+    AdjustmentsInspector(model: EditorModel(assetID: "sample-1", source: SampleLibrarySource(), renderer: nil))
+        .frame(width: 260, height: 400)
 }

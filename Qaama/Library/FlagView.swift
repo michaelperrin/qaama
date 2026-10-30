@@ -34,3 +34,9 @@ struct FlagView: View {
         onChange(flag == value ? .none : value)
     }
 }
+
+#Preview {
+    @Previewable @State var flag = ItemFlag.picked
+    FlagView(flag: flag) { flag = $0 }
+        .padding()
+}

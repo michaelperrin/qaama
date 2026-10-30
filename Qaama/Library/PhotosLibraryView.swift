@@ -13,7 +13,7 @@ struct PhotosLibraryView: View {
             case .notDetermined:
                 ProgressView("Requesting access to your photo library…")
             case .authorized, .limited:
-                AssetGridView(source: source)
+                LibraryContentView(source: source)
             }
         }
         .task { await source.load() }

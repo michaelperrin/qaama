@@ -68,3 +68,8 @@ struct EditorBottomBar: View {
         }
     }
 }
+
+#Preview {
+    EditorBottomBar(model: EditorModel(assetID: "sample-1", source: SampleLibrarySource(), renderer: nil), onExport: {}, onClose: {})
+        .frame(width: 1000)
+}

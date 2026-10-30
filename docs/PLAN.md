@@ -236,8 +236,10 @@ catalogue SQLite (GRDB) derrière `CatalogStore`, sidecar v2 (identifiant, note,
 mots-clés, recette), listage en deux phases avec identité stable au renommage et au
 déplacement (le sidecar suit l'image), notes, drapeaux et mots-clés dans l'interface pour les
 dossiers (mots-clés aussi pour Photos, en natif), listage paresseux de Photos (74 000 photos
-en 0,7 s, lignes construites à l'affichage). Points 1, 2, 4 et 6 de la dette remboursés ;
-restent 3 (recette extensible), 5 (modèle de l'éditeur) et 7 (découpage des vues).
+en 0,7 s, lignes construites à l'affichage). Le 30/10/2026 : recette v2 en calques
+d'ajustements typés (point 3), `EditorModel` dans le paquet `EditorKit` avec undo/redo relié
+au menu Édition (point 5), vues découpées avec aperçus SwiftUI sur `SampleLibrarySource`
+(point 7). Dette d'architecture du bilan POC entièrement remboursée.
 
 **Décisions proposées pour le MVP**
 
@@ -282,7 +284,8 @@ Bibliothèque
 Éditeur
 
 - [ ] Pile d'ajustements non destructive, ordonnée, activable/désactivable, avec
-      undo/redo et comparaison avant/après.
+      undo/redo et comparaison avant/après. Fait le 30/10/2026 : calques dans la recette,
+      undo/redo par geste relié au menu Édition. Reste : interface des calques, avant/après.
 - [ ] Ajustements de base : balance des blancs, exposition, contraste, luminosité,
       hautes lumières/ombres, saturation/vibrance, netteté, réduction de bruit simple,
       vignettage, grain, courbes, niveaux, teinte/saturation sélective, noir et blanc.
