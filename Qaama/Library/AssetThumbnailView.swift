@@ -6,6 +6,7 @@ struct AssetThumbnailView: View {
     let asset: LibraryAsset
     let source: any LibrarySource
     let side: CGFloat
+    var isSelected = false
 
     @Environment(\.displayScale) private var displayScale
     @State private var image: CGImage?
@@ -28,6 +29,13 @@ struct AssetThumbnailView: View {
         }
         .frame(width: side, height: side)
         .clipShape(.rect(cornerRadius: 6))
+        .overlay {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 6).strokeBorder(Color.accentColor, lineWidth: 3)
+            }
+        }
+        .padding(2)
+        .background(isSelected ? Color.accentColor.opacity(0.25) : .clear, in: .rect(cornerRadius: 8))
         .opacity(asset.flag == .rejected ? 0.45 : 1)
         .overlay(alignment: .bottom) {
             HStack {

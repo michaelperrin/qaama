@@ -24,6 +24,8 @@ can feed a website one day. Dates are when the feature landed.
   shown on demand (2026-10-30).
 - Badges on thumbnails: rating, picked or rejected flag, edited, RAW (2026-10-29/30).
 - Thumbnails of edited photos show the real edit, from a cached preview (2026-10-29).
+- Multiple selection in the grid: click, ⌘-click, ⇧-click, ⌘A, Escape; double-click opens the
+  editor; the context menu acts on the whole selection (2026-10-30).
 
 ### Organizing
 - Star ratings 0–5, stored natively in Photos and in a sidecar file for folders (2026-10-29/30).
@@ -47,8 +49,8 @@ can feed a website one day. Dates are when the feature landed.
 - Presets: save the current adjustments under a name, apply or delete them from a menu; stored as
   readable JSON files (2026-10-30).
 - Copy and paste adjustments between photos (Image › Adjustments menu, ⇧⌘C, ⇧⌘V, and the
-  thumbnails' context menu without opening the editor); the crop stays with each photo
-  (2026-10-30).
+  thumbnails' context menu without opening the editor, to one photo or the whole selection);
+  the crop stays with each photo; undoable (2026-10-30).
 - Zoom with a pinch, pan by dragging, double-click to fit (2026-10-29).
 
 ### Adjustments

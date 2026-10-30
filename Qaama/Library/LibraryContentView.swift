@@ -5,6 +5,7 @@ import SwiftUI
 struct LibraryContentView: View {
     let source: any LibrarySource
     @State private var editedAssetID: LibraryAsset.ID?
+    @State private var selection: Set<LibraryAsset.ID> = []
 
     var body: some View {
         if let editedAssetID {
@@ -13,7 +14,7 @@ struct LibraryContentView: View {
                 .navigationTitle(source.displayName)
                 .navigationSubtitle("Editing")
         } else {
-            AssetGridView(source: source) { editedAssetID = $0 }
+            AssetGridView(source: source, selection: $selection) { editedAssetID = $0 }
                 .navigationTitle(source.displayName)
                 .navigationSubtitle(subtitle)
                 .toolbar { LibraryQueryToolbar(source: source) }
@@ -29,6 +30,9 @@ struct LibraryContentView: View {
     private var subtitle: String {
         guard !source.assets.isEmpty else { return source.query.isUnfiltered ? "" : "No matches" }
         var text = source.query.isUnfiltered ? "\(source.assets.count) photos" : "\(source.assets.count) matching photos"
+        if !selection.isEmpty {
+            text += " · \(selection.count) selected"
+        }
         if let duration = source.lastLoadDuration {
             text += " · listed in \(duration.formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow)))"
         }
