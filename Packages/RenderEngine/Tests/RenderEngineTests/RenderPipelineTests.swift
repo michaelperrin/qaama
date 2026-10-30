@@ -40,6 +40,34 @@ struct RenderPipelineTests {
         #expect(RenderPipeline.apply(recipe, to: gray) === gray)
     }
 
+    @Test func warmerTemperatureRaisesRedOverBlue() {
+        let neutral = color(of: gray)
+        let warm = color(of: RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(temperature: 1)), to: gray))
+        #expect(warm.r - warm.b > neutral.r - neutral.b + 0.05)
+        let cool = color(of: RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(temperature: -1)), to: gray))
+        #expect(cool.b - cool.r > neutral.b - neutral.r + 0.05)
+    }
+
+    @Test func shadowsLiftDarkTones() {
+        let dark = CIImage(color: CIColor(red: 0.1, green: 0.1, blue: 0.1)).cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
+        let before = color(of: dark)
+        let after = color(of: RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(shadows: 1)), to: dark))
+        #expect(after.r > before.r + 0.03)
+    }
+
+    @Test func highlightsRecoverBrightTones() {
+        let bright = CIImage(color: CIColor(red: 0.9, green: 0.9, blue: 0.9)).cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
+        let before = color(of: bright)
+        let recovered = color(of: RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(highlights: -1)), to: bright))
+        #expect(recovered.r < before.r - 0.03)
+    }
+
+    @Test func vibranceIncreasesSaturation() {
+        let before = color(of: red)
+        let after = color(of: RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(vibrance: 1)), to: red))
+        #expect(after.r - after.g > before.r - before.g)
+    }
+
     @Test func factorsAreNeutralAtZero() {
         #expect(RenderPipeline.contrastFactor(0) == 1)
         #expect(RenderPipeline.saturationFactor(0) == 1)

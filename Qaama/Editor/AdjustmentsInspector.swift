@@ -13,15 +13,19 @@ struct AdjustmentsInspector: View {
                 HistogramView(histogram: model.histogram)
                     .listRowInsets(EdgeInsets())
             }
+            Section("White Balance") {
+                slider("Temperature", \.temperature)
+                slider("Tint", \.tint)
+            }
             Section("Light") {
-                AdjustmentSlider(title: "Exposure", value: adjustment(\.exposure), range: AdjustmentSet.exposureRange, unit: "EV",
-                                 onEditingEnded: model.commitChange)
-                AdjustmentSlider(title: "Contrast", value: adjustment(\.contrast), range: AdjustmentSet.contrastRange,
-                                 onEditingEnded: model.commitChange)
+                slider("Exposure", \.exposure, unit: "EV")
+                slider("Highlights", \.highlights)
+                slider("Shadows", \.shadows)
+                slider("Contrast", \.contrast)
             }
             Section("Color") {
-                AdjustmentSlider(title: "Saturation", value: adjustment(\.saturation), range: AdjustmentSet.saturationRange,
-                                 onEditingEnded: model.commitChange)
+                slider("Vibrance", \.vibrance)
+                slider("Saturation", \.saturation)
             }
             Section("Info") {
                 InfoPanel(model: model)
@@ -41,6 +45,11 @@ struct AdjustmentsInspector: View {
         }
         .formStyle(.grouped)
         .disabled(!model.isOpen)
+    }
+
+    private func slider(_ title: LocalizedStringKey, _ keyPath: WritableKeyPath<AdjustmentSet, Double?>, unit: String = "") -> some View {
+        AdjustmentSlider(title: title, value: adjustment(keyPath), range: AdjustmentSet.range(of: keyPath), unit: unit,
+                         onEditingEnded: model.commitChange)
     }
 
     /// Slider binding on an optional adjustment of the global layer: absent reads as neutral.

@@ -46,6 +46,13 @@ struct EditorBottomBar: View {
             if model.isBusy {
                 ProgressView().controlSize(.small)
             }
+            Button {} label: {
+                Label("Compare", systemImage: model.isShowingOriginal ? "square.filled.on.square" : "square.on.square")
+            }
+            .buttonStyle(.bordered)
+            .disabled(!model.isOpen)
+            .help("Hold to see the original")
+            .onLongPressGesture(minimumDuration: 0, pressing: { pressing in model.isShowingOriginal = pressing }, perform: {})
             Button("Export JPEG…", action: onExport)
                 .disabled(!model.canExport)
             Button("Save") { Task { await model.save() } }

@@ -32,6 +32,11 @@ public final class EditorModel {
     public private(set) var metadata: ImageMetadata?
     /// Histogram of the current edit, refreshed shortly after each change.
     public private(set) var histogram: Histogram?
+    /// While true the canvas shows the original instead of the edit (press-and-hold comparison).
+    public var isShowingOriginal = false {
+        didSet { renderPreview() }
+    }
+
     @ObservationIgnored private var histogramTask: Task<Void, Never>?
 
     /// The edit being made. Sliders write here continuously; call `commitChange()` when a gesture
@@ -186,8 +191,8 @@ public final class EditorModel {
     private func renderPreview() {
         guard let sourceImage else { return }
         let edited = RenderPipeline.apply(recipe, to: sourceImage.image)
-        renderer?.image = edited
-        scheduleHistogram(of: edited)
+        renderer?.image = isShowingOriginal ? sourceImage.image : edited
+        scheduleHistogram(of: isShowingOriginal ? sourceImage.image : edited)
     }
 
     /// Recomputes the histogram once the sliders settle: one computation per burst of changes.

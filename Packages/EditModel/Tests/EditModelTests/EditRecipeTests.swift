@@ -17,6 +17,18 @@ struct EditRecipeTests {
         #expect(set.exposure == 3 && set.contrast == -1)
         #expect(set.saturation == nil, "a neutral value is stored as absent")
         #expect(AdjustmentSet(exposure: 0) == AdjustmentSet())
+        #expect(AdjustmentSet(temperature: 4).temperature == 1)
+        #expect(AdjustmentSet.all.count == 8)
+        #expect(AdjustmentSet.range(of: \.exposure) == -3 ... 3 && AdjustmentSet.range(of: \.shadows) == -1 ... 1)
+    }
+
+    @Test func newAdjustmentsRoundTripAndCountTowardIdentity() throws {
+        let set = AdjustmentSet(temperature: 0.3, tint: -0.2, highlights: -0.5, shadows: 0.4, vibrance: 0.6)
+        #expect(!set.isIdentity)
+        let recipe = EditRecipe(adjustments: set)
+        let reloaded = try EditRecipe(jsonData: recipe.jsonData())
+        #expect(reloaded.global == set)
+        #expect(try String(decoding: recipe.jsonData(), as: UTF8.self).contains("\"highlights\":-0.5"))
     }
 
     @Test func roundTripsThroughJSON() throws {
