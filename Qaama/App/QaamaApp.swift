@@ -32,5 +32,6 @@ struct QaamaApp: App {
                 .frame(minWidth: 900, minHeight: 550)
         }
         .windowStyle(.automatic)
+        .commands { EditorCommands() }
     }
 }

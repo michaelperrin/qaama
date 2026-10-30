@@ -86,6 +86,14 @@ public final class EditorModel {
 
     // MARK: - Presets and clipboard
 
+    /// Set when the user asks to save a preset (menu or inspector); the inspector shows the naming prompt.
+    public var isNamingPreset = false
+
+    public func requestPresetName() {
+        guard isOpen, !recipe.global.isIdentity else { return }
+        isNamingPreset = true
+    }
+
     /// Replaces the global adjustments with a preset's (geometry and other layers are untouched).
     public func apply(_ preset: Preset) {
         recipe.global = preset.adjustments
@@ -312,19 +320,66 @@ public final class EditorModel {
     // MARK: - Decisions
 
     public func setRating(_ rating: Int) async {
-        guard let asset else { return }
-        await report { try await source.setRating(rating, for: asset) }
+        guard let asset, asset.rating != rating else { return }
+        await change(to: .rating(rating), from: .rating(asset.rating))
     }
 
     public func setFlag(_ flag: ItemFlag) async {
-        guard let asset else { return }
-        await report { try await source.setFlag(flag, for: asset) }
+        guard let asset, asset.flag != flag else { return }
+        await change(to: .flag(flag), from: .flag(asset.flag))
     }
 
     public func setKeywords(_ keywords: [String]) async {
+        guard asset != nil, self.keywords != keywords else { return }
+        await change(to: .keywords(keywords), from: .keywords(self.keywords))
+    }
+
+    /// A rating, flag or keyword change, with the value it replaces so it can be undone.
+    enum Decision: Sendable {
+        case rating(Int)
+        case flag(ItemFlag)
+        case keywords([String])
+
+        var actionName: String {
+            switch self {
+            case .rating: "Rating"
+            case .flag: "Flag"
+            case .keywords: "Keywords"
+            }
+        }
+    }
+
+    /// Registers the inverse with the undo manager first, synchronously, then applies the decision
+    /// through the source.
+    private func change(to decision: Decision, from previous: Decision) async {
+        registerUndo(restoring: previous, redoing: decision)
+        await apply(decision)
+    }
+
+    /// Performed by the manager, the undo registers its own inverse (the redo) before the asynchronous
+    /// work starts: registering from inside a Task would land outside the undo operation.
+    private func registerUndo(restoring previous: Decision, redoing decision: Decision) {
+        guard let undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { model in
+            MainActor.assumeIsolated {
+                model.registerUndo(restoring: decision, redoing: previous)
+                Task { @MainActor in await model.apply(previous) }
+            }
+        }
+        undoManager.setActionName(decision.actionName)
+    }
+
+    private func apply(_ decision: Decision) async {
         guard let asset else { return }
-        self.keywords = keywords
-        await report { try await source.setKeywords(keywords, for: asset) }
+        switch decision {
+        case let .rating(rating):
+            await report { try await source.setRating(rating, for: asset) }
+        case let .flag(flag):
+            await report { try await source.setFlag(flag, for: asset) }
+        case let .keywords(keywords):
+            self.keywords = keywords
+            await report { try await source.setKeywords(keywords, for: asset) }
+        }
     }
 
     // MARK: - Helpers

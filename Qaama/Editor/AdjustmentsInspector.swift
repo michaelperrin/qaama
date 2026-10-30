@@ -9,7 +9,6 @@ struct AdjustmentsInspector: View {
     @Bindable var model: EditorModel
     @State private var hslComponent = HSLComponent.saturation
     @State private var presets = PresetStore()
-    @State private var isNamingPreset = false
     @State private var presetName = ""
     @State private var presetError: String?
 
@@ -46,15 +45,14 @@ struct AdjustmentsInspector: View {
                     }
                     .disabled(!model.isOpen)
                     Spacer()
-                    Button("Save Preset…") { isNamingPreset = true }
+                    Button("Save Preset…") { model.requestPresetName() }
                         .disabled(model.recipe.global.isIdentity)
                 }
                 HStack {
+                    // Shortcuts live in the Image › Adjustments menu.
                     Button("Copy Adjustments") { model.copyAdjustments() }
-                        .keyboardShortcut("c", modifiers: [.command, .shift])
                         .disabled(!model.isOpen)
                     Button("Paste Adjustments") { model.pasteAdjustments() }
-                        .keyboardShortcut("v", modifiers: [.command, .shift])
                         .disabled(!model.isOpen || AdjustmentsClipboard.shared.adjustments == nil)
                 }
                 .controlSize(.small)
@@ -162,7 +160,7 @@ struct AdjustmentsInspector: View {
         }
         .formStyle(.grouped)
         .disabled(!model.isOpen)
-        .alert("Save Preset", isPresented: $isNamingPreset) {
+        .alert("Save Preset", isPresented: $model.isNamingPreset) {
             TextField("Name", text: $presetName)
             Button("Save") {
                 do {

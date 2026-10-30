@@ -211,6 +211,27 @@ struct EditorModelTests {
         #expect(model.statusMessage?.contains("unsupported") == true)
     }
 
+    @Test func ratingIsUndoableThroughTheManager() async throws {
+        let source = SampleLibrarySource(count: 1)
+        let model = EditorModel(assetID: "sample-0", source: source, renderer: nil)
+        let manager = UndoManager()
+        manager.groupsByEvent = false
+        model.undoManager = manager
+        let original = try #require(source.asset(id: "sample-0")?.rating)
+
+        manager.beginUndoGrouping()
+        await model.setRating(original == 5 ? 1 : 5)
+        manager.endUndoGrouping()
+        #expect(source.asset(id: "sample-0")?.rating != original)
+        #expect(manager.canUndo && manager.undoActionName == "Rating")
+
+        manager.undo()
+        for _ in 0 ..< 100 where source.asset(id: "sample-0")?.rating != original {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(source.asset(id: "sample-0")?.rating == original)
+    }
+
     @Test func decisionsGoThroughTheSource() async throws {
         let url = try makeImage()
         defer { try? FileManager.default.removeItem(at: url) }
@@ -261,5 +282,49 @@ struct PresetStoreTests {
         second.pasteAdjustments(from: clipboard)
         #expect(second.recipe.global.vibrance == 0.5)
         #expect(second.geometry.crop.width == 0.5 && second.geometry.angle == 0, "pasting keeps the photo's own crop")
+    }
+}
+
+@MainActor
+struct BatchEditingTests {
+    @Test func copiesAndPastesSavedAdjustmentsFromTheGrid() async throws {
+        let source = SampleLibrarySource(count: 3)
+        let clipboard = AdjustmentsClipboard()
+        let edited = source.assets[0], target = source.assets[1]
+        let recipe = EditRecipe(adjustments: AdjustmentSet(exposure: 0.8))
+        let output = try EditingOutput(recipeData: recipe.jsonData(), renderedJPEG: Data())
+        try await source.saveEdit(output, for: edited)
+
+        try await BatchEditing.copyAdjustments(of: edited, from: source, to: clipboard)
+        #expect(clipboard.adjustments?.exposure == 0.8)
+        await #expect(throws: BatchEditing.BatchError.self) {
+            try await BatchEditing.copyAdjustments(of: source.assets[2], from: source, to: clipboard)
+        }
+
+        let manager = UndoManager()
+        manager.groupsByEvent = false
+        manager.beginUndoGrouping()
+        let count = try await BatchEditing.pasteAdjustments(to: [target], in: source, from: clipboard, undoManager: manager)
+        manager.endUndoGrouping()
+        #expect(count == 1)
+        let saved = try await source.editingInput(for: target).recipeData
+        #expect(try EditRecipe(jsonData: #require(saved)).global.exposure == 0.8)
+        #expect(source.asset(id: target.id)?.hasEdit == true)
+        #expect(manager.canUndo && manager.undoActionName == "Paste Adjustments")
+
+        // Undo restores the photo to untouched; redo pastes again.
+        manager.undo()
+        for _ in 0 ..< 100 where source.asset(id: target.id)?.hasEdit == true {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(source.asset(id: target.id)?.hasEdit == false)
+        for _ in 0 ..< 100 where !manager.canRedo {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        manager.redo()
+        for _ in 0 ..< 100 where source.asset(id: target.id)?.hasEdit != true {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(source.asset(id: target.id)?.hasEdit == true)
     }
 }

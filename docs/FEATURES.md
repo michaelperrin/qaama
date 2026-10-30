@@ -46,7 +46,8 @@ can feed a website one day. Dates are when the feature landed.
 - Hold Compare to see the original (2026-10-30).
 - Presets: save the current adjustments under a name, apply or delete them from a menu; stored as
   readable JSON files (2026-10-30).
-- Copy and paste adjustments between photos (⇧⌘C, ⇧⌘V); the crop stays with each photo
+- Copy and paste adjustments between photos (Image › Adjustments menu, ⇧⌘C, ⇧⌘V, and the
+  thumbnails' context menu without opening the editor); the crop stays with each photo
   (2026-10-30).
 - Zoom with a pinch, pan by dragging, double-click to fit (2026-10-29).
 

@@ -75,6 +75,11 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
 
 ## Code quality
 
+- **Everything is undoable.** Any operation that changes a photo or its metadata (adjustments,
+  pasted adjustments from the grid, rating, flag, keywords, crop, batch actions) registers with
+  the window's `UndoManager` under an action name, so the Edit menu can undo and redo it. For
+  asynchronous work, capture the previous state before writing, register on a target that lives
+  as long as the window (the library source), and have the undo register its own inverse.
 - Small, single-purpose types with a doc comment that says what they are for and any
   non-obvious constraint. Comments explain why, not what.
 - No duplication across sources: shared behavior goes into the protocol, a helper enum or an
