@@ -27,6 +27,18 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         [.rating, .flag, .keywords]
     }
 
+    public var queryCapabilities: Set<QueryCapability> {
+        [.sortByRating, .sortByFileName, .rating, .flag, .edited, .raw, .search]
+    }
+
+    /// Sorting and filtering, answered by the catalog; changing it restarts the observation.
+    public var query = LibraryQuery.default {
+        didSet {
+            guard query != oldValue, observation != nil else { return }
+            startObservation()
+        }
+    }
+
     /// Rebuilds the preview of an edited photo when the cache has none. Set by the catalog.
     public var previewRenderer: PreviewRenderer?
 
@@ -65,7 +77,17 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     /// Starts following the catalog, then scans the folder. Returns once the catalog delivered its items.
     public func load() async {
         guard observation == nil else { return }
-        let stream = store.observeItems(inFolder: id)
+        startObservation()
+        while !isLoaded, let observation, !observation.isCancelled {
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        rescan()
+    }
+
+    private func startObservation() {
+        observation?.cancel()
+        let stream = store.observeItems(inFolder: id, query: query)
         observation = Task { [weak self] in
             do {
                 for try await items in stream {
@@ -77,11 +99,6 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
                 self?.logger.error("Catalog observation ended: \(error.localizedDescription, privacy: .public)")
             }
         }
-        while !isLoaded, let observation, !observation.isCancelled {
-            await Task.yield()
-            try? await Task.sleep(for: .milliseconds(5))
-        }
-        rescan()
     }
 
     /// Lists the folder again and reads the headers that are missing. Safe to call while a scan runs.

@@ -192,15 +192,66 @@ public final nonisolated class CatalogStore: Sendable {
         }
     }
 
+    // MARK: - Queries
+
+    /// Builds the SQL of a `LibraryQuery` on a folder. Hand-written so the full-text join and the
+    /// typed filters share one path.
+    static func statement(folderID: UUID, query: LibraryQuery) -> (sql: String, arguments: StatementArguments) {
+        var sql = "SELECT item.* FROM item"
+        var clauses = ["item.folderID = ?", "item.isMissing = 0"]
+        var arguments: StatementArguments = [folderID]
+
+        let needle = query.searchText.trimmingCharacters(in: .whitespaces)
+        if !needle.isEmpty, let pattern = FTS5Pattern(matchingAllPrefixesIn: needle) {
+            sql += " JOIN item_fts ON item_fts.rowid = item.rowid"
+            clauses.append("item_fts MATCH ?")
+            arguments += [pattern]
+        }
+        if query.minimumRating > 0 {
+            clauses.append("item.rating >= ?")
+            arguments += [query.minimumRating]
+        }
+        switch query.flag {
+        case .any: break
+        case .picked: clauses.append("item.flag = \(ItemFlag.picked.rawValue)")
+        case .rejected: clauses.append("item.flag = \(ItemFlag.rejected.rawValue)")
+        case .unflagged: clauses.append("item.flag = \(ItemFlag.none.rawValue)")
+        case .notRejected: clauses.append("item.flag <> \(ItemFlag.rejected.rawValue)")
+        }
+        if query.editedOnly {
+            clauses.append("item.hasEdit = 1")
+        }
+        if query.rawOnly {
+            clauses.append("item.isRAW = 1")
+        }
+        sql += " WHERE " + clauses.joined(separator: " AND ")
+
+        let direction = query.ascending ? "ASC" : "DESC"
+        switch query.sort {
+        case .captureDate: sql += " ORDER BY item.captureDate \(direction) NULLS LAST, item.contentModified \(direction)"
+        case .modificationDate: sql += " ORDER BY COALESCE(item.sidecarModified, item.contentModified) \(direction)"
+        case .rating: sql += " ORDER BY item.rating \(direction), item.captureDate DESC"
+        case .fileName: sql += " ORDER BY item.fileName COLLATE NOCASE \(direction)"
+        }
+        return (sql, arguments)
+    }
+
     // MARK: - Observation
 
-    /// Emits the items of a folder (current first, then after every change) until the consumer stops.
-    public func observeItems(inFolder folderID: UUID) -> AsyncThrowingStream<[CatalogItem], Error> {
+    /// Items of a folder sorted and filtered by a query.
+    public func items(inFolder folderID: UUID, query: LibraryQuery) async throws -> [CatalogItem] {
+        let statement = Self.statement(folderID: folderID, query: query)
+        return try await writer.read { db in
+            try CatalogItem.fetchAll(db, sql: statement.sql, arguments: statement.arguments)
+        }
+    }
+
+    /// Emits the items of a folder matching `query` (current first, then after every change) until the
+    /// consumer stops.
+    public func observeItems(inFolder folderID: UUID, query: LibraryQuery = .default) -> AsyncThrowingStream<[CatalogItem], Error> {
+        let statement = Self.statement(folderID: folderID, query: query)
         let observation = ValueObservation.tracking { db in
-            try CatalogItem
-                .filter(CatalogItem.Col.folderID == folderID && CatalogItem.Col.isMissing == false)
-                .order(CatalogItem.Col.captureDate.desc, CatalogItem.Col.contentModified.desc)
-                .fetchAll(db)
+            try CatalogItem.fetchAll(db, sql: statement.sql, arguments: statement.arguments)
         }
         let writer = writer
         return AsyncThrowingStream { continuation in

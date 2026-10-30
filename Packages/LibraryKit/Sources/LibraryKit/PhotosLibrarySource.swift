@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ObjCSupport
 import Observation
 import OSLog
 import Photos
@@ -24,6 +25,18 @@ public final class PhotosLibrarySource: LibrarySource {
         [.rating, .keywords]
     }
 
+    /// Date and favorite are native; rating filter and sort are too on macOS 27, confirmed by a probe at
+    /// load time since PhotoKit doesn't document them. Flags don't exist in Photos; keywords can't be
+    /// queried natively.
+    public private(set) var queryCapabilities: Set<QueryCapability> = [.favorite]
+
+    public var query = LibraryQuery.default {
+        didSet {
+            guard query != oldValue, fetchResult != nil else { return }
+            refetch()
+        }
+    }
+
     private var fetchResult: PHFetchResult<PHAsset>?
     /// PHAssets fetched by identifier, kept for image requests and edits. Not observed: it is filled
     /// while views are being built, and mutating observed state there would invalidate them in a loop.
@@ -46,14 +59,10 @@ public final class PhotosLibrarySource: LibrarySource {
             return
         }
 
-        let options = PHFetchOptions()
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        options.predicate = NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
-
+        probeNativeQueries()
         let clock = ContinuousClock()
         let start = clock.now
-        let result = PHAsset.fetchAssets(with: options)
-        apply(fetchResult: result)
+        apply(fetchResult: PHAsset.fetchAssets(with: fetchOptions()))
         lastLoadDuration = clock.now - start
         logger.notice("Fetched \(self.assets.count) photos in \(self.lastLoadDuration!.formatted(.units(allowed: [.milliseconds])), privacy: .public)")
 
@@ -197,6 +206,61 @@ public final class PhotosLibrarySource: LibrarySource {
         }
         apply(fetchResult: details.fetchResultAfterChanges)
         logger.notice("Applied library change (\(details.insertedObjects.count) inserted, \(details.removedObjects.count) removed, \(details.changedObjects.count) changed)")
+    }
+
+    /// What PhotoKit accepts natively isn't documented for ratings and keywords; an unsupported predicate
+    /// raises an Objective-C exception, so each candidate is tried once behind a catcher.
+    private func probeNativeQueries() {
+        func accepts(_ configure: (PHFetchOptions) -> Void) -> Bool {
+            let options = PHFetchOptions()
+            options.fetchLimit = 1
+            configure(options)
+            var count = -1
+            let exception = QAACatchException { count = PHAsset.fetchAssets(with: options).count }
+            return exception == nil && count >= 0
+        }
+        var supported: Set<QueryCapability> = [.favorite]
+        if accepts({ $0.predicate = NSPredicate(format: "rating >= %d", 1) }) {
+            supported.insert(.rating)
+        }
+        if accepts({ $0.sortDescriptors = [NSSortDescriptor(key: "rating", ascending: false)] }) {
+            supported.insert(.sortByRating)
+        }
+        queryCapabilities = supported
+        logger.notice("PhotoKit native queries: rating filter \(supported.contains(.rating)), rating sort \(supported.contains(.sortByRating))")
+    }
+
+    /// Translates the query into PhotoKit's own sorting and predicates.
+    private func fetchOptions() -> PHFetchOptions {
+        let options = PHFetchOptions()
+        switch query.sort {
+        case .rating where queryCapabilities.contains(.sortByRating):
+            options.sortDescriptors = [
+                NSSortDescriptor(key: "rating", ascending: query.ascending),
+                NSSortDescriptor(key: "creationDate", ascending: false),
+            ]
+        case .modificationDate:
+            options.sortDescriptors = [NSSortDescriptor(key: "modificationDate", ascending: query.ascending)]
+        default:
+            options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: query.ascending)]
+        }
+        var predicates = [NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)]
+        if query.favoritesOnly {
+            predicates.append(NSPredicate(format: "isFavorite == YES"))
+        }
+        if query.minimumRating > 0, queryCapabilities.contains(.rating) {
+            predicates.append(NSPredicate(format: "rating >= %d", query.minimumRating))
+        }
+        options.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+        return options
+    }
+
+    private func refetch() {
+        probeNativeQueries()
+        let clock = ContinuousClock()
+        let start = clock.now
+        apply(fetchResult: PHAsset.fetchAssets(with: fetchOptions()))
+        logger.notice("Refetched \(self.assets.count) photos in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
     }
 
     /// Exposes the fetch result as a lazy collection: a row is built only when the grid asks for it.

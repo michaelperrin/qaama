@@ -17,12 +17,18 @@ let package = Package(
             name: "LibraryKit",
             dependencies: [
                 "ImageIOKit",
+                "ObjCSupport",
                 .product(name: "GRDB", package: "GRDB.swift"),
             ],
             swiftSettings: [
                 .defaultIsolation(MainActor.self),
                 .enableUpcomingFeature("MemberImportVisibility"),
             ]
+        ),
+        .target(
+            name: "ObjCSupport",
+            path: "Sources/ObjCSupport",
+            publicHeadersPath: "include"
         ),
         .testTarget(
             name: "LibraryKitTests",

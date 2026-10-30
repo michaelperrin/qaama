@@ -10,6 +10,13 @@ public final class SampleLibrarySource: LibrarySource {
     public private(set) var assets: AssetCollection = .empty
     public private(set) var lastLoadDuration: Duration?
     public var capabilities: Set<LibraryCapability> = [.rating, .flag, .keywords]
+    public var queryCapabilities: Set<QueryCapability> {
+        [.sortByRating, .sortByFileName, .rating, .flag, .edited, .favorite, .search]
+    }
+
+    public var query = LibraryQuery.default {
+        didSet { refresh() }
+    }
 
     private var byID: [String: LibraryAsset] = [:]
     private var images: [String: CGImage] = [:]
@@ -35,7 +42,7 @@ public final class SampleLibrarySource: LibrarySource {
             byID[id] = asset
             images[id] = Self.makeImage(width: size.width, height: size.height, hue: Double(index) / Double(max(count, 1)))
         }
-        assets = AssetCollection(list)
+        refresh()
         lastLoadDuration = .milliseconds(3)
     }
 
@@ -78,7 +85,12 @@ public final class SampleLibrarySource: LibrarySource {
         guard var asset = byID[id] else { return }
         change(&asset)
         byID[id] = asset
-        assets = AssetCollection(assets.map { $0.id == id ? asset : $0 })
+        refresh()
+    }
+
+    private func refresh() {
+        let matching = byID.values.filter { query.matches($0) }.sorted(by: query.areInIncreasingOrder)
+        assets = AssetCollection(matching)
     }
 
     /// A two-tone gradient, enough to tell thumbnails apart.

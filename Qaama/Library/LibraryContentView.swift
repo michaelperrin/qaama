@@ -16,12 +16,19 @@ struct LibraryContentView: View {
             AssetGridView(source: source) { editedAssetID = $0 }
                 .navigationTitle(source.displayName)
                 .navigationSubtitle(subtitle)
+                .toolbar { LibraryQueryToolbar(source: source) }
+                .searchable(text: searchText, placement: .toolbar, prompt: "Search names and keywords")
+                .searchSuggestions {}
         }
     }
 
+    private var searchText: Binding<String> {
+        Binding(get: { source.query.searchText }, set: { source.query.searchText = $0 })
+    }
+
     private var subtitle: String {
-        guard !source.assets.isEmpty else { return "" }
-        var text = "\(source.assets.count) photos"
+        guard !source.assets.isEmpty else { return source.query.isUnfiltered ? "" : "No matches" }
+        var text = source.query.isUnfiltered ? "\(source.assets.count) photos" : "\(source.assets.count) matching photos"
         if let duration = source.lastLoadDuration {
             text += " · listed in \(duration.formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow)))"
         }

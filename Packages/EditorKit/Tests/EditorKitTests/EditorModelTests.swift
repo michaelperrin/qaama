@@ -14,6 +14,8 @@ final class StubSource: LibrarySource {
     var assets: AssetCollection
     let lastLoadDuration: Duration? = nil
     let capabilities: Set<LibraryCapability> = [.rating, .flag, .keywords]
+    let queryCapabilities: Set<QueryCapability> = []
+    var query = LibraryQuery.default
     let imageURL: URL
     var recipeData: Data?
     var savedOutputs: [EditingOutput] = []

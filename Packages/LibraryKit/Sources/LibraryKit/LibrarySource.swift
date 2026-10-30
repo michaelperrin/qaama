@@ -16,6 +16,10 @@ public protocol LibrarySource: AnyObject, Observable {
     var lastLoadDuration: Duration? { get }
     /// What this source can store about a photo.
     var capabilities: Set<LibraryCapability> { get }
+    /// Sorting and filtering of `assets`. Setting it refreshes the collection.
+    var query: LibraryQuery { get set }
+    /// The parts of a query this source honors; the UI disables the others.
+    var queryCapabilities: Set<QueryCapability> { get }
 
     /// Lists the photos. Calling it again once loaded is a no-op.
     func load() async
