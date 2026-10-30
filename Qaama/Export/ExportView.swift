@@ -118,25 +118,64 @@ struct ExportView: View {
         }
     }
 
+    @State private var isNamingPreset = false
+    @State private var presetName = ""
+
     private var header: some View {
-        HStack {
-            Text(model.isBatch ? "Export \(model.items.count) Photos" : "Export Photo")
-                .font(.title3.bold())
-            Spacer()
+        ZStack {
             Picker("Settings", selection: $tab) {
                 ForEach(Tab.allCases) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
-            Spacer()
-            // Balances the title so the tabs stay centered.
-            Text(model.isBatch ? "Export \(model.items.count) Photos" : "Export Photo")
-                .font(.title3.bold())
-                .hidden()
+            HStack {
+                Text(model.isBatch ? "Export \(model.items.count) Photos" : "Export Photo")
+                    .font(.title3.bold())
+                Spacer()
+                presetMenu
+            }
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
+        .alert("Save Export Preset", isPresented: $isNamingPreset) {
+            TextField("Name", text: $presetName)
+            Button("Save") { model.savePreset(named: presetName) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Format, size, frame, watermark and file options are saved together.")
+        }
+    }
+
+    /// Saved export presets; the label shows the one the current settings match, or Custom.
+    private var presetMenu: some View {
+        Menu {
+            ForEach(model.presets.presets) { preset in
+                Button {
+                    model.apply(preset)
+                } label: {
+                    if preset == model.currentPreset {
+                        Label(preset.name, systemImage: "checkmark")
+                    } else {
+                        Text(preset.name)
+                    }
+                }
+            }
+            if !model.presets.presets.isEmpty {
+                Divider()
+            }
+            Button("Save Preset…") {
+                presetName = model.currentPreset?.name ?? ""
+                isNamingPreset = true
+            }
+            Button("Delete Preset") { model.deleteCurrentPreset() }
+                .disabled(model.currentPreset == nil)
+        } label: {
+            Label(model.currentPreset?.name ?? "Custom", systemImage: "slider.horizontal.3")
+        }
+        .menuStyle(.button)
+        .fixedSize()
+        .help("Export presets")
     }
 
     private var preview: some View {

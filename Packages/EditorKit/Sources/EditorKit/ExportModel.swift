@@ -95,11 +95,15 @@ public final class ExportModel {
 
     private let defaults: UserDefaults
     public let watermarks: WatermarkStore
+    public let presets: ExportPresetStore
 
-    public init(items: [ExportItem], defaults: UserDefaults = .standard, watermarks: WatermarkStore = WatermarkStore()) {
+    public init(items: [ExportItem], defaults: UserDefaults = .standard, watermarks: WatermarkStore = WatermarkStore(),
+                presets: ExportPresetStore = ExportPresetStore())
+    {
         self.items = items
         self.defaults = defaults
         self.watermarks = watermarks
+        self.presets = presets
         selectedItemID = items.first?.id
         settings = defaults.data(forKey: Self.settingsKey).flatMap { try? JSONDecoder().decode(ExportSettings.self, from: $0) } ?? ExportSettings()
     }
@@ -308,6 +312,36 @@ public final class ExportModel {
             let name = try watermarks.importPicture(at: url)
             settings.watermark.kind = .image(name)
             errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Presets
+
+    /// The preset the current settings match exactly, if any.
+    public var currentPreset: ExportPreset? {
+        presets.presets.first { $0.settings == settings }
+    }
+
+    public func apply(_ preset: ExportPreset) {
+        settings = preset.settings
+    }
+
+    /// Saves the current settings under a name; the error, if any, goes to `errorMessage`.
+    public func savePreset(named name: String) {
+        do {
+            try presets.save(settings, named: name)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    public func deleteCurrentPreset() {
+        guard let preset = currentPreset else { return }
+        do {
+            try presets.delete(preset)
         } catch {
             errorMessage = error.localizedDescription
         }

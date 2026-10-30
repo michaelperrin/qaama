@@ -123,6 +123,10 @@ can feed a website one day. Dates are when the feature landed.
 - Existing files: keep both and number the new one, or overwrite (2026-10-30).
 - Metadata: keep all, remove the location, or remove all (2026-10-30).
 
+### Presets
+- Export presets saving format, size, frame, watermark and file options together; chosen from a
+  menu in the export window, which shows which preset the current settings match (2026-10-30).
+
 ## Platform
 - Native macOS app (macOS 27), SwiftUI, Core Image on Metal, sandboxed (2026-10-29).
 - English interface, ready for localization (2026-10-29).

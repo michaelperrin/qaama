@@ -58,7 +58,7 @@ Qaama/Export
   d'après l'original, suffixe numérique en cas de collision, progression et annulation.
 - Les réglages d'export ne font pas partie de la recette : ils décrivent le fichier, pas l'édition.
 
-## 3. Étapes
+## 3. Étapes (toutes faites le 30/10/2026, à valider)
 
 1. Photo seule : réglages, aperçu, encodage multi-format, métadonnées. Tests : dimensions de
    sortie, relecture des fichiers encodés (type, taille), orientation remise à 1.

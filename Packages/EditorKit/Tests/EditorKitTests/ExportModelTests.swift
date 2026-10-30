@@ -26,8 +26,32 @@ struct ExportModelTests {
         return ExportItem(id: id, name: { "DSCF0001" }, load: { input })
     }
 
-    /// A store in a temporary folder, so tests never touch the real watermarks.
+    /// Stores in temporary folders, so tests never touch the real watermarks or presets.
     private let store = WatermarkStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("ExportModelTests-\(UUID().uuidString)"))
+    private let presetDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("ExportPresets-\(UUID().uuidString)")
+
+    @Test func presetsSaveApplyAndDelete() throws {
+        let (defaults, cleanup) = makeDefaults()
+        defer { cleanup() }
+        defer { try? FileManager.default.removeItem(at: presetDirectory) }
+        let presets = ExportPresetStore(directory: presetDirectory)
+        let model = ExportModel(items: [item], defaults: defaults, watermarks: store, presets: presets)
+        #expect(model.currentPreset == nil)
+        model.settings = ExportSettings(format: .png, size: .longEdge(2048), naming: .sequence(prefix: "Web-", start: 1, digits: 3))
+        model.savePreset(named: "Web/Small")
+        #expect(model.errorMessage == nil)
+        #expect(model.currentPreset?.name == "Web-Small")
+        model.settings.quality = 0.5
+        #expect(model.currentPreset == nil)
+        let saved = try #require(presets.presets.first)
+        model.apply(saved)
+        #expect(model.settings.format == .png && model.currentPreset == saved)
+        #expect(ExportPresetStore(directory: presetDirectory).presets == [saved])
+        model.deleteCurrentPreset()
+        #expect(presets.presets.isEmpty && model.currentPreset == nil)
+        model.savePreset(named: "  ")
+        #expect(model.errorMessage != nil)
+    }
 
     private func makeFolder() throws -> URL {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -38,10 +62,10 @@ struct ExportModelTests {
     @Test func settingsAreRememberedBetweenWindows() {
         let (defaults, cleanup) = makeDefaults()
         defer { cleanup() }
-        let first = ExportModel(items: [item], defaults: defaults, watermarks: store)
+        let first = ExportModel(items: [item], defaults: defaults, watermarks: store, presets: ExportPresetStore(directory: presetDirectory))
         #expect(first.settings == ExportSettings())
         first.settings = ExportSettings(format: .png, quality: 0.5, size: .width(1200))
-        let second = ExportModel(items: [item], defaults: defaults, watermarks: store)
+        let second = ExportModel(items: [item], defaults: defaults, watermarks: store, presets: ExportPresetStore(directory: presetDirectory))
         #expect(second.settings == ExportSettings(format: .png, quality: 0.5, size: .width(1200)))
     }
 
@@ -59,7 +83,7 @@ struct ExportModelTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         try Data().write(to: folder.appendingPathComponent("DSCF0001.jpg"))
         let broken = ExportItem(id: "broken", name: { "broken" }, load: { throw LibrarySourceError.assetUnavailable })
-        let model = ExportModel(items: [item, item, broken], defaults: defaults, watermarks: store)
+        let model = ExportModel(items: [item, item, broken], defaults: defaults, watermarks: store, presets: ExportPresetStore(directory: presetDirectory))
         model.settings = ExportSettings(format: .jpeg, size: .longEdge(40))
         let written = await model.exportAll(to: folder)
         #expect(written == 2)
@@ -76,7 +100,7 @@ struct ExportModelTests {
         let folder = try makeFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         try Data().write(to: folder.appendingPathComponent("Trip-01.png"))
-        let model = ExportModel(items: [makeItem(id: "a"), makeItem(id: "b")], defaults: defaults, watermarks: store)
+        let model = ExportModel(items: [makeItem(id: "a"), makeItem(id: "b")], defaults: defaults, watermarks: store, presets: ExportPresetStore(directory: presetDirectory))
         model.settings = ExportSettings(format: .png, size: .longEdge(20), naming: .sequence(prefix: "Trip-", start: 1, digits: 2), existingFiles: .overwrite)
         #expect(model.outputFileName(for: model.items[1]) == nil) // name not resolved yet
         _ = await model.name(for: model.items[1])
@@ -91,7 +115,7 @@ struct ExportModelTests {
     @Test func previewFollowsTheCropAndSizesReportTheOutput() async {
         let (defaults, cleanup) = makeDefaults()
         defer { cleanup() }
-        let model = ExportModel(items: [item], defaults: defaults, watermarks: store)
+        let model = ExportModel(items: [item], defaults: defaults, watermarks: store, presets: ExportPresetStore(directory: presetDirectory))
         await model.loadPreview()
         #expect(model.errorMessage == nil)
         #expect(model.defaultFileName == "DSCF0001")
@@ -113,7 +137,7 @@ struct ExportModelTests {
     @Test func encodingHonorsTheFormat() async {
         let (defaults, cleanup) = makeDefaults()
         defer { cleanup() }
-        let model = ExportModel(items: [item], defaults: defaults, watermarks: store)
+        let model = ExportModel(items: [item], defaults: defaults, watermarks: store, presets: ExportPresetStore(directory: presetDirectory))
         model.settings = ExportSettings(format: .png, size: .longEdge(50))
         let data = await model.encodeSelected()
         #expect(model.errorMessage == nil)

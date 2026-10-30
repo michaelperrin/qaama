@@ -331,7 +331,7 @@ Bibliothèque
 
 Export
 
-- [ ] Export unitaire et par lot (format, qualité, taille, métadonnées, profil couleur).
+- [x] Export unitaire et par lot (format, qualité, taille, métadonnées, profil couleur).
       Conception dans `docs/export.md`. Étape 1 faite le 30/10/2026 : photo seule depuis
       l'éditeur, JPEG/PNG/HEIC/AVIF, qualité, taille par largeur, hauteur ou grand côté, aperçu,
       métadonnées recopiées, réglages mémorisés. WebP absent d'ImageIO en écriture (libwebp plus
@@ -339,7 +339,9 @@ Export
       dossier de destination, noms d'origine avec suffixe numérique, progression, arrêt, échecs
       listés. Fenêtre réorganisée (onglets, aperçu, bande de vignettes) et étape 3, bordure de
       couleur unie, étape 4, filigrane texte ou image, et étape 5, onglet Files (nommage
-      séquentiel, écraser ou renommer, métadonnées), le même jour. Reste : préréglages d'export.
+      séquentiel, écraser ou renommer, métadonnées), étape 6, préréglages d'export, le même
+      jour. Reste à valider par Michaël à son retour ; pistes : WebP via libwebp, profondeur
+      16 bits, profil couleur autre que sRGB, métadonnées pour les photos de Photos.
 - [ ] Enregistrement dans Photos ou dans un dossier, partage système.
 
 Qualité
