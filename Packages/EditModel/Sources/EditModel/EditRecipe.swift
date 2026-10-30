@@ -38,9 +38,17 @@ public struct EditRecipe: Codable, Hashable, Sendable {
         }
     }
 
-    /// True when applying the recipe would leave the photo unchanged.
+    /// True when applying the recipe would leave the photo unchanged. A masked layer counts only when
+    /// it has both adjustments and a mask that selects something.
     public var isIdentity: Bool {
-        (geometry?.isIdentity ?? true) && layers.allSatisfy { !$0.isEnabled || $0.adjustments.isIdentity }
+        (geometry?.isIdentity ?? true) && layers.allSatisfy { layer in
+            !layer.isEnabled || layer.adjustments.isIdentity || (layer.mask?.isEmpty ?? false)
+        }
+    }
+
+    /// Layers after the global one.
+    public var maskedLayers: [AdjustmentLayer] {
+        Array(layers.dropFirst())
     }
 
     // MARK: - Serialization
@@ -87,30 +95,14 @@ public struct EditRecipe: Codable, Hashable, Sendable {
 public struct AdjustmentLayer: Codable, Hashable, Sendable, Identifiable {
     public var id: UUID
     public var isEnabled: Bool
-    /// Where the adjustments apply; nil means the whole image. Masks are not rendered yet.
-    public var mask: MaskSpec?
+    /// Where the adjustments apply; nil means the whole image.
+    public var mask: Mask?
     public var adjustments: AdjustmentSet
 
-    public init(id: UUID = UUID(), isEnabled: Bool = true, mask: MaskSpec? = nil, adjustments: AdjustmentSet = AdjustmentSet()) {
+    public init(id: UUID = UUID(), isEnabled: Bool = true, mask: Mask? = nil, adjustments: AdjustmentSet = AdjustmentSet()) {
         self.id = id
         self.isEnabled = isEnabled
         self.mask = mask
         self.adjustments = adjustments
-    }
-}
-
-/// Description of a mask, recomputed from the original when the recipe is rendered.
-/// Only the shape of the data is settled here; rendering comes with the masks milestone.
-public struct MaskSpec: Codable, Hashable, Sendable {
-    public enum Kind: String, Codable, Sendable {
-        case subject, background, sky, luminosity, color, brush
-    }
-
-    public var kind: Kind
-    public var isInverted: Bool
-
-    public init(kind: Kind, isInverted: Bool = false) {
-        self.kind = kind
-        self.isInverted = isInverted
     }
 }

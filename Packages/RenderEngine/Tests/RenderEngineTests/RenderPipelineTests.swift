@@ -224,3 +224,84 @@ struct GeometryRendererTests {
         #expect(RenderPipeline.apply(recipe, to: image, geometry: nil).extent.width == 300)
     }
 }
+
+struct MaskRendererTests {
+    private let context = CIContext(options: [.useSoftwareRenderer: true])
+    private let flat = CIImage(color: CIColor(red: 0.4, green: 0.4, blue: 0.4)).cropped(to: CGRect(x: 0, y: 0, width: 200, height: 100))
+
+    /// Masks are weights, not colors: read them back linearly, without the sRGB encoding.
+    private func gray(_ image: CIImage, x: Int, y: Int) -> Double {
+        var pixel = [UInt8](repeating: 0, count: 4)
+        context.render(image, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: x, y: y, width: 1, height: 1),
+                       format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.linearSRGB))
+        return Double(pixel[0]) / 255
+    }
+
+    @Test func linearGradientSelectsOneSide() throws {
+        // Selected at the top (unit y 0.2), fading out toward the bottom (unit y 0.6).
+        let mask = try #require(MaskRenderer.render(Mask(.linearGradient(LinearGradientMask())), reference: flat))
+        #expect(gray(mask, x: 100, y: 95) > 0.95, "top of the image, Core Image y up")
+        #expect(gray(mask, x: 100, y: 5) < 0.05, "bottom of the image")
+    }
+
+    @Test func radialGradientIsBrightAtItsCenterAndDarkOutside() throws {
+        let radial = RadialGradientMask(center: UnitPoint2D(x: 0.25, y: 0.5), radiusX: 0.15, radiusY: 0.3, angle: 0, softness: 0.5)
+        let mask = try #require(MaskRenderer.render(Mask(.radialGradient(radial)), reference: flat))
+        #expect(gray(mask, x: 50, y: 50) > 0.95)
+        #expect(gray(mask, x: 190, y: 50) < 0.05)
+    }
+
+    @Test func luminosityAndColorRangesPickTheirTones() throws {
+        let half = CIImage(color: CIColor(red: 0.1, green: 0.1, blue: 0.1)).cropped(to: CGRect(x: 0, y: 0, width: 100, height: 100))
+            .composited(over: CIImage(color: CIColor(red: 0.9, green: 0.9, blue: 0.9)).cropped(to: CGRect(x: 0, y: 0, width: 200, height: 100)))
+        let darks = try #require(MaskRenderer.render(Mask(.luminosity(LuminosityRange(low: 0, high: 0.3, softness: 0.05))), reference: half))
+        #expect(gray(darks, x: 50, y: 50) > 0.9 && gray(darks, x: 150, y: 50) < 0.1)
+
+        let redAndBlue = CIImage(color: CIColor(red: 0.9, green: 0.1, blue: 0.1)).cropped(to: CGRect(x: 0, y: 0, width: 100, height: 100))
+            .composited(over: CIImage(color: CIColor(red: 0.1, green: 0.2, blue: 0.9)).cropped(to: CGRect(x: 0, y: 0, width: 200, height: 100)))
+        let blues = try #require(MaskRenderer.render(Mask(.color(ColorRange(hue: 230, hueRange: 30))), reference: redAndBlue))
+        #expect(gray(blues, x: 150, y: 50) > 0.9 && gray(blues, x: 50, y: 50) < 0.1)
+    }
+
+    @Test func operationsFeatherInvertAndDensity() throws {
+        var mask = Mask(.linearGradient(LinearGradientMask(start: UnitPoint2D(x: 0.5, y: 0.1), end: UnitPoint2D(x: 0.5, y: 0.2))))
+        mask.components.append(MaskComponent(operation: .subtract, kind: .luminosity(LuminosityRange(low: 0, high: 1, softness: 0))))
+        let subtracted = try #require(MaskRenderer.render(mask, reference: flat))
+        #expect(gray(subtracted, x: 100, y: 95) < 0.05, "subtracting everything leaves nothing")
+
+        mask.components.removeLast()
+        mask.isInverted = true
+        let inverted = try #require(MaskRenderer.render(mask, reference: flat))
+        #expect(gray(inverted, x: 100, y: 95) < 0.05 && gray(inverted, x: 100, y: 5) > 0.95)
+
+        mask.isInverted = false
+        mask.density = 0.5
+        let dim = try #require(MaskRenderer.render(mask, reference: flat))
+        #expect(abs(gray(dim, x: 100, y: 95) - 0.5) < 0.1)
+
+        mask.density = 1
+        let hard = try #require(MaskRenderer.render(mask, reference: flat))
+        mask.feather = 0.5
+        let soft = try #require(MaskRenderer.render(mask, reference: flat))
+        // The gradient ends at unit y 0.2 (pixel row 80, Core Image y up); a few rows below, only the
+        // feathered mask still has something.
+        #expect(gray(hard, x: 100, y: 74) < 0.02)
+        #expect(gray(soft, x: 100, y: 74) > 0.03 && gray(soft, x: 100, y: 74) < 0.9, "feathering spreads the edge")
+    }
+
+    @Test func maskedLayerChangesOnlyItsRegionAndSurvivesCropping() {
+        var recipe = EditRecipe()
+        var layer = AdjustmentLayer(mask: Mask(.linearGradient(LinearGradientMask(start: UnitPoint2D(x: 0.5, y: 0.3), end: UnitPoint2D(x: 0.5, y: 0.31)))))
+        layer.adjustments.exposure = 2
+        recipe.layers.append(layer)
+        let output = RenderPipeline.apply(recipe, to: flat)
+        #expect(gray(output, x: 100, y: 90) > gray(flat, x: 100, y: 90) * 2, "top rows are brightened (+2 EV)")
+        #expect(abs(gray(output, x: 100, y: 10) - gray(flat, x: 100, y: 10)) < 0.02, "bottom rows are untouched")
+
+        // Cropping to the bottom half afterwards must not drag the mask along.
+        recipe.geometry = Geometry(crop: UnitRect(x: 0, y: 0.5, width: 1, height: 0.5))
+        let cropped = RenderPipeline.apply(recipe, to: flat)
+        #expect(cropped.extent.height == 50)
+        #expect(abs(gray(cropped, x: 100, y: 45) - gray(flat, x: 100, y: 10)) < 0.02, "the kept half was never under the mask")
+    }
+}

@@ -71,6 +71,12 @@ can feed a website one day. Dates are when the feature landed.
 - Straighten from -45° to +45° with automatic trimming of empty corners; rotate by quarter
   turns; flip horizontally (2026-10-30).
 
+### Masks
+- Masked adjustment layers: linear gradient, radial gradient, luminance range and color range
+  masks, combined by adding, subtracting or intersecting components; feather, density, invert;
+  rename, duplicate (optionally inverted), delete; the sliders edit the selected layer; red
+  overlay on the canvas (O) (2026-10-30).
+
 ### Information
 - Histogram of the current edit with clipping indicators (2026-10-30).
 - Camera, lens, exposure settings, size and capture date from the file's EXIF (2026-10-30).

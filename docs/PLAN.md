@@ -350,6 +350,12 @@ Interface
 - [ ] Fonctions « intelligentes » via Vision/Core Image : auto‑amélioration, redressement
       automatique de l'horizon, masque de sujet / arrière‑plan, ajustements par zone
       (pinceau, dégradé, masque ML).
+      Masques, étape 1 faite le 30/10/2026 (`docs/masques.md`) : modèle en composants,
+      dégradés linéaire et radial, plages de luminance et de couleur, fusion par masque,
+      géométrie en deux temps, calques dans l'inspecteur avec menu Add/Subtract/Rename/
+      Duplicate/Invert/Delete, curseurs par calque, superposition rouge. Reste : sujet,
+      arrière-plan, personnes (Vision), ciel et scène (DETR embarqué), pinceau, poignées des
+      dégradés sur le canevas.
 - [ ] Super‑résolution et débruitage via modèles open source convertis en Core ML.
 - [ ] Outil de retouche/suppression d'objets (approche simple d'abord : clonage,
       inpainting basique).

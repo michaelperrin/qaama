@@ -129,10 +129,19 @@ Section **Masks** de l'inspecteur, au-dessus des réglages :
 - Tout passe par `EditorModel` et l'historique : ajouter, modifier, supprimer un masque ou un
   trait = une étape annulable.
 
-### Décisions en attente (proposition appliquée par défaut)
+### Décisions (Michaël, 30/10/2026)
 
-- Modèle DETR téléchargé au premier usage plutôt qu'embarqué.
-- Masque « Scène » (mer, herbe, route, bâtiment…) après le ciel, pas dans la première passe.
+- Modèle DETR **embarqué** dans l'app (85 Mo acceptés).
+- Masque « Scène » (herbe, route, mer, bâtiment, neige, montagne…) proposé **rapidement**, dans
+  la même passe que le ciel : type `scene(classes:)` dans le modèle dès l'étape 1.
+
+### Édition sur le canevas (demande de Michaël, 30/10/2026)
+
+Les curseurs de paramètres des dégradés sont un pis-aller de l'étape 1. L'édition doit se faire
+sur l'image : poignées des dégradés (point de départ et d'arrivée, centre, rayons, rotation),
+pipette de luminance et de couleur (cliquer une zone règle la plage), pinceau au glissement,
+le tout avec le masque visible en superposition pendant l'édition. Prévu dans l'étape 4 avec le
+pinceau, qui partage la même infrastructure (overlay interactif sur `EditorCanvas`).
 
 ## 7. Étapes
 

@@ -12,16 +12,31 @@ public nonisolated enum RenderPipeline {
         apply(recipe, to: image, geometry: recipe.geometry)
     }
 
-    /// Same, with the geometry overridden: the crop tool shows the straightened image without its crop.
-    public static func apply(_ recipe: EditRecipe, to image: CIImage, geometry: Geometry?) -> CIImage {
+    /// Full render: straighten, global layer, masked layers blended through their masks, then crop.
+    /// `geometry` can be overridden (the crop tool shows the straightened image without its crop);
+    /// `masks` holds the precomputed images of model-based mask components, by component id.
+    public static func apply(_ recipe: EditRecipe, to image: CIImage, geometry: Geometry?, masks: [UUID: CIImage] = [:]) -> CIImage {
         var current = image
-        if let geometry, !geometry.isIdentity {
-            current = GeometryRenderer.apply(geometry, to: current)
+        if let geometry {
+            current = GeometryRenderer.straighten(image, with: geometry)
         }
-        return recipe.layers.reduce(current) { current, layer in
-            guard layer.isEnabled, !layer.adjustments.isIdentity else { return current }
-            return apply(layer.adjustments, to: current)
+        let reference = current
+        for (index, layer) in recipe.layers.enumerated() where layer.isEnabled && !layer.adjustments.isIdentity {
+            if index == 0 || layer.mask == nil {
+                current = apply(layer.adjustments, to: current)
+            } else if let mask = layer.mask, let maskImage = MaskRenderer.render(mask, reference: reference, resolved: masks) {
+                let adjusted = apply(layer.adjustments, to: current)
+                let blend = CIFilter.blendWithMask()
+                blend.inputImage = adjusted
+                blend.backgroundImage = current
+                blend.maskImage = maskImage
+                current = (blend.outputImage ?? current).cropped(to: reference.extent)
+            }
         }
+        if let geometry {
+            current = GeometryRenderer.crop(current, with: geometry)
+        }
+        return current
     }
 
     public static func apply(_ adjustments: AdjustmentSet, to image: CIImage) -> CIImage {

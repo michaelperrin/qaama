@@ -201,6 +201,36 @@ struct EditorModelTests {
         #expect(model.recipe.geometry == nil)
     }
 
+    @Test func maskedLayersAreEditedThroughTheSelection() {
+        let model = EditorModel(assetID: "sample-0", source: SampleLibrarySource(count: 1), renderer: nil)
+        #expect(model.editingTargetName == "Whole Photo")
+        model.addMaskLayer(.linearGradient(LinearGradientMask()))
+        #expect(model.recipe.layers.count == 2 && model.selectedLayerID == model.recipe.layers[1].id)
+        #expect(model.editingTargetName == "Linear Gradient" && model.canUndo)
+
+        model.adjustments.exposure = 1
+        #expect(model.recipe.layers[1].adjustments.exposure == 1 && model.recipe.global.exposure == nil)
+        model.selectedLayerID = nil
+        model.adjustments.contrast = 0.5
+        #expect(model.recipe.global.contrast == 0.5)
+
+        let layerID = model.recipe.layers[1].id
+        model.addComponent(.luminosity(LuminosityRange()), operation: .subtract, toLayer: layerID)
+        #expect(model.recipe.layers[1].mask?.components.count == 2)
+        model.updateMask(layerID) { $0.isInverted = true; $0.name = "Sky" }
+        #expect(model.recipe.layers[1].mask?.displayName == "Sky")
+
+        model.duplicateLayer(layerID, inverted: true)
+        #expect(model.recipe.layers.count == 3 && model.recipe.layers[2].mask?.isInverted == false)
+        #expect(model.recipe.layers[2].mask?.displayName == "Sky (inverted)")
+
+        model.removeLayer(model.recipe.layers[2].id)
+        model.removeLayer(layerID)
+        #expect(model.recipe.layers.count == 1 && model.selectedLayerID == nil)
+        model.removeLayer(model.recipe.layers[0].id)
+        #expect(model.recipe.layers.count == 1, "the global layer can't be removed")
+    }
+
     @Test func unsupportedRecipeOpensTheOriginal() async throws {
         let url = try makeImage()
         defer { try? FileManager.default.removeItem(at: url) }

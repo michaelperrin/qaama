@@ -1,5 +1,6 @@
 import CoreGraphics
 import CoreImage
+import CoreImage.CIFilterBuiltins
 import EditModel
 import Foundation
 import ImageIOKit
@@ -39,6 +40,104 @@ public final class EditorModel {
 
     /// While true the canvas shows the straightened image without its crop, under the crop frame.
     public private(set) var isCropping = false
+
+    // MARK: - Layers and masks
+
+    /// The masked layer the sliders edit; nil means the global layer.
+    public var selectedLayerID: UUID? {
+        didSet { renderPreview() }
+    }
+
+    /// Shows the selected layer's mask as a red tint on the canvas.
+    public var showsMaskOverlay = false {
+        didSet { renderPreview() }
+    }
+
+    /// Precomputed images of model-based mask components (subject, sky…), by component id.
+    public private(set) var maskImages: [UUID: CIImage] = [:]
+
+    private var selectedLayerIndex: Int? {
+        guard let selectedLayerID else { return nil }
+        return recipe.layers.firstIndex { $0.id == selectedLayerID }
+    }
+
+    /// The adjustments the inspector edits: the selected masked layer's, or the global layer's.
+    public var adjustments: AdjustmentSet {
+        get { selectedLayerIndex.map { recipe.layers[$0].adjustments } ?? recipe.global }
+        set {
+            if let index = selectedLayerIndex {
+                recipe.layers[index].adjustments = newValue
+            } else {
+                recipe.global = newValue
+            }
+        }
+    }
+
+    /// What the sliders currently edit, for the banner above them.
+    public var editingTargetName: String {
+        selectedLayerIndex.map { recipe.layers[$0].mask?.displayName ?? "Layer" } ?? "Whole Photo"
+    }
+
+    public var selectedLayer: AdjustmentLayer? {
+        selectedLayerIndex.map { recipe.layers[$0] }
+    }
+
+    /// Adds a layer masked by `kind`, selects it, and records one undo step.
+    public func addMaskLayer(_ kind: MaskKind) {
+        let layer = AdjustmentLayer(mask: Mask(kind))
+        recipe.layers.append(layer)
+        selectedLayerID = layer.id
+        commitChange()
+    }
+
+    public func removeLayer(_ id: UUID) {
+        guard let index = recipe.layers.firstIndex(where: { $0.id == id }), index > 0 else { return }
+        recipe.layers.remove(at: index)
+        if selectedLayerID == id {
+            selectedLayerID = nil
+        }
+        commitChange()
+    }
+
+    public func duplicateLayer(_ id: UUID, inverted: Bool) {
+        guard let index = recipe.layers.firstIndex(where: { $0.id == id }), index > 0 else { return }
+        var copy = recipe.layers[index]
+        copy.id = UUID()
+        if var mask = copy.mask {
+            mask.components = mask.components.map { component in
+                var component = component
+                component.id = UUID()
+                return component
+            }
+            if inverted {
+                mask.isInverted.toggle()
+            }
+            mask.name = (mask.name ?? mask.displayName) + (inverted ? " (inverted)" : " copy")
+            copy.mask = mask
+        }
+        recipe.layers.insert(copy, at: index + 1)
+        selectedLayerID = copy.id
+        commitChange()
+    }
+
+    public func updateLayer(_ id: UUID, _ change: (inout AdjustmentLayer) -> Void) {
+        guard let index = recipe.layers.firstIndex(where: { $0.id == id }), index > 0 else { return }
+        change(&recipe.layers[index])
+    }
+
+    /// Edits the mask of a layer; call `commitChange()` when the gesture or action is done.
+    public func updateMask(_ id: UUID, _ change: (inout Mask) -> Void) {
+        updateLayer(id) { layer in
+            var mask = layer.mask ?? Mask()
+            change(&mask)
+            layer.mask = mask
+        }
+    }
+
+    public func addComponent(_ kind: MaskKind, operation: MaskComponent.Operation, toLayer id: UUID) {
+        updateMask(id) { $0.components.append(MaskComponent(operation: operation, kind: kind)) }
+        commitChange()
+    }
 
     /// The recipe's geometry, or a blank one to start from; writing an identity stores nil.
     public var geometry: Geometry {
@@ -268,12 +367,29 @@ public final class EditorModel {
             sourceImage.image
         } else if isCropping {
             // The crop tool frames the straightened image: show it whole, the frame does the cropping.
-            RenderPipeline.apply(recipe, to: sourceImage.image, geometry: recipe.geometry?.withoutCrop)
+            RenderPipeline.apply(recipe, to: sourceImage.image, geometry: recipe.geometry?.withoutCrop, masks: maskImages)
         } else {
-            RenderPipeline.apply(recipe, to: sourceImage.image)
+            RenderPipeline.apply(recipe, to: sourceImage.image, geometry: recipe.geometry, masks: maskImages)
         }
-        renderer?.image = shown
+        renderer?.image = showsMaskOverlay ? withMaskOverlay(shown, source: sourceImage.image) : shown
         scheduleHistogram(of: shown)
+    }
+
+    /// Red tint where the selected layer's mask selects, over the rendered image.
+    private func withMaskOverlay(_ image: CIImage, source: CIImage) -> CIImage {
+        guard let layer = selectedLayer, let mask = layer.mask else { return image }
+        let geometry = isCropping ? recipe.geometry?.withoutCrop : recipe.geometry
+        let reference = geometry.map { GeometryRenderer.straighten(source, with: $0) } ?? source
+        guard var maskImage = MaskRenderer.render(mask, reference: reference, resolved: maskImages) else { return image }
+        if let geometry {
+            maskImage = GeometryRenderer.crop(maskImage, with: geometry)
+        }
+        let red = CIImage(color: CIColor(red: 1, green: 0.15, blue: 0.1, alpha: 0.55)).cropped(to: image.extent)
+        let blend = CIFilter.blendWithMask()
+        blend.inputImage = red
+        blend.backgroundImage = image
+        blend.maskImage = maskImage
+        return (blend.outputImage ?? image).cropped(to: image.extent)
     }
 
     /// Recomputes the histogram once the sliders settle: one computation per burst of changes.

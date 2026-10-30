@@ -34,17 +34,19 @@ struct EditRecipeTests {
 
     @Test func roundTripsThroughJSON() throws {
         var recipe = EditRecipe(exposure: 1.25, contrast: -0.3)
-        recipe.layers.append(AdjustmentLayer(mask: MaskSpec(kind: .sky, isInverted: true), adjustments: AdjustmentSet(saturation: 0.4)))
+        var skyMask = Mask(.sky)
+        skyMask.isInverted = true
+        recipe.layers.append(AdjustmentLayer(mask: skyMask, adjustments: AdjustmentSet(saturation: 0.4)))
         let data = try recipe.jsonData()
         let text = String(decoding: data, as: UTF8.self)
         #expect(text.contains("\"version\":2") && text.contains("\"layers\":["))
         #expect(text.contains("\"exposure\":1.25") && !text.contains("saturation\":0,"))
-        #expect(text.contains("\"kind\":\"sky\""))
+        #expect(text.contains("\"sky\""))
 
         let reloaded = try EditRecipe(jsonData: data)
         #expect(reloaded == recipe)
         #expect(reloaded.global.exposure == 1.25)
-        #expect(reloaded.layers[1].mask?.kind == .sky)
+        #expect(reloaded.layers[1].mask?.components.first?.kind == .sky)
     }
 
     @Test func globalLayerIsEditableInPlace() {
@@ -221,5 +223,45 @@ struct ToneCurveTests {
         set.curves = Curves()
         set.clamp()
         #expect(set.curves == nil, "identity curves are dropped")
+    }
+}
+
+struct MaskTests {
+    @Test func kindsRoundTripThroughJSON() throws {
+        let kinds: [MaskKind] = [
+            .subject(instances: [0, 2]), .background, .people, .sky, .scene(classes: ["grass", "road"]),
+            .luminosity(LuminosityRange(low: 0.2, high: 0.8, softness: 0.1)),
+            .color(ColorRange(hue: 200, hueRange: 25, saturationMinimum: 0.3, softness: 0.2)),
+            .linearGradient(LinearGradientMask()),
+            .radialGradient(RadialGradientMask(center: UnitPoint2D(x: 0.3, y: 0.4), radiusX: 0.2, radiusY: 0.1, angle: 15, softness: 0.4)),
+            .brush(BrushMask(strokes: [BrushMask.Stroke(points: [UnitPoint2D(x: 0.1, y: 0.1), UnitPoint2D(x: 0.2, y: 0.2)], radius: 0.05)])),
+        ]
+        var mask = Mask(name: "Test", components: kinds.map { MaskComponent(kind: $0) }, feather: 0.2, density: 0.8)
+        mask.components[1].operation = .subtract
+        var recipe = EditRecipe()
+        recipe.layers.append(AdjustmentLayer(mask: mask, adjustments: AdjustmentSet(exposure: 0.5)))
+        let reloaded = try EditRecipe(jsonData: recipe.jsonData())
+        #expect(reloaded.layers[1].mask == mask)
+        #expect(reloaded.maskedLayers.count == 1)
+        #expect(mask.displayName == "Test" && Mask(.sky).displayName == "Sky" && Mask(.scene(classes: ["grass"])).displayName == "Grass")
+        #expect(MaskKind.sky.needsModel && !MaskKind.background.needsModel == false && !MaskKind.linearGradient(LinearGradientMask()).needsModel)
+    }
+
+    @Test func emptyMaskedLayersDontCountAsEdits() {
+        var recipe = EditRecipe()
+        recipe.layers.append(AdjustmentLayer(mask: Mask(), adjustments: AdjustmentSet(exposure: 1)))
+        #expect(recipe.isIdentity, "a layer whose mask selects nothing changes nothing")
+        recipe.layers[1].mask = Mask(.linearGradient(LinearGradientMask()))
+        #expect(!recipe.isIdentity)
+    }
+
+    @Test func rangeWeightsRampSoftly() {
+        let tones = LuminosityRange(low: 0.4, high: 0.6, softness: 0.2)
+        #expect(tones.weight(0.5) == 1 && abs(tones.weight(0.3) - 0.5) < 0.0001 && tones.weight(0.1) == 0)
+        let blues = ColorRange(hue: 210, hueRange: 30, saturationMinimum: 0.2, softness: 0.5)
+        #expect(blues.weight(hue: 220, saturation: 0.8) == 1)
+        #expect(blues.weight(hue: 30, saturation: 0.8) == 0, "orange is far from blue")
+        #expect(blues.weight(hue: 210, saturation: 0) == 0, "gray doesn't count")
+        #expect(ColorRange(hue: -10).hue == 350)
     }
 }

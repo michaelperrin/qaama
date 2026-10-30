@@ -57,6 +57,7 @@ struct AdjustmentsInspector: View {
                 }
                 .controlSize(.small)
             }
+            MasksSection(model: model)
             Section("Crop & Straighten") {
                 HStack {
                     Button(model.isCropping ? "Done" : "Crop") { model.toggleCropping() }
@@ -83,6 +84,11 @@ struct AdjustmentsInspector: View {
                 if model.recipe.geometry != nil {
                     Button("Reset Crop & Straighten") { model.resetGeometry() }
                 }
+            }
+            Section {
+                Label("Editing: \(model.editingTargetName)", systemImage: model.selectedLayerID == nil ? "photo" : "circle.lefthalf.filled")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(model.selectedLayerID == nil ? .secondary : Color.accentColor)
             }
             Section("White Balance") {
                 slider("Temperature", \.temperature)
@@ -119,9 +125,9 @@ struct AdjustmentsInspector: View {
                                      range: HSLValue.range, onEditingEnded: model.commitChange)
                         .tint(rangeColor(range))
                 }
-                if model.recipe.global.hsl != nil {
+                if model.adjustments.hsl != nil {
                     Button("Reset Color Mixer") {
-                        model.recipe.global.hsl = nil
+                        model.adjustments.hsl = nil
                         model.commitChange()
                     }
                 }
@@ -132,7 +138,7 @@ struct AdjustmentsInspector: View {
             }
             Section("Black & White") {
                 Toggle("Black & White", isOn: monochromeEnabled)
-                if let monochrome = model.recipe.global.monochrome {
+                if let monochrome = model.adjustments.monochrome {
                     AdjustmentSlider(title: "Red", value: mix(\.red, monochrome), range: Monochrome.range, onEditingEnded: model.commitChange)
                     AdjustmentSlider(title: "Green", value: mix(\.green, monochrome), range: Monochrome.range, onEditingEnded: model.commitChange)
                     AdjustmentSlider(title: "Blue", value: mix(\.blue, monochrome), range: Monochrome.range, onEditingEnded: model.commitChange)
@@ -188,7 +194,7 @@ struct AdjustmentsInspector: View {
     private func hslValue(_ range: HSL.ColorRange, _ component: HSLComponent) -> Binding<Double> {
         Binding(
             get: {
-                let value = model.recipe.global.hsl?[range] ?? HSLValue()
+                let value = model.adjustments.hsl?[range] ?? HSLValue()
                 switch component {
                 case .hue: return value.hue
                 case .saturation: return value.saturation
@@ -196,7 +202,7 @@ struct AdjustmentsInspector: View {
                 }
             },
             set: { newValue in
-                var hsl = model.recipe.global.hsl ?? HSL()
+                var hsl = model.adjustments.hsl ?? HSL()
                 var value = hsl[range]
                 switch component {
                 case .hue: value.hue = newValue
@@ -204,7 +210,7 @@ struct AdjustmentsInspector: View {
                 case .luminance: value.luminance = newValue
                 }
                 hsl[range] = value
-                model.recipe.global.hsl = hsl.isIdentity ? nil : hsl
+                model.adjustments.hsl = hsl.isIdentity ? nil : hsl
             }
         )
     }
@@ -215,9 +221,9 @@ struct AdjustmentsInspector: View {
 
     private var monochromeEnabled: Binding<Bool> {
         Binding(
-            get: { model.recipe.global.monochrome != nil },
+            get: { model.adjustments.monochrome != nil },
             set: { enabled in
-                model.recipe.global.monochrome = enabled ? (model.recipe.global.monochrome ?? Monochrome()) : nil
+                model.adjustments.monochrome = enabled ? (model.adjustments.monochrome ?? Monochrome()) : nil
                 model.commitChange()
             }
         )
@@ -227,9 +233,9 @@ struct AdjustmentsInspector: View {
         Binding(
             get: { current[keyPath: keyPath] },
             set: { value in
-                var monochrome = model.recipe.global.monochrome ?? Monochrome()
+                var monochrome = model.adjustments.monochrome ?? Monochrome()
                 monochrome[keyPath: keyPath] = value
-                model.recipe.global.monochrome = monochrome
+                model.adjustments.monochrome = monochrome
             }
         )
     }
@@ -237,8 +243,8 @@ struct AdjustmentsInspector: View {
     /// Curves of the global layer; identity curves are stored as absent.
     private var curvesBinding: Binding<Curves> {
         Binding(
-            get: { model.recipe.global.curves ?? Curves() },
-            set: { model.recipe.global.curves = $0.isIdentity ? nil : $0 }
+            get: { model.adjustments.curves ?? Curves() },
+            set: { model.adjustments.curves = $0.isIdentity ? nil : $0 }
         )
     }
 
@@ -300,8 +306,8 @@ struct AdjustmentsInspector: View {
     /// Slider binding on an optional adjustment of the global layer: absent reads as neutral.
     private func adjustment(_ keyPath: WritableKeyPath<AdjustmentSet, Double?>) -> Binding<Double> {
         Binding(
-            get: { model.recipe.global[keyPath: keyPath] ?? 0 },
-            set: { model.recipe.global[keyPath: keyPath] = $0 == 0 ? nil : $0 }
+            get: { model.adjustments[keyPath: keyPath] ?? 0 },
+            set: { model.adjustments[keyPath: keyPath] = $0 == 0 ? nil : $0 }
         )
     }
 }

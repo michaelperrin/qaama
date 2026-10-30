@@ -179,7 +179,7 @@ public struct HSL: Codable, Hashable, Sendable {
         }
     }
 
-    static func rgbToHSL(_ r: Double, _ g: Double, _ b: Double) -> (Double, Double, Double) {
+    public static func rgbToHSL(_ r: Double, _ g: Double, _ b: Double) -> (Double, Double, Double) {
         let maximum = max(r, g, b), minimum = min(r, g, b)
         let l = (maximum + minimum) / 2
         let delta = maximum - minimum
@@ -196,7 +196,7 @@ public struct HSL: Codable, Hashable, Sendable {
         return (h, s, l)
     }
 
-    static func hslToRGB(_ h: Double, _ s: Double, _ l: Double) -> (red: Double, green: Double, blue: Double) {
+    public static func hslToRGB(_ h: Double, _ s: Double, _ l: Double) -> (red: Double, green: Double, blue: Double) {
         guard s > 0 else { return (l, l, l) }
         let q = l < 0.5 ? l * (1 + s) : l + s - l * s
         let p = 2 * l - q

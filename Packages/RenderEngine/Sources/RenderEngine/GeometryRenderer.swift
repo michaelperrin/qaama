@@ -2,34 +2,45 @@ import CoreGraphics
 import CoreImage
 import EditModel
 
-/// Applies a recipe's geometry (turns, flip, straightening, crop) to an image. Output extent starts at
-/// the origin so the adjustments and the canvas see a plain image.
+/// Applies a recipe's geometry in two steps: `straighten` gives the reference image masks are
+/// defined in (flipped, turned, straightened, trimmed of empty corners); `crop` cuts the final frame.
+/// Output extents start at the origin so the adjustments and the canvas see plain images.
 public nonisolated enum GeometryRenderer {
     public static func apply(_ geometry: Geometry, to image: CIImage) -> CIImage {
+        crop(straighten(image, with: geometry), with: geometry)
+    }
+
+    /// Flip, quarter turns and straightening, cropped to the safe area (no empty corners).
+    public static func straighten(_ image: CIImage, with geometry: Geometry) -> CIImage {
         var output = image
         if geometry.isFlippedHorizontally {
-            output = output.transformed(by: CGAffineTransform(scaleX: -1, y: 1)).moved(toOrigin: true)
+            output = output.transformed(by: CGAffineTransform(scaleX: -1, y: 1)).movedToOrigin()
         }
         if geometry.quarterTurns != 0 {
             // Clockwise turns are negative rotations in Core Image's counterclockwise convention.
             let radians = -Double(geometry.quarterTurns) * .pi / 2
-            output = output.transformed(by: CGAffineTransform(rotationAngle: radians)).moved(toOrigin: true)
+            output = output.transformed(by: CGAffineTransform(rotationAngle: radians)).movedToOrigin()
         }
-
+        guard geometry.angle != 0 else { return output }
         let straight = output.extent
-        if geometry.angle != 0 {
-            output = output.transformed(by: CGAffineTransform(rotationAngle: -geometry.angle * .pi / 180)).moved(toOrigin: true)
-        }
+        output = output.transformed(by: CGAffineTransform(rotationAngle: -geometry.angle * .pi / 180)).movedToOrigin()
         let safe = safeArea(for: straight.size, rotatedExtent: output.extent, degrees: geometry.angle)
+        return output.cropped(to: safe.integral).movedToOrigin()
+    }
+
+    /// The crop frame, expressed in the reference image's unit coordinates (origin top-left).
+    public static func crop(_ reference: CIImage, with geometry: Geometry) -> CIImage {
         let crop = geometry.crop
+        guard !crop.isFull else { return reference }
+        let extent = reference.extent
         // The crop's origin is at the top-left; Core Image's is at the bottom-left.
         let cropRect = CGRect(
-            x: safe.minX + crop.x * safe.width,
-            y: safe.minY + (1 - crop.y - crop.height) * safe.height,
-            width: crop.width * safe.width,
-            height: crop.height * safe.height
+            x: extent.minX + crop.x * extent.width,
+            y: extent.minY + (1 - crop.y - crop.height) * extent.height,
+            width: crop.width * extent.width,
+            height: crop.height * extent.height
         ).integral
-        return output.cropped(to: cropRect).moved(toOrigin: true)
+        return reference.cropped(to: cropRect).movedToOrigin()
     }
 
     /// Largest rectangle with the straight image's aspect ratio inside the rotated image, centered.
@@ -41,9 +52,9 @@ public nonisolated enum GeometryRenderer {
     }
 }
 
-private nonisolated extension CIImage {
+nonisolated extension CIImage {
     /// Translates the image so its extent starts at (0, 0).
-    func moved(toOrigin _: Bool) -> CIImage {
+    func movedToOrigin() -> CIImage {
         let origin = extent.origin
         guard origin != .zero, !extent.isInfinite else { return self }
         return transformed(by: CGAffineTransform(translationX: -origin.x, y: -origin.y))
