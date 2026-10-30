@@ -145,6 +145,7 @@ struct AdjustmentsInspector: View {
                 }
             }
             Section("Effects") {
+                slider("Dehaze", \.dehaze)
                 slider("Vignette", \.vignette)
                 slider("Grain", \.grain)
             }

@@ -39,6 +39,8 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     public var noiseReduction: Double?
 
     /// Effects
+    /// Remove (+) or add (-) atmospheric haze, -1 to +1.
+    public var dehaze: Double?
     /// Darken (+) or brighten (-) the corners, -1 to +1.
     public var vignette: Double?
     /// Film-like grain, 0 to 1.
@@ -51,8 +53,8 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
 
     public init(temperature: Double? = nil, tint: Double? = nil, exposure: Double? = nil, highlights: Double? = nil,
                 shadows: Double? = nil, blackPoint: Double? = nil, contrast: Double? = nil, vibrance: Double? = nil,
-                saturation: Double? = nil, sharpness: Double? = nil, noiseReduction: Double? = nil, vignette: Double? = nil,
-                grain: Double? = nil, monochrome: Monochrome? = nil)
+                saturation: Double? = nil, sharpness: Double? = nil, noiseReduction: Double? = nil, dehaze: Double? = nil,
+                vignette: Double? = nil, grain: Double? = nil, monochrome: Monochrome? = nil)
     {
         self.temperature = temperature
         self.tint = tint
@@ -65,6 +67,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
         self.saturation = saturation
         self.sharpness = sharpness
         self.noiseReduction = noiseReduction
+        self.dehaze = dehaze
         self.vignette = vignette
         self.grain = grain
         self.monochrome = monochrome
@@ -74,7 +77,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     /// Every adjustment, in the order the engine applies them.
     public static let all: [WritableKeyPath<AdjustmentSet, Double?> & Sendable] = [
         \.temperature, \.tint, \.exposure, \.highlights, \.shadows, \.blackPoint, \.contrast, \.vibrance, \.saturation,
-        \.sharpness, \.noiseReduction, \.vignette, \.grain,
+        \.sharpness, \.noiseReduction, \.dehaze, \.vignette, \.grain,
     ]
 
     public static let positiveRange: ClosedRange<Double> = 0 ... 1

@@ -90,6 +90,42 @@ struct RenderPipelineTests {
         #expect(output.extent == flat.extent)
     }
 
+    /// Two flat halves: the brighter one is the haze the darker one is seen through.
+    private var hazy: CIImage {
+        let left = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5)).cropped(to: CGRect(x: 0, y: 0, width: 100, height: 50))
+        let right = CIImage(color: CIColor(red: 0.7, green: 0.7, blue: 0.7)).cropped(to: CGRect(x: 100, y: 0, width: 100, height: 50))
+        return right.composited(over: left).cropped(to: CGRect(x: 0, y: 0, width: 200, height: 50))
+    }
+
+    private func sample(_ image: CIImage, _ x: Int, _ y: Int) -> Double {
+        var pixel = [UInt8](repeating: 0, count: 4)
+        context.render(image, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: x, y: y, width: 1, height: 1),
+                       format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+        return Double(pixel[0]) / 255
+    }
+
+    @Test func dehazeDeepensTheVeiledSideAndKeepsTheAirlight() {
+        let output = RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(dehaze: 1)), to: hazy)
+        #expect(output.extent == hazy.extent)
+        // The darker half carries veil: it drops well below its 0.5. The brighter half is the airlight
+        // itself and stays where it was.
+        #expect(sample(output, 25, 25) < 0.3)
+        #expect(abs(sample(output, 175, 25) - 0.7) < 0.03)
+    }
+
+    @Test func negativeDehazeFlattensTheContrast() {
+        let output = RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(dehaze: -1)), to: hazy)
+        let before = sample(hazy, 175, 25) - sample(hazy, 25, 25)
+        let after = sample(output, 175, 25) - sample(output, 25, 25)
+        #expect(after > 0)
+        #expect(after < before * 0.7)
+    }
+
+    @Test func dehazeLeavesAFlatImageAlone() {
+        let output = RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(dehaze: 1)), to: gray)
+        #expect(abs(color(of: output).r - 0.5) < 0.02)
+    }
+
     @Test func detailAdjustmentsKeepTheExtent() {
         let output = RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(sharpness: -1, noiseReduction: 1)), to: gray)
         #expect(output.extent == gray.extent)

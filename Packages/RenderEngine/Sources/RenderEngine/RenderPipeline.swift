@@ -5,8 +5,8 @@ import EditModel
 /// Turns an `EditRecipe` into a Core Image filter chain. Pure function of its inputs.
 ///
 /// Layers are applied in order; within a layer the adjustments run in the engine's fixed order:
-/// white balance, exposure, highlights and shadows, black point, contrast, curves, color, selective color, detail, black and white, then effects. Masks are carried by the
-/// recipe but not rendered yet.
+/// white balance, exposure, dehaze, highlights and shadows, black point, contrast, curves, color,
+/// selective color, detail, black and white, then effects.
 public nonisolated enum RenderPipeline {
     public static func apply(_ recipe: EditRecipe, to image: CIImage) -> CIImage {
         apply(recipe, to: image, geometry: recipe.geometry)
@@ -59,6 +59,10 @@ public nonisolated enum RenderPipeline {
             exposure.inputImage = output
             exposure.ev = Float(ev)
             output = exposure.outputImage ?? output
+        }
+
+        if let dehaze = adjustments.dehaze, dehaze != 0 {
+            output = Dehaze.apply(dehaze, to: output)
         }
 
         let highlights = adjustments.highlights ?? 0

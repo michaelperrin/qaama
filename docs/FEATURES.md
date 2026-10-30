@@ -64,6 +64,8 @@ can feed a website one day. Dates are when the feature landed.
   aqua, blue, purple, magenta) with smooth blends between ranges (2026-10-30).
 - Black and white with a channel mixer (red, green, blue contributions) (2026-10-30).
 - Effects: vignette, darkening or brightening the corners; film-like grain (2026-10-30).
+- Dehaze: removes atmospheric haze estimated from the photo itself (dark channel prior), or adds
+  some with negative values; works inside masks like every adjustment (2026-10-30).
 
 ### Crop and straighten
 - Crop frame with corner and edge handles, thirds grid, free or locked aspect ratio (original,
