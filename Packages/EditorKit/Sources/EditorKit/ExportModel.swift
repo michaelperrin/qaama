@@ -83,11 +83,15 @@ public final class ExportModel {
     public private(set) var failures: [ExportFailure] = []
     private var isCancelled = false
 
+    /// Rendering of the selected photo through the export pipeline, once loaded.
+    public private(set) var preview: CGImage?
+
     /// Resolved once per photo and kept for the window's lifetime.
     private var names: [LibraryAsset.ID: String] = [:]
     private var inputs: [LibraryAsset.ID: ExportInput] = [:]
-    private var previews: [LibraryAsset.ID: CGImage] = [:]
-    private var sourceSizes: [LibraryAsset.ID: CGSize] = [:]
+    /// The edit rendered at preview size and its full pixel size: the frame and watermark are applied
+    /// on top of this, so changing them never re-renders the edit.
+    private var editedPreviews: [LibraryAsset.ID: (image: CIImage, fullSize: CGSize)] = [:]
 
     private let defaults: UserDefaults
 
@@ -106,14 +110,9 @@ public final class ExportModel {
         items.first { $0.id == selectedItemID }
     }
 
-    /// Rendering of the selected photo through the export pipeline, once loaded.
-    public var preview: CGImage? {
-        selectedItemID.flatMap { previews[$0] }
-    }
-
-    /// Pixel size of the selected photo after its crop, what the size settings apply to.
+    /// Pixel size of the selected photo after its crop and frame, what the size settings apply to.
     public var sourcePixelSize: CGSize? {
-        selectedItemID.flatMap { sourceSizes[$0] }
+        selectedItemID.flatMap { editedPreviews[$0]?.fullSize }.map { settings.frame.layout(for: $0).canvas }
     }
 
     public var outputPixelSize: CGSize? {
@@ -124,6 +123,16 @@ public final class ExportModel {
     public var isUpscaling: Bool {
         guard let sourcePixelSize, let outputPixelSize else { return false }
         return outputPixelSize.width > sourcePixelSize.width || outputPixelSize.height > sourcePixelSize.height
+    }
+
+    /// What the preview depends on; the view reloads it when this changes.
+    public struct PreviewKey: Hashable {
+        public var itemID: LibraryAsset.ID?
+        public var look: ExportSettings.Look
+    }
+
+    public var previewKey: PreviewKey {
+        PreviewKey(itemID: selectedItemID, look: settings.look)
     }
 
     /// Suggested file name of the selected photo, without extension (the save panel adds it).
@@ -145,31 +154,43 @@ public final class ExportModel {
         return resolved
     }
 
-    /// Filmstrip image: the library's thumbnail, else the preview already rendered.
+    /// Filmstrip image: the library's thumbnail, else the selected photo's preview.
     public func thumbnail(for item: ExportItem, pixelSize: CGSize) async -> CGImage? {
         if let thumbnail = item.thumbnail, let image = await thumbnail(pixelSize) {
             return image
         }
-        return previews[item.id]
+        return item.id == selectedItemID ? preview : nil
     }
 
-    /// Renders the selected photo through the export pipeline at preview size, once.
+    /// Renders the selected photo at preview size: the edit once per photo, then the frame and
+    /// watermark on that reduced image each time they change.
     public func loadPreview() async {
         guard let item = selectedItem else { return }
         _ = await name(for: item)
-        guard previews[item.id] == nil else { return }
         do {
-            let input = try await input(for: item)
-            let (image, size) = await Task.detached(priority: .userInitiated) { () -> (CGImage?, CGSize) in
-                let edited = await EditRenderer.render(image: input.image, recipe: input.recipe, masks: input.masks)
-                // Small photos stay at their size: an enlarged preview would only blur them.
-                let edge = min(Self.previewLongEdge, Int(max(edited.extent.width, edited.extent.height)))
-                let reduced = ExportRenderer.resize(edited, to: .longEdge(edge))
-                let context = CIContext(options: [.cacheIntermediates: false])
-                return (context.createCGImage(reduced, from: reduced.extent), edited.extent.size)
+            let edited: (image: CIImage, fullSize: CGSize)
+            if let cached = editedPreviews[item.id] {
+                edited = cached
+            } else {
+                let input = try await input(for: item)
+                edited = try await Task.detached(priority: .userInitiated) { () throws -> (CIImage, CGSize) in
+                    let full = await EditRenderer.render(image: input.image, recipe: input.recipe, masks: input.masks)
+                    // Small photos stay at their size: an enlarged preview would only blur them.
+                    let edge = min(Self.previewLongEdge, Int(max(full.extent.width, full.extent.height)))
+                    let reduced = ExportRenderer.resize(full, to: .longEdge(edge))
+                    let context = CIContext(options: [.cacheIntermediates: false])
+                    guard let rendered = context.createCGImage(reduced, from: reduced.extent) else { throw ExportRenderer.ExportError.renderingFailed }
+                    return (CIImage(cgImage: rendered), full.extent.size)
+                }.value
+                editedPreviews[item.id] = edited
+            }
+            guard item.id == selectedItemID else { return }
+            let settings = settings
+            let base = edited.image
+            preview = await Task.detached(priority: .userInitiated) {
+                let composed = ExportRenderer.compose(base, settings: settings)
+                return CIContext(options: [.cacheIntermediates: false]).createCGImage(composed, from: composed.extent)
             }.value
-            previews[item.id] = image
-            sourceSizes[item.id] = size
         } catch {
             errorMessage = error.localizedDescription
         }

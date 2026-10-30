@@ -19,9 +19,9 @@ struct ExportView: View {
     /// Set once a batch has run, to show its outcome in place of the settings.
     @State private var batchWritten: Int?
 
-    /// Settings pages; more come with frames, watermarks and naming.
+    /// Settings pages; more come with watermarks and naming.
     private enum Tab: String, CaseIterable, Identifiable {
-        case format
+        case format, frame
         var id: Self {
             self
         }
@@ -29,9 +29,16 @@ struct ExportView: View {
         var title: LocalizedStringKey {
             switch self {
             case .format: "Format"
+            case .frame: "Frame"
             }
         }
     }
+
+    /// Frame aspect ratios offered, width / height; nil is an even border.
+    private static let frameAspects: [(title: String, ratio: Double?)] = [
+        ("Even", nil), ("1:1", 1), ("4:5", 0.8), ("5:4", 1.25), ("3:2", 1.5), ("2:3", 2 / 3.0),
+        ("4:3", 4 / 3.0), ("3:4", 0.75), ("16:9", 16 / 9.0), ("9:16", 9 / 16.0),
+    ]
 
     private enum SizeMode: String, CaseIterable, Identifiable {
         case original, width, height, longEdge
@@ -71,7 +78,7 @@ struct ExportView: View {
             footer
         }
         .frame(width: 1080, height: 720)
-        .task(id: model.selectedItemID) { await model.loadPreview() }
+        .task(id: model.previewKey) { await model.loadPreview() }
         .fileExporter(isPresented: $isSaving, document: document, contentType: model.settings.format.type,
                       defaultFilename: model.defaultFileName)
         { result in
@@ -167,9 +174,51 @@ struct ExportView: View {
                             .monospacedDigit()
                     }
                 }
+            case .frame:
+                Section {
+                    Toggle("Frame", isOn: $model.settings.frame.isEnabled)
+                }
+                Section {
+                    Picker("Aspect Ratio", selection: $model.settings.frame.aspectRatio) {
+                        ForEach(Self.frameAspects, id: \.title) { aspect in
+                            Text(aspect.title).tag(aspect.ratio)
+                        }
+                    }
+                    percentSlider("Thickness", value: $model.settings.frame.thickness, in: ExportFrame.thicknessRange)
+                    percentSlider("Corner Radius", value: $model.settings.frame.cornerRadius, in: ExportFrame.cornerRadiusRange)
+                    ColorPicker("Color", selection: frameColor, supportsOpacity: false)
+                }
+                .disabled(!model.settings.frame.isEnabled)
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func percentSlider(_ title: LocalizedStringKey, value: Binding<Double>, in range: ClosedRange<Double>) -> some View {
+        LabeledContent(title) {
+            HStack {
+                Slider(value: value, in: range)
+                Text(value.wrappedValue, format: .percent.precision(.fractionLength(0)))
+                    .monospacedDigit()
+                    .frame(width: 44, alignment: .trailing)
+            }
+        }
+    }
+
+    @Environment(\.self) private var environment
+
+    /// SwiftUI color for the frame color, resolved to sRGB components when set.
+    private var frameColor: Binding<Color> {
+        Binding(
+            get: {
+                let color = model.settings.frame.color
+                return Color(.sRGB, red: color.red, green: color.green, blue: color.blue, opacity: color.alpha)
+            },
+            set: { color in
+                let resolved = color.resolve(in: environment)
+                model.settings.frame.color = ExportColor(red: Double(resolved.red), green: Double(resolved.green), blue: Double(resolved.blue), alpha: 1)
+            }
+        )
     }
 
     /// What a batch left behind: how many files, and which photos failed.

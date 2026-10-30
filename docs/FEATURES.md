@@ -104,6 +104,10 @@ can feed a website one day. Dates are when the feature landed.
 - Settings remembered between exports (2026-10-30).
 - File › Export… (⇧⌘E) exports the open photo, or the grid selection (2026-10-30).
 
+### Frame and watermark
+- Solid color frame: thickness as a share of the photo, even border or a target aspect ratio
+  (1:1, 4:5, 3:2, 16:9…), rounded photo corners, any color; shown in the preview (2026-10-30).
+
 ### Batch
 - Export the selected photos from the grid (context menu or File › Export…) into a chosen folder,
   with their saved edits, the same format and size settings, a progress bar and Stop; files keep

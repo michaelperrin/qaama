@@ -38,10 +38,16 @@ public nonisolated enum ExportRenderer {
         }
     }
 
-    /// The edited image at the size the settings ask for, origin at zero.
+    /// The edited image with its frame, at the size the settings ask for, origin at zero.
     public static func render(_ input: ExportInput, settings: ExportSettings) async -> CIImage {
         let edited = await EditRenderer.render(image: input.image, recipe: input.recipe, masks: input.masks)
-        return resize(edited, to: settings.size)
+        return resize(compose(edited, settings: settings), to: settings.size)
+    }
+
+    /// Everything that changes the picture after the edit: the frame (and later the watermark). Scale
+    /// independent, so the preview can run it on a reduced image.
+    public static func compose(_ edited: CIImage, settings: ExportSettings) -> CIImage {
+        FrameRenderer.apply(settings.frame, to: edited)
     }
 
     /// Lanczos resampling to the requested size. Returns the image unchanged at the original size.
