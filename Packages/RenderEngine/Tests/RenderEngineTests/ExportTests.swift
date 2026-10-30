@@ -48,9 +48,64 @@ struct ExportTests {
         #expect(pixel(framed, 120, 21).b > 0.9) // photo edge, kept
     }
 
+    private func alpha(_ image: CIImage, _ x: Int, _ y: Int) -> Double {
+        let context = CIContext(options: [.useSoftwareRenderer: true])
+        var p = [UInt8](repeating: 0, count: 4)
+        context.render(image, toBitmap: &p, rowBytes: 4, bounds: CGRect(x: x, y: y, width: 1, height: 1), format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+        return Double(p[3]) / 255
+    }
+
+    @Test func textWatermarkIsPlacedAtItsAnchorAndCanTile() throws {
+        let photo = CIImage(color: CIColor(red: 0, green: 0, blue: 0)).cropped(to: CGRect(x: 0, y: 0, width: 400, height: 300))
+        var watermark = ExportWatermark(isEnabled: true, kind: .text("QAAMA"), hasShadow: false, position: .bottomRight, size: 0.3, opacity: 1)
+        let stamp = try #require(WatermarkRenderer.stamp(for: watermark, picture: nil))
+        #expect(stamp.extent.width > stamp.extent.height)
+        // The stamp is white text: some pixels are opaque, the corners are not.
+        let placed = WatermarkRenderer.apply(watermark, to: photo, picture: nil)
+        #expect(placed.extent == photo.extent)
+        let context = CIContext(options: [.useSoftwareRenderer: true])
+        func brightness(_ rect: CGRect) -> Double {
+            let scaled = WatermarkRenderer.faded(placed.cropped(to: rect), to: 1)
+            let average = CIFilter.areaAverage()
+            average.inputImage = scaled
+            average.extent = rect
+            var p = [UInt8](repeating: 0, count: 4)
+            context.render(average.outputImage!, toBitmap: &p, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+            return Double(p[0]) / 255
+        }
+        #expect(brightness(CGRect(x: 260, y: 0, width: 140, height: 60)) > 0.05) // bottom right lit by the text
+        #expect(brightness(CGRect(x: 0, y: 240, width: 140, height: 60)) < 0.01) // top left untouched
+        watermark.isTiled = true
+        let tiled = WatermarkRenderer.apply(watermark, to: photo, picture: nil)
+        #expect(brightness(CGRect(x: 0, y: 240, width: 140, height: 60)) < 0.01)
+        let tiledAverage = CIFilter.areaAverage()
+        tiledAverage.inputImage = tiled
+        tiledAverage.extent = CGRect(x: 0, y: 150, width: 400, height: 150)
+        var p = [UInt8](repeating: 0, count: 4)
+        try context.render(#require(tiledAverage.outputImage), toBitmap: &p, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+        #expect(Double(p[0]) / 255 > 0.02) // the upper half now carries text too
+    }
+
+    @Test func imageWatermarkIsScaledToItsShareOfTheWidthAndFaded() {
+        let photo = CIImage(color: CIColor(red: 0, green: 0, blue: 0)).cropped(to: CGRect(x: 0, y: 0, width: 1000, height: 500))
+        let picture = CIImage(color: CIColor(red: 1, green: 1, blue: 1)).cropped(to: CGRect(x: 0, y: 0, width: 200, height: 100))
+        let watermark = ExportWatermark(isEnabled: true, kind: .image("logo"), hasShadow: false, position: .topLeft, size: 0.2, opacity: 0.5)
+        let placed = WatermarkRenderer.apply(watermark, to: photo, picture: picture)
+        // 20 % of 1000 = 200 px wide, 100 px tall, 15 px from the top-left corner (3 % of 500).
+        #expect(alpha(placed, 20, 480) == 1)
+        let context = CIContext(options: [.useSoftwareRenderer: true])
+        var p = [Float](repeating: 0, count: 4)
+        context.render(placed, toBitmap: &p, rowBytes: 16, bounds: CGRect(x: 100, y: 440, width: 1, height: 1), format: .RGBAf, colorSpace: nil)
+        #expect(abs(p[0] - 0.5) < 0.05) // half white over black
+        context.render(placed, toBitmap: &p, rowBytes: 16, bounds: CGRect(x: 230, y: 440, width: 1, height: 1), format: .RGBAf, colorSpace: nil)
+        #expect(p[0] < 0.01) // past the stamp's right edge
+        #expect(WatermarkRenderer.apply(watermark, to: photo, picture: nil) === photo)
+    }
+
     @Test func settingsRoundTripThroughJSON() throws {
         var settings = ExportSettings(format: .avif, quality: 0.7, size: .longEdge(2048))
         settings.frame = ExportFrame(isEnabled: true, thickness: 0.1, aspectRatio: 1.5, cornerRadius: 0.1, color: ExportColor(red: 0.2, green: 0.3, blue: 0.4))
+        settings.watermark = ExportWatermark(isEnabled: true, kind: .image("logo.png"), position: .top, size: 0.3, opacity: 0.4, isTiled: true)
         let data = try JSONEncoder().encode(settings)
         #expect(try JSONDecoder().decode(ExportSettings.self, from: data) == settings)
         #expect(ExportSettings(quality: 2).quality == 1)

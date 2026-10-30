@@ -94,10 +94,12 @@ public final class ExportModel {
     private var editedPreviews: [LibraryAsset.ID: (image: CIImage, fullSize: CGSize)] = [:]
 
     private let defaults: UserDefaults
+    public let watermarks: WatermarkStore
 
-    public init(items: [ExportItem], defaults: UserDefaults = .standard) {
+    public init(items: [ExportItem], defaults: UserDefaults = .standard, watermarks: WatermarkStore = WatermarkStore()) {
         self.items = items
         self.defaults = defaults
+        self.watermarks = watermarks
         selectedItemID = items.first?.id
         settings = defaults.data(forKey: Self.settingsKey).flatMap { try? JSONDecoder().decode(ExportSettings.self, from: $0) } ?? ExportSettings()
     }
@@ -187,8 +189,9 @@ public final class ExportModel {
             guard item.id == selectedItemID else { return }
             let settings = settings
             let base = edited.image
+            let picture = watermarkPicture
             preview = await Task.detached(priority: .userInitiated) {
-                let composed = ExportRenderer.compose(base, settings: settings)
+                let composed = ExportRenderer.compose(base, settings: settings, watermarkPicture: picture)
                 return CIContext(options: [.cacheIntermediates: false]).createCGImage(composed, from: composed.extent)
             }.value
         } catch {
@@ -278,7 +281,25 @@ public final class ExportModel {
     private func encode(_ item: ExportItem) async throws -> Data {
         let input = try await input(for: item)
         let settings = settings
-        return try await Task.detached(priority: .userInitiated) { try await ExportRenderer.export(input, settings: settings) }.value
+        let picture = watermarkPicture
+        return try await Task.detached(priority: .userInitiated) { try await ExportRenderer.export(input, settings: settings, watermarkPicture: picture) }.value
+    }
+
+    /// The picture of an image watermark, decoded by the store, when the settings use one.
+    private var watermarkPicture: CIImage? {
+        guard settings.watermark.isEnabled, let name = settings.watermark.imageName, let image = watermarks.image(named: name) else { return nil }
+        return CIImage(cgImage: image)
+    }
+
+    /// Copies a picture into the store and makes it the watermark.
+    public func useWatermarkPicture(at url: URL) {
+        do {
+            let name = try watermarks.importPicture(at: url)
+            settings.watermark.kind = .image(name)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func persistSettings() {

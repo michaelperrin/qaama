@@ -133,6 +133,92 @@ public nonisolated struct ExportFrame: Codable, Sendable, Hashable {
     }
 }
 
+/// A text or picture stamped on the exported photo, inside the frame. Sizes are fractions of the
+/// photo, so the stamp keeps its place on the preview and on the full-size file.
+public nonisolated struct ExportWatermark: Codable, Sendable, Hashable {
+    public enum Kind: Codable, Sendable, Hashable {
+        case text(String)
+        /// A picture kept by the app; the name identifies it in the watermark store.
+        case image(String)
+    }
+
+    public enum Position: String, Codable, CaseIterable, Sendable {
+        case topLeft, top, topRight, left, center, right, bottomLeft, bottom, bottomRight
+
+        public var displayName: String {
+            switch self {
+            case .topLeft: "Top Left"
+            case .top: "Top"
+            case .topRight: "Top Right"
+            case .left: "Left"
+            case .center: "Center"
+            case .right: "Right"
+            case .bottomLeft: "Bottom Left"
+            case .bottom: "Bottom"
+            case .bottomRight: "Bottom Right"
+            }
+        }
+
+        /// Horizontal and vertical anchor, 0 = left or bottom, 1 = right or top.
+        var anchor: (x: Double, y: Double) {
+            switch self {
+            case .topLeft: (0, 1)
+            case .top: (0.5, 1)
+            case .topRight: (1, 1)
+            case .left: (0, 0.5)
+            case .center: (0.5, 0.5)
+            case .right: (1, 0.5)
+            case .bottomLeft: (0, 0)
+            case .bottom: (0.5, 0)
+            case .bottomRight: (1, 0)
+            }
+        }
+    }
+
+    public var isEnabled: Bool
+    public var kind: Kind
+    /// PostScript name of the text font.
+    public var fontName: String
+    public var color: ExportColor
+    public var hasShadow: Bool
+    public var position: Position
+    /// Width of the stamp as a fraction of the photo's width.
+    public var size: Double
+    public var opacity: Double
+    /// Repeats the stamp over the whole photo instead of placing it once.
+    public var isTiled: Bool
+
+    public static let sizeRange: ClosedRange<Double> = 0.02 ... 0.8
+    public static let opacityRange: ClosedRange<Double> = 0.05 ... 1
+    /// Fonts offered for text watermarks, by PostScript name.
+    public static let fonts: [(name: String, title: String)] = [
+        ("HelveticaNeue", "Helvetica Neue"), ("HelveticaNeue-Bold", "Helvetica Neue Bold"), ("HelveticaNeue-Light", "Helvetica Neue Light"),
+        ("Georgia", "Georgia"), ("Georgia-Italic", "Georgia Italic"), ("Menlo-Regular", "Menlo"), ("SnellRoundhand", "Snell Roundhand"),
+    ]
+
+    public init(isEnabled: Bool = false, kind: Kind = .text("© "), fontName: String = "HelveticaNeue", color: ExportColor = .white,
+                hasShadow: Bool = true, position: Position = .bottomRight, size: Double = 0.15, opacity: Double = 0.7, isTiled: Bool = false)
+    {
+        self.isEnabled = isEnabled
+        self.kind = kind
+        self.fontName = fontName
+        self.color = color
+        self.hasShadow = hasShadow
+        self.position = position
+        self.size = size
+        self.opacity = opacity
+        self.isTiled = isTiled
+    }
+
+    /// The store name of the picture, when the watermark is one.
+    public var imageName: String? {
+        if case let .image(name) = kind {
+            return name
+        }
+        return nil
+    }
+}
+
 /// Everything that describes the file to write, independent of the edit. Remembered between exports.
 public nonisolated struct ExportSettings: Codable, Sendable, Hashable {
     public var format: ExportFormat
@@ -141,24 +227,29 @@ public nonisolated struct ExportSettings: Codable, Sendable, Hashable {
     /// Final size of the file, frame included.
     public var size: ExportSize
     public var frame: ExportFrame
+    public var watermark: ExportWatermark
 
     public static let qualityRange: ClosedRange<Double> = 0.3 ... 1
 
-    public init(format: ExportFormat = .jpeg, quality: Double = 0.92, size: ExportSize = .original, frame: ExportFrame = ExportFrame()) {
+    public init(format: ExportFormat = .jpeg, quality: Double = 0.92, size: ExportSize = .original, frame: ExportFrame = ExportFrame(),
+                watermark: ExportWatermark = ExportWatermark())
+    {
         self.format = format
         self.quality = min(max(quality, Self.qualityRange.lowerBound), Self.qualityRange.upperBound)
         self.size = size
         self.frame = frame
+        self.watermark = watermark
     }
 
     /// The settings that change how the picture looks, as opposed to how its file is written. The
     /// preview re-renders when they change.
     public var look: Look {
-        Look(frame: frame)
+        Look(frame: frame, watermark: watermark)
     }
 
     public nonisolated struct Look: Hashable, Sendable {
         public var frame: ExportFrame
+        public var watermark: ExportWatermark
     }
 
     /// Pixel size of the output for a rendered photo of `photo` pixels: frame, then resizing.

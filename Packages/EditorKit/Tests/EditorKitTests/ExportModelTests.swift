@@ -22,6 +22,9 @@ struct ExportModelTests {
         return ExportItem(id: "a", name: { "DSCF0001" }, load: { input })
     }
 
+    /// A store in a temporary folder, so tests never touch the real watermarks.
+    private let store = WatermarkStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("ExportModelTests-\(UUID().uuidString)"))
+
     private func makeFolder() throws -> URL {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -31,10 +34,10 @@ struct ExportModelTests {
     @Test func settingsAreRememberedBetweenWindows() {
         let (defaults, cleanup) = makeDefaults()
         defer { cleanup() }
-        let first = ExportModel(items: [item], defaults: defaults)
+        let first = ExportModel(items: [item], defaults: defaults, watermarks: store)
         #expect(first.settings == ExportSettings())
         first.settings = ExportSettings(format: .png, quality: 0.5, size: .width(1200))
-        let second = ExportModel(items: [item], defaults: defaults)
+        let second = ExportModel(items: [item], defaults: defaults, watermarks: store)
         #expect(second.settings == ExportSettings(format: .png, quality: 0.5, size: .width(1200)))
     }
 
@@ -52,7 +55,7 @@ struct ExportModelTests {
         defer { try? FileManager.default.removeItem(at: folder) }
         try Data().write(to: folder.appendingPathComponent("DSCF0001.jpg"))
         let broken = ExportItem(id: "broken", name: { "broken" }, load: { throw LibrarySourceError.assetUnavailable })
-        let model = ExportModel(items: [item, item, broken], defaults: defaults)
+        let model = ExportModel(items: [item, item, broken], defaults: defaults, watermarks: store)
         model.settings = ExportSettings(format: .jpeg, size: .longEdge(40))
         let written = await model.exportAll(to: folder)
         #expect(written == 2)
@@ -66,7 +69,7 @@ struct ExportModelTests {
     @Test func previewFollowsTheCropAndSizesReportTheOutput() async {
         let (defaults, cleanup) = makeDefaults()
         defer { cleanup() }
-        let model = ExportModel(items: [item], defaults: defaults)
+        let model = ExportModel(items: [item], defaults: defaults, watermarks: store)
         await model.loadPreview()
         #expect(model.errorMessage == nil)
         #expect(model.defaultFileName == "DSCF0001")
@@ -88,7 +91,7 @@ struct ExportModelTests {
     @Test func encodingHonorsTheFormat() async {
         let (defaults, cleanup) = makeDefaults()
         defer { cleanup() }
-        let model = ExportModel(items: [item], defaults: defaults)
+        let model = ExportModel(items: [item], defaults: defaults, watermarks: store)
         model.settings = ExportSettings(format: .png, size: .longEdge(50))
         let data = await model.encodeSelected()
         #expect(model.errorMessage == nil)

@@ -107,6 +107,9 @@ can feed a website one day. Dates are when the feature landed.
 ### Frame and watermark
 - Solid color frame: thickness as a share of the photo, even border or a target aspect ratio
   (1:1, 4:5, 3:2, 16:9…), rounded photo corners, any color; shown in the preview (2026-10-30).
+- Watermark: text (font, color) or a picture imported into the app, size as a share of the
+  photo's width, opacity, drop shadow, nine positions or tiled over the whole photo; shown in the
+  preview (2026-10-30).
 
 ### Batch
 - Export the selected photos from the grid (context menu or File › Export…) into a chosen folder,

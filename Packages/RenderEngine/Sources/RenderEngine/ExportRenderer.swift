@@ -38,16 +38,17 @@ public nonisolated enum ExportRenderer {
         }
     }
 
-    /// The edited image with its frame, at the size the settings ask for, origin at zero.
-    public static func render(_ input: ExportInput, settings: ExportSettings) async -> CIImage {
+    /// The edited image with its watermark and frame, at the size the settings ask for, origin at zero.
+    /// `watermarkPicture` is the decoded picture of an image watermark, when there is one.
+    public static func render(_ input: ExportInput, settings: ExportSettings, watermarkPicture: CIImage? = nil) async -> CIImage {
         let edited = await EditRenderer.render(image: input.image, recipe: input.recipe, masks: input.masks)
-        return resize(compose(edited, settings: settings), to: settings.size)
+        return resize(compose(edited, settings: settings, watermarkPicture: watermarkPicture), to: settings.size)
     }
 
-    /// Everything that changes the picture after the edit: the frame (and later the watermark). Scale
-    /// independent, so the preview can run it on a reduced image.
-    public static func compose(_ edited: CIImage, settings: ExportSettings) -> CIImage {
-        FrameRenderer.apply(settings.frame, to: edited)
+    /// Everything that changes the picture after the edit: the watermark on the photo, then the frame
+    /// around it. Scale independent, so the preview can run it on a reduced image.
+    public static func compose(_ edited: CIImage, settings: ExportSettings, watermarkPicture: CIImage? = nil) -> CIImage {
+        FrameRenderer.apply(settings.frame, to: WatermarkRenderer.apply(settings.watermark, to: edited, picture: watermarkPicture))
     }
 
     /// Lanczos resampling to the requested size. Returns the image unchanged at the original size.
@@ -63,8 +64,8 @@ public nonisolated enum ExportRenderer {
     }
 
     /// Full export to encoded bytes.
-    public static func export(_ input: ExportInput, settings: ExportSettings) async throws -> Data {
-        let image = await render(input, settings: settings)
+    public static func export(_ input: ExportInput, settings: ExportSettings, watermarkPicture: CIImage? = nil) async throws -> Data {
+        let image = await render(input, settings: settings, watermarkPicture: watermarkPicture)
         return try encode(image, settings: settings, metadata: input.metadataURL.flatMap(metadata(of:)))
     }
 

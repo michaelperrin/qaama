@@ -19,9 +19,9 @@ struct ExportView: View {
     /// Set once a batch has run, to show its outcome in place of the settings.
     @State private var batchWritten: Int?
 
-    /// Settings pages; more come with watermarks and naming.
+    /// Settings pages; naming and metadata come next.
     private enum Tab: String, CaseIterable, Identifiable {
-        case format, frame
+        case format, frame, watermark
         var id: Self {
             self
         }
@@ -30,9 +30,19 @@ struct ExportView: View {
             switch self {
             case .format: "Format"
             case .frame: "Frame"
+            case .watermark: "Watermark"
             }
         }
     }
+
+    private enum WatermarkKind: String, CaseIterable, Identifiable {
+        case text, image
+        var id: Self {
+            self
+        }
+    }
+
+    @State private var isChoosingWatermarkPicture = false
 
     /// Frame aspect ratios offered, width / height; nil is an even border.
     private static let frameAspects: [(title: String, ratio: Double?)] = [
@@ -189,9 +199,90 @@ struct ExportView: View {
                     ColorPicker("Color", selection: frameColor, supportsOpacity: false)
                 }
                 .disabled(!model.settings.frame.isEnabled)
+            case .watermark:
+                Section {
+                    Toggle("Watermark", isOn: $model.settings.watermark.isEnabled)
+                }
+                Section {
+                    Picker("Type", selection: watermarkKind) {
+                        Text("Text").tag(WatermarkKind.text)
+                        Text("Image").tag(WatermarkKind.image)
+                    }
+                    .pickerStyle(.segmented)
+                    switch model.settings.watermark.kind {
+                    case .text:
+                        TextField("Text", text: watermarkText, prompt: Text("© Your name"))
+                        Picker("Font", selection: $model.settings.watermark.fontName) {
+                            ForEach(ExportWatermark.fonts, id: \.name) { font in
+                                Text(font.title).tag(font.name)
+                            }
+                        }
+                        ColorPicker("Color", selection: color($model.settings.watermark.color), supportsOpacity: false)
+                    case let .image(name):
+                        LabeledContent("Picture") {
+                            HStack {
+                                if let picture = model.watermarks.image(named: name) {
+                                    Image(decorative: picture, scale: 1)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(height: 28)
+                                        .background(.quaternary, in: .rect(cornerRadius: 3))
+                                }
+                                Text(name.isEmpty ? "None" : name).lineLimit(1).truncationMode(.middle)
+                                Button("Choose…") { isChoosingWatermarkPicture = true }
+                            }
+                        }
+                    }
+                    Toggle("Add Shadow", isOn: $model.settings.watermark.hasShadow)
+                }
+                Section {
+                    Picker("Position", selection: $model.settings.watermark.position) {
+                        ForEach(ExportWatermark.Position.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                    }
+                    .disabled(model.settings.watermark.isTiled)
+                    percentSlider("Size", value: $model.settings.watermark.size, in: ExportWatermark.sizeRange)
+                    percentSlider("Opacity", value: $model.settings.watermark.opacity, in: ExportWatermark.opacityRange)
+                    Toggle("Tile", isOn: $model.settings.watermark.isTiled)
+                }
+                .disabled(!model.settings.watermark.isEnabled)
             }
         }
         .formStyle(.grouped)
+        .fileImporter(isPresented: $isChoosingWatermarkPicture, allowedContentTypes: [.png, .jpeg, .heic, .tiff]) { result in
+            if case let .success(url) = result {
+                model.useWatermarkPicture(at: url)
+            }
+        }
+    }
+
+    private var watermarkKind: Binding<WatermarkKind> {
+        Binding(
+            get: { model.settings.watermark.imageName == nil ? .text : .image },
+            set: { kind in
+                switch kind {
+                case .text: model.settings.watermark.kind = .text(lastWatermarkText)
+                case .image: model.settings.watermark.kind = .image(model.watermarks.names.first ?? "")
+                }
+            }
+        )
+    }
+
+    /// Text kept while the picture type is selected, so switching back doesn't lose it.
+    @State private var lastWatermarkText = "© "
+
+    private var watermarkText: Binding<String> {
+        Binding(
+            get: {
+                if case let .text(text) = model.settings.watermark.kind {
+                    return text
+                }
+                return lastWatermarkText
+            },
+            set: {
+                lastWatermarkText = $0
+                model.settings.watermark.kind = .text($0)
+            }
+        )
     }
 
     private func percentSlider(_ title: LocalizedStringKey, value: Binding<Double>, in range: ClosedRange<Double>) -> some View {
@@ -207,16 +298,20 @@ struct ExportView: View {
 
     @Environment(\.self) private var environment
 
-    /// SwiftUI color for the frame color, resolved to sRGB components when set.
     private var frameColor: Binding<Color> {
+        color($model.settings.frame.color)
+    }
+
+    /// SwiftUI color over an export color, resolved to sRGB components when set.
+    private func color(_ binding: Binding<ExportColor>) -> Binding<Color> {
         Binding(
             get: {
-                let color = model.settings.frame.color
+                let color = binding.wrappedValue
                 return Color(.sRGB, red: color.red, green: color.green, blue: color.blue, opacity: color.alpha)
             },
             set: { color in
                 let resolved = color.resolve(in: environment)
-                model.settings.frame.color = ExportColor(red: Double(resolved.red), green: Double(resolved.green), blue: Double(resolved.blue), alpha: 1)
+                binding.wrappedValue = ExportColor(red: Double(resolved.red), green: Double(resolved.green), blue: Double(resolved.blue), alpha: 1)
             }
         )
     }
