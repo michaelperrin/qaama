@@ -285,8 +285,9 @@ Bibliothèque
       changements (Photos et système de fichiers).
       Fait le 30/10/2026 : appariement par nom (un RAW + une image non RAW dans le même
       répertoire), jumeau JPEG masqué par défaut avec option pour l'afficher, badge RAW /
-      RAW+JPG sur les vignettes ; sidecars détectés et suivis depuis le 29/10. Reste : FSEvents
-      pour les dossiers. Côté Photos, pas de prédicat RAW dans PhotoKit : badge RAW par tuile
+      RAW+JPG sur les vignettes ; sidecars détectés et suivis depuis le 29/10. FSEvents le
+      30/10/2026 : tout changement externe dans un dossier (Finder, import) relance un scan
+      après 1,5 s de calme ; les écritures de Qaama lui-même sont ignorées. Côté Photos, pas de prédicat RAW dans PhotoKit : badge RAW par tuile
       visible (requête de ressources à la demande), puis index local des assets Photos (RAW,
       jumeau) construit en arrière-plan pour filtrer, et option « éditer le RAW » via la
       ressource alternative.

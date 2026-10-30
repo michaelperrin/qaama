@@ -51,6 +51,9 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     private var itemsByID: [UUID: CatalogItem] = [:]
     private var observation: Task<Void, Never>?
     private var scan: Task<Void, Never>?
+    private var watcher: FolderWatcher?
+    /// A scan requested while one was running: run again when it ends, the folder changed meanwhile.
+    private var rescanRequested = false
     /// Items recently shown on screen, read first by the metadata phase.
     private var prioritized: Set<UUID> = []
     private var previewsInProgress: Set<LibraryAsset.ID> = []
@@ -67,6 +70,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     }
 
     isolated deinit {
+        watcher?.stop()
         observation?.cancel()
         scan?.cancel()
         if hasSecurityScope {
@@ -85,6 +89,10 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
             try? await Task.sleep(for: .milliseconds(5))
         }
         rescan()
+        // From now on the Finder drives rescans: additions, removals, renames and sidecar edits.
+        watcher = FolderWatcher(url: folderURL) { [weak self] in
+            Task { @MainActor in self?.rescan() }
+        }
     }
 
     private func startObservation() {
@@ -105,12 +113,20 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
 
     /// Lists the folder again and reads the headers that are missing. Safe to call while a scan runs.
     public func rescan() {
-        guard scan == nil else { return }
+        guard scan == nil else {
+            rescanRequested = true
+            return
+        }
         isScanning = true
         scan = Task { [weak self] in
             await self?.runScan()
-            self?.scan = nil
-            self?.isScanning = false
+            guard let self else { return }
+            scan = nil
+            isScanning = false
+            if rescanRequested {
+                rescanRequested = false
+                rescan()
+            }
         }
     }
 
