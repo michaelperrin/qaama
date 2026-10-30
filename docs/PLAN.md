@@ -284,6 +284,11 @@ Bibliothèque
 - [ ] Appariement RAW + JPEG, détection des sidecars, mise à jour en direct des
       changements (Photos et système de fichiers).
 - [ ] Inspecteur : métadonnées EXIF, histogramme, localisation (MapKit).
+      Fait le 30/10/2026 : EXIF lu sur l'original (boîtier, objectif, exposition, dimensions,
+      date) et histogramme RGB (`CIAreaHistogram` sur un échantillon 512 px, comptage en sRGB,
+      bins de bord en murs d'écrêtage). Reste : localisation, et revoir le design de
+      l'histogramme (Michaël le trouve inhabituel par rapport aux autres logiciels : prévoir
+      luminance, échelle, lissage, indicateurs d'écrêtage à la Lightroom).
 
 Éditeur
 

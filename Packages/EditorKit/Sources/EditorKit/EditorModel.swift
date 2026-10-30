@@ -1,6 +1,8 @@
 import CoreGraphics
+import CoreImage
 import EditModel
 import Foundation
+import ImageIOKit
 import LibraryKit
 import Observation
 import OSLog
@@ -26,6 +28,11 @@ public final class EditorModel {
     public private(set) var keywords: [String] = []
     public private(set) var undoStack: [EditRecipe] = []
     public private(set) var redoStack: [EditRecipe] = []
+    /// Header of the original (EXIF), read when the editor opens; nil when the source gives no file.
+    public private(set) var metadata: ImageMetadata?
+    /// Histogram of the current edit, refreshed shortly after each change.
+    public private(set) var histogram: Histogram?
+    @ObservationIgnored private var histogramTask: Task<Void, Never>?
 
     /// The edit being made. Sliders write here continuously; call `commitChange()` when a gesture
     /// ends so the undo history gets one entry per gesture, not one per pixel.
@@ -113,6 +120,9 @@ public final class EditorModel {
             }
             sourceImage = try await Task.detached(priority: .userInitiated) { try SourceImageLoader.load(renderSource) }.value
             renderPreview()
+            if let url = input.imageURL {
+                metadata = await Task.detached { try? ImageMetadataReader.read(url) }.value
+            }
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -174,8 +184,22 @@ public final class EditorModel {
     }
 
     private func renderPreview() {
-        guard let sourceImage, let renderer else { return }
-        renderer.image = RenderPipeline.apply(recipe, to: sourceImage.image)
+        guard let sourceImage else { return }
+        let edited = RenderPipeline.apply(recipe, to: sourceImage.image)
+        renderer?.image = edited
+        scheduleHistogram(of: edited)
+    }
+
+    /// Recomputes the histogram once the sliders settle: one computation per burst of changes.
+    private func scheduleHistogram(of image: CIImage) {
+        histogramTask?.cancel()
+        histogramTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled else { return }
+            let computed = await Task.detached(priority: .utility) { HistogramComputer.compute(image) }.value
+            guard !Task.isCancelled else { return }
+            self?.histogram = computed
+        }
     }
 
     // MARK: - Output

@@ -46,3 +46,35 @@ struct RenderPipelineTests {
         #expect(RenderPipeline.saturationFactor(-1) == 0)
     }
 }
+
+struct HistogramTests {
+    @Test func solidGrayPeaksInOneBin() throws {
+        let gray = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5)).cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
+        let histogram = try #require(HistogramComputer.compute(gray))
+        let peak = try #require(histogram.red.firstIndex(of: 1))
+        #expect((120 ... 136).contains(peak), "mid gray lands near the middle bin, got \(peak)")
+        #expect(histogram.red.filter { $0 > 0 }.count <= 2)
+        #expect(histogram.luminance[peak] == 1)
+    }
+
+    @Test func exposureShiftsTheHistogramRight() throws {
+        let gray = CIImage(color: CIColor(red: 0.3, green: 0.3, blue: 0.3)).cropped(to: CGRect(x: 0, y: 0, width: 16, height: 16))
+        let darkHistogram = try #require(HistogramComputer.compute(gray))
+        let before = try #require(darkHistogram.red.firstIndex(of: 1))
+        let brighter = RenderPipeline.apply(EditRecipe(exposure: 1), to: gray)
+        let brightHistogram = try #require(HistogramComputer.compute(brighter))
+        let after = try #require(brightHistogram.red.firstIndex(of: 1))
+        #expect(after > before)
+    }
+
+    @Test func blownOutPixelsPileUpInTheLastBin() throws {
+        let gray = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5)).cropped(to: CGRect(x: 0, y: 0, width: 16, height: 16))
+        let blown = RenderPipeline.apply(EditRecipe(exposure: 3), to: gray)
+        let histogram = try #require(HistogramComputer.compute(blown))
+        #expect(histogram.red.lastIndex(of: 1) == Histogram.binCount - 1)
+    }
+
+    @Test func emptyImagesGiveNoHistogram() {
+        #expect(HistogramComputer.compute(CIImage.empty()) == nil)
+    }
+}

@@ -9,6 +9,10 @@ struct AdjustmentsInspector: View {
 
     var body: some View {
         Form {
+            Section {
+                HistogramView(histogram: model.histogram)
+                    .listRowInsets(EdgeInsets())
+            }
             Section("Light") {
                 AdjustmentSlider(title: "Exposure", value: adjustment(\.exposure), range: AdjustmentSet.exposureRange, unit: "EV",
                                  onEditingEnded: model.commitChange)
@@ -18,6 +22,9 @@ struct AdjustmentsInspector: View {
             Section("Color") {
                 AdjustmentSlider(title: "Saturation", value: adjustment(\.saturation), range: AdjustmentSet.saturationRange,
                                  onEditingEnded: model.commitChange)
+            }
+            Section("Info") {
+                InfoPanel(model: model)
             }
             Section {
                 HStack {

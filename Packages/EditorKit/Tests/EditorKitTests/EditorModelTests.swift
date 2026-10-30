@@ -164,6 +164,19 @@ struct EditorModelTests {
         #expect(!manager.canUndo)
     }
 
+    @Test func readsMetadataAndComputesAHistogram() async throws {
+        let url = try makeImage()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let model = EditorModel(assetID: "stub", source: StubSource(imageURL: url), renderer: nil)
+        await model.open()
+        #expect(model.metadata?.pixelWidth == 32 && model.metadata?.pixelHeight == 16)
+        for _ in 0 ..< 100 where model.histogram == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let histogram = try #require(model.histogram)
+        #expect(histogram.luminance.max() == 1)
+    }
+
     @Test func unsupportedRecipeOpensTheOriginal() async throws {
         let url = try makeImage()
         defer { try? FileManager.default.removeItem(at: url) }
