@@ -66,8 +66,17 @@ struct AdjustmentsInspector: View {
                 slider("Sharpness", \.sharpness)
                 slider("Noise Reduction", \.noiseReduction)
             }
+            Section("Black & White") {
+                Toggle("Black & White", isOn: monochromeEnabled)
+                if let monochrome = model.recipe.global.monochrome {
+                    AdjustmentSlider(title: "Red", value: mix(\.red, monochrome), range: Monochrome.range, onEditingEnded: model.commitChange)
+                    AdjustmentSlider(title: "Green", value: mix(\.green, monochrome), range: Monochrome.range, onEditingEnded: model.commitChange)
+                    AdjustmentSlider(title: "Blue", value: mix(\.blue, monochrome), range: Monochrome.range, onEditingEnded: model.commitChange)
+                }
+            }
             Section("Effects") {
                 slider("Vignette", \.vignette)
+                slider("Grain", \.grain)
             }
             Section("Info") {
                 InfoPanel(model: model)
@@ -87,6 +96,27 @@ struct AdjustmentsInspector: View {
         }
         .formStyle(.grouped)
         .disabled(!model.isOpen)
+    }
+
+    private var monochromeEnabled: Binding<Bool> {
+        Binding(
+            get: { model.recipe.global.monochrome != nil },
+            set: { enabled in
+                model.recipe.global.monochrome = enabled ? (model.recipe.global.monochrome ?? Monochrome()) : nil
+                model.commitChange()
+            }
+        )
+    }
+
+    private func mix(_ keyPath: WritableKeyPath<Monochrome, Double>, _ current: Monochrome) -> Binding<Double> {
+        Binding(
+            get: { current[keyPath: keyPath] },
+            set: { value in
+                var monochrome = model.recipe.global.monochrome ?? Monochrome()
+                monochrome[keyPath: keyPath] = value
+                model.recipe.global.monochrome = monochrome
+            }
+        )
     }
 
     /// Curves of the global layer; identity curves are stored as absent.

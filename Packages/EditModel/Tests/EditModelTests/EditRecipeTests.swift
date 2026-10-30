@@ -18,7 +18,7 @@ struct EditRecipeTests {
         #expect(set.saturation == nil, "a neutral value is stored as absent")
         #expect(AdjustmentSet(exposure: 0) == AdjustmentSet())
         #expect(AdjustmentSet(temperature: 4).temperature == 1)
-        #expect(AdjustmentSet.all.count == 12)
+        #expect(AdjustmentSet.all.count == 13)
         #expect(AdjustmentSet(noiseReduction: -1).noiseReduction == nil, "noise reduction has no negative side")
         #expect(AdjustmentSet.range(of: \.exposure) == -3 ... 3 && AdjustmentSet.range(of: \.shadows) == -1 ... 1)
     }
@@ -98,6 +98,27 @@ struct GeometryTests {
         #expect(reloaded.geometry == recipe.geometry)
         recipe.geometry = Geometry()
         #expect(try EditRecipe(jsonData: recipe.jsonData()).geometry == nil, "an identity geometry is dropped on read")
+    }
+}
+
+struct MonochromeTests {
+    @Test func weightsStayNormalized() {
+        let neutral = Monochrome().weights
+        #expect(abs(neutral.red + neutral.green + neutral.blue - 1) < 0.0001)
+        #expect(abs(neutral.green - 0.7152) < 0.0001)
+        let redFilter = Monochrome(red: 1, blue: -1).weights
+        #expect(redFilter.red > neutral.red && redFilter.blue < 0.0001)
+        #expect(abs(redFilter.red + redFilter.green + redFilter.blue - 1) < 0.0001)
+        #expect(Monochrome(red: 5).red == 1)
+    }
+
+    @Test func monochromeCountsTowardIdentityAndRoundTrips() throws {
+        var set = AdjustmentSet()
+        set.monochrome = Monochrome()
+        #expect(!set.isIdentity, "turning black and white on is an edit even with a neutral mix")
+        let reloaded = try EditRecipe(jsonData: EditRecipe(adjustments: set).jsonData())
+        #expect(reloaded.global.monochrome == Monochrome())
+        #expect(AdjustmentSet(grain: 2).grain == 1 && AdjustmentSet(grain: -1).grain == nil)
     }
 }
 

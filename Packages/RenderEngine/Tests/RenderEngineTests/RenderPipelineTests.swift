@@ -112,6 +112,29 @@ struct RenderPipelineTests {
         #expect(tinted.r < before.r - 0.15 && abs(tinted.g - before.g) < 0.02)
     }
 
+    @Test func monochromeRemovesColorAndHonorsTheMix() {
+        var set = AdjustmentSet()
+        set.monochrome = Monochrome()
+        let gray = color(of: RenderPipeline.apply(EditRecipe(adjustments: set), to: red))
+        #expect(abs(gray.r - gray.g) < 0.02 && abs(gray.g - gray.b) < 0.02)
+        set.monochrome = Monochrome(red: 1, green: -1, blue: -1)
+        let redFiltered = color(of: RenderPipeline.apply(EditRecipe(adjustments: set), to: red))
+        #expect(redFiltered.r > gray.r + 0.1, "a red filter brightens red subjects")
+    }
+
+    @Test func grainAddsTextureWithoutChangingTheExtent() throws {
+        let flat = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5)).cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
+        let output = RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(grain: 1)), to: flat)
+        #expect(output.extent == flat.extent)
+        var pixels = [UInt8](repeating: 0, count: 64 * 64 * 4)
+        context.render(output, toBitmap: &pixels, rowBytes: 64 * 4, bounds: flat.extent, format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+        let reds = stride(from: 0, to: pixels.count, by: 4).map { Double(pixels[$0]) / 255 }
+        let mean = reds.reduce(0, +) / Double(reds.count)
+        let spread = try #require(reds.max()) - #require(reds.min())
+        #expect(spread > 0.05, "grain varies from pixel to pixel")
+        #expect(abs(mean - 0.5) < 0.1, "grain keeps the overall brightness")
+    }
+
     @Test func factorsAreNeutralAtZero() {
         #expect(RenderPipeline.contrastFactor(0) == 1)
         #expect(RenderPipeline.saturationFactor(0) == 1)

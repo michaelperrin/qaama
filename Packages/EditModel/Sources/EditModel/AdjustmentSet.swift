@@ -39,13 +39,18 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     /// Effects
     /// Darken (+) or brighten (-) the corners, -1 to +1.
     public var vignette: Double?
+    /// Film-like grain, 0 to 1.
+    public var grain: Double?
+    /// Black and white conversion; nil keeps the colors.
+    public var monochrome: Monochrome?
 
     public static let exposureRange: ClosedRange<Double> = -3 ... 3
     public static let unitRange: ClosedRange<Double> = -1 ... 1
 
     public init(temperature: Double? = nil, tint: Double? = nil, exposure: Double? = nil, highlights: Double? = nil,
                 shadows: Double? = nil, blackPoint: Double? = nil, contrast: Double? = nil, vibrance: Double? = nil,
-                saturation: Double? = nil, sharpness: Double? = nil, noiseReduction: Double? = nil, vignette: Double? = nil)
+                saturation: Double? = nil, sharpness: Double? = nil, noiseReduction: Double? = nil, vignette: Double? = nil,
+                grain: Double? = nil, monochrome: Monochrome? = nil)
     {
         self.temperature = temperature
         self.tint = tint
@@ -59,13 +64,15 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
         self.sharpness = sharpness
         self.noiseReduction = noiseReduction
         self.vignette = vignette
+        self.grain = grain
+        self.monochrome = monochrome
         clamp()
     }
 
     /// Every adjustment, in the order the engine applies them.
     public static let all: [WritableKeyPath<AdjustmentSet, Double?> & Sendable] = [
         \.temperature, \.tint, \.exposure, \.highlights, \.shadows, \.blackPoint, \.contrast, \.vibrance, \.saturation,
-        \.sharpness, \.noiseReduction, \.vignette,
+        \.sharpness, \.noiseReduction, \.vignette, \.grain,
     ]
 
     public static let positiveRange: ClosedRange<Double> = 0 ... 1
@@ -73,14 +80,14 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     public static func range(of keyPath: WritableKeyPath<AdjustmentSet, Double?>) -> ClosedRange<Double> {
         switch keyPath {
         case \.exposure: exposureRange
-        case \.noiseReduction: positiveRange
+        case \.noiseReduction, \.grain: positiveRange
         default: unitRange
         }
     }
 
     /// True when every adjustment is absent or neutral.
     public var isIdentity: Bool {
-        Self.all.allSatisfy { (self[keyPath: $0] ?? 0) == 0 } && (curves?.isIdentity ?? true)
+        Self.all.allSatisfy { (self[keyPath: $0] ?? 0) == 0 } && (curves?.isIdentity ?? true) && monochrome == nil
     }
 
     /// Brings every value back into its range and stores neutral values as absent, so equal edits give

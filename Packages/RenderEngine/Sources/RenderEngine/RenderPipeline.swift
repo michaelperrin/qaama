@@ -5,7 +5,7 @@ import EditModel
 /// Turns an `EditRecipe` into a Core Image filter chain. Pure function of its inputs.
 ///
 /// Layers are applied in order; within a layer the adjustments run in the engine's fixed order:
-/// white balance, exposure, highlights and shadows, black point, contrast, curves, color, detail, then effects. Masks are carried by the
+/// white balance, exposure, highlights and shadows, black point, contrast, curves, color, detail, black and white, then effects. Masks are carried by the
 /// recipe but not rendered yet.
 public nonisolated enum RenderPipeline {
     public static func apply(_ recipe: EditRecipe, to image: CIImage) -> CIImage {
@@ -128,6 +128,22 @@ public nonisolated enum RenderPipeline {
             }
         }
 
+        if let monochrome = adjustments.monochrome {
+            let weights = monochrome.weights
+            let mix = CIVector(x: weights.red, y: weights.green, z: weights.blue, w: 0)
+            let matrix = CIFilter.colorMatrix()
+            matrix.inputImage = output
+            matrix.rVector = mix
+            matrix.gVector = mix
+            matrix.bVector = mix
+            matrix.aVector = CIVector(x: 0, y: 0, z: 0, w: 1)
+            output = matrix.outputImage ?? output
+        }
+
+        if let grain = adjustments.grain, grain > 0 {
+            output = applyGrain(grain, to: output)
+        }
+
         if let vignette = adjustments.vignette, vignette != 0 {
             let filter = CIFilter.vignetteEffect()
             filter.inputImage = output
@@ -139,6 +155,34 @@ public nonisolated enum RenderPipeline {
             output = filter.outputImage ?? output
         }
         return output
+    }
+
+    /// Film-like grain: position-based noise (so preview and export match), reduced to gray, centered on
+    /// mid-gray with a strength set by the slider, then overlaid on the image.
+    static func applyGrain(_ amount: Double, to image: CIImage) -> CIImage {
+        let extent = image.extent
+        guard !extent.isInfinite else { return image }
+        let strength = amount * 0.35
+        let gray = CIVector(x: 0.33, y: 0.33, z: 0.34, w: 0)
+        let noise = CIFilter.randomGenerator().outputImage?
+            .applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": gray, "inputGVector": gray, "inputBVector": gray,
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+            ])
+            // Scale the noise around 0.5: 0.5 + (n - 0.5) * strength.
+            .applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: strength, y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: strength, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: strength, w: 0),
+                "inputBiasVector": CIVector(x: 0.5 * (1 - strength), y: 0.5 * (1 - strength), z: 0.5 * (1 - strength), w: 0),
+            ])
+            .transformed(by: CGAffineTransform(scaleX: 1.6, y: 1.6))
+            .cropped(to: extent)
+        guard let noise else { return image }
+        let blend = CIFilter.overlayBlendMode()
+        blend.inputImage = noise
+        blend.backgroundImage = image
+        return (blend.outputImage ?? image).cropped(to: extent)
     }
 
     /// Samples per channel in the curve lookup table handed to Core Image.
