@@ -8,6 +8,10 @@ import SwiftUI
 struct AdjustmentsInspector: View {
     @Bindable var model: EditorModel
     @State private var hslComponent = HSLComponent.saturation
+    @State private var presets = PresetStore()
+    @State private var isNamingPreset = false
+    @State private var presetName = ""
+    @State private var presetError: String?
 
     enum HSLComponent: Hashable {
         case hue, saturation, luminance
@@ -21,6 +25,39 @@ struct AdjustmentsInspector: View {
             Section {
                 HistogramView(histogram: model.histogram)
                     .listRowInsets(EdgeInsets())
+            }
+            Section("Presets") {
+                HStack {
+                    Menu("Apply Preset") {
+                        if presets.presets.isEmpty {
+                            Text("No presets yet")
+                        }
+                        ForEach(presets.presets) { preset in
+                            Button(preset.name) { model.apply(preset) }
+                        }
+                        if !presets.presets.isEmpty {
+                            Divider()
+                            Menu("Delete Preset") {
+                                ForEach(presets.presets) { preset in
+                                    Button(preset.name, role: .destructive) { try? presets.delete(preset) }
+                                }
+                            }
+                        }
+                    }
+                    .disabled(!model.isOpen)
+                    Spacer()
+                    Button("Save Preset…") { isNamingPreset = true }
+                        .disabled(model.recipe.global.isIdentity)
+                }
+                HStack {
+                    Button("Copy Adjustments") { model.copyAdjustments() }
+                        .keyboardShortcut("c", modifiers: [.command, .shift])
+                        .disabled(!model.isOpen)
+                    Button("Paste Adjustments") { model.pasteAdjustments() }
+                        .keyboardShortcut("v", modifiers: [.command, .shift])
+                        .disabled(!model.isOpen || AdjustmentsClipboard.shared.adjustments == nil)
+                }
+                .controlSize(.small)
             }
             Section("Crop & Straighten") {
                 HStack {
@@ -125,6 +162,29 @@ struct AdjustmentsInspector: View {
         }
         .formStyle(.grouped)
         .disabled(!model.isOpen)
+        .alert("Save Preset", isPresented: $isNamingPreset) {
+            TextField("Name", text: $presetName)
+            Button("Save") {
+                do {
+                    try presets.save(model.recipe.global, named: presetName)
+                    presetName = ""
+                } catch {
+                    presetError = error.localizedDescription
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The current adjustments will be saved under this name. Crop and straighten are not part of a preset.")
+        }
+        .alert("Couldn't Save Preset", isPresented: Binding(get: { presetError != nil }, set: {
+            if !$0 {
+                presetError = nil
+            }
+        })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(presetError ?? "")
+        }
     }
 
     private func hslValue(_ range: HSL.ColorRange, _ component: HSLComponent) -> Binding<Double> {

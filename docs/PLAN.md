@@ -316,13 +316,17 @@ Bibliothèque
       centre, à ajouter plus tard). Courbes le 30/10/2026 (RGB et par canal, spline monotone,
       `CIColorCurves` en sRGB), noir et blanc avec mélangeur de canaux et grain le 30/10/2026.
       TSL le 30/10/2026 (huit plages, cube 3D `CIColorCubeWithColorSpace` construit en Swift).
-      Reste : niveaux.
+      Niveaux abandonnés (couverts par point noir et courbes, comme dans les éditeurs RAW
+      récents) ; à rouvrir si Michaël y tient.
 - [ ] Recadrage, redressement, rotation, perspective simple.
       Fait le 30/10/2026 : cadre à poignées, grille des tiers, rapports verrouillables
       (original, carré, 3:2, 4:3, 16:9, 5:4), redressement ±45° avec rognage automatique des
       coins, quarts de tour, retournement. Reste : perspective, rapports personnalisés et
       préréglages de rapports (demandé par Michaël, plus tard).
 - [ ] Préréglages (sauvegarde/import de recettes), copier/coller les ajustements.
+      Fait le 30/10/2026 : préréglages en fichiers JSON dans Application Support (appliquer,
+      enregistrer, supprimer), copier/coller des ajustements entre photos (le recadrage reste
+      propre à chaque photo). Reste : import/export de préréglages, dossiers de préréglages.
 - [x] Persistance : sidecar JSON pour les fichiers, `PHAdjustmentData` pour Photos (29/10/2026).
 
 Export

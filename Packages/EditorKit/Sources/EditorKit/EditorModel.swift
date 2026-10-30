@@ -84,6 +84,25 @@ public final class EditorModel {
         commitChange()
     }
 
+    // MARK: - Presets and clipboard
+
+    /// Replaces the global adjustments with a preset's (geometry and other layers are untouched).
+    public func apply(_ preset: Preset) {
+        recipe.global = preset.adjustments
+        commitChange()
+    }
+
+    public func copyAdjustments(to clipboard: AdjustmentsClipboard = .shared) {
+        clipboard.copy(recipe.global)
+    }
+
+    /// Pastes the copied adjustments over the global layer, keeping the crop.
+    public func pasteAdjustments(from clipboard: AdjustmentsClipboard = .shared) {
+        guard let adjustments = clipboard.adjustments else { return }
+        recipe.global = adjustments
+        commitChange()
+    }
+
     @ObservationIgnored private var histogramTask: Task<Void, Never>?
 
     /// The edit being made. Sliders write here continuously; call `commitChange()` when a gesture

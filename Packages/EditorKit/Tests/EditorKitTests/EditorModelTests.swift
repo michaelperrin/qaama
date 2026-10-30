@@ -222,3 +222,44 @@ struct EditorModelTests {
         #expect(model.keywords == ["a"] && model.statusMessage == nil)
     }
 }
+
+@MainActor
+struct PresetStoreTests {
+    @Test func savesListsAppliesAndDeletesPresets() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PresetStoreTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = PresetStore(directory: directory)
+        #expect(store.presets.isEmpty)
+
+        try store.save(AdjustmentSet(exposure: 0.7, saturation: -0.2), named: " Moody / Dusk ")
+        try store.save(AdjustmentSet(contrast: 0.3), named: "Punch")
+        #expect(store.presets.map(\.name) == ["Moody - Dusk", "Punch"])
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).contains("Moody - Dusk.json"))
+
+        let reopened = PresetStore(directory: directory)
+        #expect(reopened.presets.first?.adjustments.exposure == 0.7)
+
+        let model = EditorModel(assetID: "stub", source: SampleLibrarySource(count: 1), renderer: nil)
+        try model.apply(#require(store.presets.first))
+        #expect(model.recipe.global.exposure == 0.7 && model.canUndo)
+
+        try store.delete(store.presets[1])
+        #expect(store.presets.count == 1)
+        #expect(throws: PresetStore.PresetError.self) { try store.save(AdjustmentSet(), named: "   ") }
+    }
+
+    @Test func clipboardCopiesAdjustmentsBetweenEditors() {
+        let clipboard = AdjustmentsClipboard()
+        let source = SampleLibrarySource(count: 2)
+        let first = EditorModel(assetID: "sample-0", source: source, renderer: nil)
+        first.recipe.global.vibrance = 0.5
+        first.geometry.angle = 5
+        first.copyAdjustments(to: clipboard)
+
+        let second = EditorModel(assetID: "sample-1", source: source, renderer: nil)
+        second.geometry.crop = UnitRect(x: 0.1, y: 0.1, width: 0.5, height: 0.5)
+        second.pasteAdjustments(from: clipboard)
+        #expect(second.recipe.global.vibrance == 0.5)
+        #expect(second.geometry.crop.width == 0.5 && second.geometry.angle == 0, "pasting keeps the photo's own crop")
+    }
+}
