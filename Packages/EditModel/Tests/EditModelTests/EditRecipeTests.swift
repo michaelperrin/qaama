@@ -18,7 +18,8 @@ struct EditRecipeTests {
         #expect(set.saturation == nil, "a neutral value is stored as absent")
         #expect(AdjustmentSet(exposure: 0) == AdjustmentSet())
         #expect(AdjustmentSet(temperature: 4).temperature == 1)
-        #expect(AdjustmentSet.all.count == 9)
+        #expect(AdjustmentSet.all.count == 12)
+        #expect(AdjustmentSet(noiseReduction: -1).noiseReduction == nil, "noise reduction has no negative side")
         #expect(AdjustmentSet.range(of: \.exposure) == -3 ... 3 && AdjustmentSet.range(of: \.shadows) == -1 ... 1)
     }
 

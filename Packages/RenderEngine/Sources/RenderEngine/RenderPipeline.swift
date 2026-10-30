@@ -5,7 +5,7 @@ import EditModel
 /// Turns an `EditRecipe` into a Core Image filter chain. Pure function of its inputs.
 ///
 /// Layers are applied in order; within a layer the adjustments run in the engine's fixed order:
-/// white balance, exposure, highlights and shadows, black point, contrast, then color. Masks are carried by the
+/// white balance, exposure, highlights and shadows, black point, contrast, color, detail, then effects. Masks are carried by the
 /// recipe but not rendered yet.
 public nonisolated enum RenderPipeline {
     public static func apply(_ recipe: EditRecipe, to image: CIImage) -> CIImage {
@@ -97,6 +97,41 @@ public nonisolated enum RenderPipeline {
             let filter = CIFilter.vibrance()
             filter.inputImage = output
             filter.amount = Float(vibrance)
+            output = filter.outputImage ?? output
+        }
+
+        if let noise = adjustments.noiseReduction, noise > 0 {
+            let filter = CIFilter.noiseReduction()
+            filter.inputImage = output
+            filter.noiseLevel = Float(noise * 0.1)
+            filter.sharpness = 0.4
+            output = filter.outputImage ?? output
+        }
+
+        if let sharpness = adjustments.sharpness, sharpness != 0 {
+            if sharpness > 0 {
+                let filter = CIFilter.unsharpMask()
+                filter.inputImage = output
+                filter.radius = 1.5
+                filter.intensity = Float(sharpness * 1.5)
+                output = filter.outputImage ?? output
+            } else {
+                let blur = CIFilter.gaussianBlur()
+                blur.inputImage = output
+                blur.radius = Float(-sharpness * 2)
+                // The blur grows the extent; keep the image's own frame.
+                output = (blur.outputImage ?? output).cropped(to: output.extent)
+            }
+        }
+
+        if let vignette = adjustments.vignette, vignette != 0 {
+            let filter = CIFilter.vignetteEffect()
+            filter.inputImage = output
+            let extent = output.extent
+            filter.center = CGPoint(x: extent.midX, y: extent.midY)
+            filter.radius = Float(hypot(extent.width, extent.height) / 2)
+            filter.intensity = Float(vignette)
+            filter.falloff = 0.5
             output = filter.outputImage ?? output
         }
         return output

@@ -56,6 +56,13 @@ struct AdjustmentsInspector: View {
                 slider("Vibrance", \.vibrance)
                 slider("Saturation", \.saturation)
             }
+            Section("Detail") {
+                slider("Sharpness", \.sharpness)
+                slider("Noise Reduction", \.noiseReduction)
+            }
+            Section("Effects") {
+                slider("Vignette", \.vignette)
+            }
             Section("Info") {
                 InfoPanel(model: model)
             }

@@ -27,12 +27,22 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     /// Saturation, -1 (grayscale) to +1 (vivid).
     public var saturation: Double?
 
+    /// Detail
+    /// Sharpening strength, 0 to 1 (negative values soften).
+    public var sharpness: Double?
+    /// Luminance noise reduction, 0 to 1.
+    public var noiseReduction: Double?
+
+    /// Effects
+    /// Darken (+) or brighten (-) the corners, -1 to +1.
+    public var vignette: Double?
+
     public static let exposureRange: ClosedRange<Double> = -3 ... 3
     public static let unitRange: ClosedRange<Double> = -1 ... 1
 
     public init(temperature: Double? = nil, tint: Double? = nil, exposure: Double? = nil, highlights: Double? = nil,
                 shadows: Double? = nil, blackPoint: Double? = nil, contrast: Double? = nil, vibrance: Double? = nil,
-                saturation: Double? = nil)
+                saturation: Double? = nil, sharpness: Double? = nil, noiseReduction: Double? = nil, vignette: Double? = nil)
     {
         self.temperature = temperature
         self.tint = tint
@@ -43,16 +53,26 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
         self.contrast = contrast
         self.vibrance = vibrance
         self.saturation = saturation
+        self.sharpness = sharpness
+        self.noiseReduction = noiseReduction
+        self.vignette = vignette
         clamp()
     }
 
     /// Every adjustment, in the order the engine applies them.
     public static let all: [WritableKeyPath<AdjustmentSet, Double?> & Sendable] = [
         \.temperature, \.tint, \.exposure, \.highlights, \.shadows, \.blackPoint, \.contrast, \.vibrance, \.saturation,
+        \.sharpness, \.noiseReduction, \.vignette,
     ]
 
+    public static let positiveRange: ClosedRange<Double> = 0 ... 1
+
     public static func range(of keyPath: WritableKeyPath<AdjustmentSet, Double?>) -> ClosedRange<Double> {
-        keyPath == \.exposure ? exposureRange : unitRange
+        switch keyPath {
+        case \.exposure: exposureRange
+        case \.noiseReduction: positiveRange
+        default: unitRange
+        }
     }
 
     /// True when every adjustment is absent or neutral.

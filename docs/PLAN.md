@@ -311,15 +311,16 @@ Bibliothèque
       vignettage, grain, courbes, niveaux, teinte/saturation sélective, noir et blanc.
       Fait le 30/10/2026 : balance des blancs (température, teinte via `CITemperatureAndTint`),
       exposition, hautes lumières (récupération par `CIHighlightShadowAdjust`, remontée par
-      courbe), ombres, point noir (courbe tonale), contraste, vibrance, saturation. Reste : netteté, bruit, vignettage,
-      grain, courbes, niveaux, TSL, noir et blanc.
+      courbe), ombres, point noir (courbe tonale), contraste, vibrance, saturation ; netteté,
+      réduction de bruit et vignettage le 30/10/2026 (options du vignettage, rayon, dégradé,
+      centre, à ajouter plus tard). Reste : grain, courbes, niveaux, TSL, noir et blanc.
 - [ ] Recadrage, redressement, rotation, perspective simple.
       Fait le 30/10/2026 : cadre à poignées, grille des tiers, rapports verrouillables
       (original, carré, 3:2, 4:3, 16:9, 5:4), redressement ±45° avec rognage automatique des
       coins, quarts de tour, retournement. Reste : perspective, rapports personnalisés et
       préréglages de rapports (demandé par Michaël, plus tard).
 - [ ] Préréglages (sauvegarde/import de recettes), copier/coller les ajustements.
-- [ ] Persistance : sidecar JSON pour les fichiers, `PHAdjustmentData` pour Photos.
+- [x] Persistance : sidecar JSON pour les fichiers, `PHAdjustmentData` pour Photos (29/10/2026).
 
 Export
 

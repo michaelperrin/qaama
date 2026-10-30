@@ -77,6 +77,25 @@ struct RenderPipelineTests {
         #expect(after.r - after.g > before.r - before.g)
     }
 
+    @Test func vignetteDarkensCornersNotTheCenter() {
+        let flat = CIImage(color: CIColor(red: 0.6, green: 0.6, blue: 0.6)).cropped(to: CGRect(x: 0, y: 0, width: 200, height: 100))
+        let output = RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(vignette: 1)), to: flat)
+        func sample(_ x: Int, _ y: Int) -> Double {
+            var pixel = [UInt8](repeating: 0, count: 4)
+            context.render(output, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: x, y: y, width: 1, height: 1),
+                           format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+            return Double(pixel[0]) / 255
+        }
+        #expect(sample(2, 2) < sample(100, 50) - 0.05)
+        #expect(output.extent == flat.extent)
+    }
+
+    @Test func detailAdjustmentsKeepTheExtent() {
+        let output = RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(sharpness: -1, noiseReduction: 1)), to: gray)
+        #expect(output.extent == gray.extent)
+        #expect(RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(sharpness: 1)), to: gray).extent == gray.extent)
+    }
+
     @Test func factorsAreNeutralAtZero() {
         #expect(RenderPipeline.contrastFactor(0) == 1)
         #expect(RenderPipeline.saturationFactor(0) == 1)
