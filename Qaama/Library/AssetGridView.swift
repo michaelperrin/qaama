@@ -7,6 +7,7 @@ struct AssetGridView: View {
     let onOpen: (LibraryAsset.ID) -> Void
 
     private let thumbnailSide: CGFloat = 160
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         ScrollView {
@@ -17,6 +18,9 @@ struct AssetGridView: View {
                     let asset = source.assets[index]
                     AssetThumbnailView(asset: asset, source: source, side: thumbnailSide)
                         .onTapGesture { onOpen(asset.id) }
+                        .onAppear {
+                            source.prefetchThumbnails(around: index, pixelSize: CGSize(width: thumbnailSide * displayScale, height: thumbnailSide * displayScale))
+                        }
                 }
             }
             .padding(12)

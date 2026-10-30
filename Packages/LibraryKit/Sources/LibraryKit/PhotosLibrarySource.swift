@@ -143,10 +143,33 @@ public final class PhotosLibrarySource: LibrarySource {
     }
 
     /// Warms the thumbnail cache for photos about to appear on screen.
-    public func prefetchThumbnails(for assets: [LibraryAsset], pixelSize: CGSize) {
-        let phAssets = assets.compactMap { phAsset(for: $0.id) }
-        imageManager.startCachingImages(for: phAssets, targetSize: pixelSize, contentMode: .aspectFill, options: Self.requestOptions())
+    /// Keeps PhotoKit's cache warm for a window of rows around what is on screen, and drops what scrolled
+    /// far away. Called for every visible tile, so it only acts when the window moves by a few rows.
+    public func prefetchThumbnails(around index: Int, pixelSize: CGSize) {
+        guard let fetchResult else { return }
+        let count = fetchResult.count
+        guard count > 0 else { return }
+        let desired = max(0, index - Self.prefetchWindow / 2) ..< min(count, index + Self.prefetchWindow)
+        guard abs(desired.lowerBound - prefetched.lowerBound) >= Self.prefetchStep
+            || abs(desired.upperBound - prefetched.upperBound) >= Self.prefetchStep
+            || prefetched.isEmpty else { return }
+
+        let options = Self.requestOptions()
+        let toStart = desired.filter { !prefetched.contains($0) }.map { fetchResult.object(at: $0) }
+        let toStop = prefetched.filter { !desired.contains($0) && $0 < count }.map { fetchResult.object(at: $0) }
+        if !toStop.isEmpty {
+            imageManager.stopCachingImages(for: toStop, targetSize: pixelSize, contentMode: .aspectFill, options: options)
+        }
+        if !toStart.isEmpty {
+            imageManager.startCachingImages(for: toStart, targetSize: pixelSize, contentMode: .aspectFill, options: options)
+        }
+        prefetched = desired
     }
+
+    /// Rows kept warm around the visible one, and how far the window must move before it is updated.
+    private static let prefetchWindow = 60
+    private static let prefetchStep = 10
+    @ObservationIgnored private var prefetched: Range<Int> = 0 ..< 0
 
     // MARK: - Editing (PHAdjustmentData)
 
@@ -301,6 +324,9 @@ public final class PhotosLibrarySource: LibrarySource {
     private func apply(fetchResult result: PHFetchResult<PHAsset>) {
         fetchResult = result
         libraryVersion += 1
+        // Indices moved: forget the warm window; the next visible tile rebuilds it.
+        imageManager.stopCachingImagesForAllAssets()
+        prefetched = 0 ..< 0
         // The row closure must stay free of side effects: SwiftUI may walk the whole collection.
         assets = AssetCollection(count: result.count) { index in
             Self.makeAsset(result.object(at: index))

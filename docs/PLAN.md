@@ -280,7 +280,8 @@ Bibliothèque
       Fait le 30/10/2026 : tri (dates, note, nom), filtres (note, drapeau, modifié, RAW,
       favoris), recherche noms et mots-clés pour les dossiers ; Photos en natif pour dates,
       favoris, note (prédicats confirmés par sonde, PhotoKit ne documente pas la note).
-      Reste : prefetch des vignettes, filtre par type de fichier.
+      Prefetch des vignettes Photos le 30/10/2026 (fenêtre de 60 lignes autour de l'écran via
+      `PHCachingImageManager`, libérée au-delà). Reste : filtre par type de fichier.
 - [ ] Appariement RAW + JPEG, détection des sidecars, mise à jour en direct des
       changements (Photos et système de fichiers).
       Fait le 30/10/2026 : appariement par nom (un RAW + une image non RAW dans le même

@@ -44,6 +44,8 @@ public protocol LibrarySource: AnyObject, Observable {
     func prioritize(_ asset: LibraryAsset)
     /// What files back the asset (RAW, RAW + JPEG), fetched on demand when the listing doesn't know.
     func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo
+    /// The grid shows the row at `index`: sources may warm the thumbnails around it.
+    func prefetchThumbnails(around index: Int, pixelSize: CGSize)
 }
 
 /// Which kind of files stand behind a photo.
@@ -80,6 +82,8 @@ public extension LibrarySource {
     func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo {
         AssetResourceInfo(asset)
     }
+
+    func prefetchThumbnails(around _: Int, pixelSize _: CGSize) {}
 }
 
 /// Decisions a source can persist about a photo.
