@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreImage
 import EditModel
 import Foundation
 
@@ -13,7 +14,8 @@ public nonisolated enum EditRenderer {
         }
     }
 
-    public static func jpeg(imageURL: URL?, image: CGImage?, recipe: EditRecipe) throws -> Data {
+    /// `masks` are precomputed model masks by component id; missing ones are resolved here.
+    public static func jpeg(imageURL: URL?, image: CGImage?, recipe: EditRecipe, masks: [UUID: CIImage] = [:]) async throws -> Data {
         let source: RenderSource
         if let imageURL {
             source = .file(imageURL)
@@ -23,6 +25,8 @@ public nonisolated enum EditRenderer {
             throw RenderError.noImage
         }
         let loaded = try SourceImageLoader.load(source)
-        return try ImageExporter.jpegData(for: RenderPipeline.apply(recipe, to: loaded.image))
+        let reference = recipe.geometry.map { GeometryRenderer.straighten(loaded.image, with: $0) } ?? loaded.image
+        let resolved = await ModelMasks.resolveAll(in: recipe, reference: reference, existing: masks)
+        return try ImageExporter.jpegData(for: RenderPipeline.apply(recipe, to: loaded.image, geometry: recipe.geometry, masks: resolved))
     }
 }

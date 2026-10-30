@@ -76,6 +76,8 @@ can feed a website one day. Dates are when the feature landed.
   masks, combined by adding, subtracting or intersecting components; feather, density, invert;
   rename, duplicate (optionally inverted), delete; the sliders edit the selected layer; red
   overlay on the canvas (O) (2026-10-30).
+- Subject, background and people masks computed on device by Vision, in the background, scaled
+  from a 1024 px analysis (2026-10-30).
 
 ### Information
 - Histogram of the current edit with clipping indicators (2026-10-30).

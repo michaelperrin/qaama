@@ -9,8 +9,11 @@ struct MasksSection: View {
     @State private var renamingLayerID: UUID?
     @State private var newName = ""
 
-    /// Kinds that can be rendered today; model-based ones arrive with the next steps.
+    /// Kinds offered in the menus; sky and scene classes arrive with the segmentation model.
     static let availableKinds: [(title: LocalizedStringKey, kind: MaskKind)] = [
+        ("Select Subject", .subject(instances: nil)),
+        ("Select Background", .background),
+        ("Select People", .people),
         ("Linear Gradient", .linearGradient(LinearGradientMask())),
         ("Radial Gradient", .radialGradient(RadialGradientMask())),
         ("Luminance Range", .luminosity(LuminosityRange(low: 0.5, high: 1, softness: 0.2))),
@@ -32,6 +35,9 @@ struct MasksSection: View {
                 }
                 .disabled(!model.isOpen)
                 Spacer()
+                if model.pendingMaskCount > 0 {
+                    ProgressView().controlSize(.small).help("Computing masks…")
+                }
                 Toggle("Show Mask", isOn: $model.showsMaskOverlay)
                     .toggleStyle(.button)
                     .keyboardShortcut("o", modifiers: [])

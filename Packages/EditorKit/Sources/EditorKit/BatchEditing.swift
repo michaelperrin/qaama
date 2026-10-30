@@ -54,7 +54,7 @@ public nonisolated enum BatchEditing {
                 previous.append((asset, input.recipeData))
                 let recipe = try recipeData.map { try EditRecipe(jsonData: $0) } ?? EditRecipe()
                 let rendered = recipe.isIdentity ? Data() : try await Task.detached(priority: .userInitiated) {
-                    try EditRenderer.jpeg(imageURL: input.imageURL, image: input.image, recipe: recipe)
+                    try await EditRenderer.jpeg(imageURL: input.imageURL, image: input.image, recipe: recipe)
                 }.value
                 try await source.saveEdit(EditingOutput(recipeData: recipe.jsonData(), renderedJPEG: rendered, isReset: recipe.isIdentity), for: asset)
                 updated += 1

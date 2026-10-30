@@ -55,6 +55,11 @@ public final class EditorModel {
 
     /// Precomputed images of model-based mask components (subject, sky…), by component id.
     public private(set) var maskImages: [UUID: CIImage] = [:]
+    /// Number of model-based components being computed; the UI shows a spinner while it is non-zero.
+    public private(set) var pendingMaskCount = 0
+    /// Geometry the current masks were computed in; straightening changes invalidate them.
+    private var maskReferenceGeometry: (angle: Double, turns: Int, flipped: Bool)?
+    private var maskResolution: Task<Void, Never>?
 
     private var selectedLayerIndex: Int? {
         guard let selectedLayerID else { return nil }
@@ -215,7 +220,10 @@ public final class EditorModel {
     /// The edit being made. Sliders write here continuously; call `commitChange()` when a gesture
     /// ends so the undo history gets one entry per gesture, not one per pixel.
     public var recipe = EditRecipe.identity {
-        didSet { renderPreview() }
+        didSet {
+            renderPreview()
+            resolveModelMasksIfNeeded()
+        }
     }
 
     /// The window's undo manager, so the Edit menu and its shortcuts drive the same history.
@@ -298,6 +306,7 @@ public final class EditorModel {
             }
             sourceImage = try await Task.detached(priority: .userInitiated) { try SourceImageLoader.load(renderSource) }.value
             renderPreview()
+            resolveModelMasksIfNeeded()
             if let url = input.imageURL {
                 metadata = await Task.detached { try? ImageMetadataReader.read(url) }.value
             }
@@ -375,6 +384,39 @@ public final class EditorModel {
         scheduleHistogram(of: shown)
     }
 
+    /// Computes, in the background, the model-based masks the recipe needs and doesn't have yet, then
+    /// re-renders. Straightening or turning the image invalidates them: masks live in that frame.
+    private func resolveModelMasksIfNeeded() {
+        guard let sourceImage else { return }
+        let geometry = recipe.geometry ?? Geometry()
+        let frame = (geometry.angle, geometry.quarterTurns, geometry.isFlippedHorizontally)
+        if let previous = maskReferenceGeometry, previous != frame {
+            maskImages.removeAll()
+        }
+        maskReferenceGeometry = frame
+        let missing = recipe.layers.flatMap { $0.mask?.components ?? [] }.filter { $0.kind.needsModel && maskImages[$0.id] == nil }
+        guard !missing.isEmpty, maskResolution == nil else { return }
+        let reference = GeometryRenderer.straighten(sourceImage.image, with: geometry)
+        pendingMaskCount = missing.count
+        maskResolution = Task { [weak self] in
+            for component in missing {
+                do {
+                    if let image = try await ModelMasks.resolve(component.kind, reference: reference) {
+                        self?.maskImages[component.id] = image
+                    }
+                } catch {
+                    self?.statusMessage = error.localizedDescription
+                }
+                self?.pendingMaskCount -= 1
+            }
+            guard let self else { return }
+            maskResolution = nil
+            renderPreview()
+            // Components added meanwhile.
+            resolveModelMasksIfNeeded()
+        }
+    }
+
     /// Red tint where the selected layer's mask selects, over the rendered image.
     private func withMaskOverlay(_ image: CIImage, source: CIImage) -> CIImage {
         guard let layer = selectedLayer, let mask = layer.mask else { return image }
@@ -410,8 +452,11 @@ public final class EditorModel {
     public func renderJPEG() async throws -> Data {
         guard let sourceImage else { throw LibrarySourceError.assetUnavailable }
         let recipe = recipe
+        let masks = maskImages
         return try await Task.detached(priority: .userInitiated) {
-            try ImageExporter.jpegData(for: RenderPipeline.apply(recipe, to: sourceImage.image))
+            let reference = recipe.geometry.map { GeometryRenderer.straighten(sourceImage.image, with: $0) } ?? sourceImage.image
+            let resolved = await ModelMasks.resolveAll(in: recipe, reference: reference, existing: masks)
+            return try ImageExporter.jpegData(for: RenderPipeline.apply(recipe, to: sourceImage.image, geometry: recipe.geometry, masks: resolved))
         }.value
     }
 
