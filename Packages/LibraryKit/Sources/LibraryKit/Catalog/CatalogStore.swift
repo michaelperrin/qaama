@@ -220,6 +220,9 @@ public final nonisolated class CatalogStore: Sendable {
                 .replacingOccurrences(of: "%", with: "\\%").replacingOccurrences(of: "_", with: "\\_")
             arguments += ["\(escaped)/%"]
         }
+        if !query.includesPairedJPEGs {
+            clauses.append("NOT (item.pairedItemID IS NOT NULL AND item.isRAW = 0)")
+        }
         if query.minimumRating > 0 {
             clauses.append("item.rating >= ?")
             arguments += [query.minimumRating]

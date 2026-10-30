@@ -101,6 +101,7 @@ public nonisolated struct FolderIndexer: Sendable {
         }
 
         reattachOrphanSidecars(listing.orphanSidecars, root: url, items: &toSave)
+        Self.pairRAWAndJPEG(&toSave)
 
         try await store.save(toSave)
         result.missing = try await store.reconcile(folderID: folder.id, presentIDs: presentIDs).count
@@ -141,6 +142,27 @@ public nonisolated struct FolderIndexer: Sendable {
 
     private func sidecarExists(for item: CatalogItem, root: URL) -> Bool {
         FileManager.default.fileExists(atPath: Sidecar.url(for: root.appendingPathComponent(item.relativePath)).path(percentEncoded: false))
+    }
+
+    /// Links a RAW file and a non-RAW image shot together: same directory, same name without extension.
+    /// Only unambiguous pairs (exactly one RAW and one other image) are linked; everything else is cleared.
+    static func pairRAWAndJPEG(_ items: inout [CatalogItem]) {
+        var groups: [String: [Int]] = [:]
+        for (index, item) in items.enumerated() {
+            let path = item.relativePath as NSString
+            let key = (path.deletingPathExtension as String).lowercased()
+            groups[key, default: []].append(index)
+        }
+        for index in items.indices {
+            items[index].pairedItemID = nil
+        }
+        for indices in groups.values where indices.count == 2 {
+            let raws = indices.filter { items[$0].isRAW }
+            let others = indices.filter { !items[$0].isRAW }
+            guard raws.count == 1, others.count == 1 else { continue }
+            items[raws[0]].pairedItemID = items[others[0]].id
+            items[others[0]].pairedItemID = items[raws[0]].id
+        }
     }
 
     private enum SidecarStatus {

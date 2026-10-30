@@ -41,6 +41,13 @@ struct AssetThumbnailView: View {
                 case .none: EmptyView()
                 }
                 Spacer()
+                if asset.isRAW {
+                    Text(asset.pairedAssetID == nil ? "RAW" : "RAW+JPG")
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(.black.opacity(0.45), in: .capsule)
+                        .help(asset.pairedAssetID == nil ? "RAW file" : "RAW with its JPEG twin")
+                }
                 if asset.hasEdit {
                     Image(systemName: "slider.horizontal.3")
                         .help("Edited")

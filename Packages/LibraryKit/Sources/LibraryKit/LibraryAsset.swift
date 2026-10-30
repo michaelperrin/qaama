@@ -23,9 +23,13 @@ public nonisolated struct LibraryAsset: Identifiable, Hashable, Sendable {
     public var modificationDate: Date?
     /// Whether a non-destructive edit is stored for this photo.
     public var hasEdit: Bool
+    public var isRAW: Bool
+    /// The other half of a RAW + JPEG pair shot together, when the source pairs them.
+    public var pairedAssetID: String?
 
     public init(id: String, pixelWidth: Int, pixelHeight: Int, creationDate: Date?, isFavorite: Bool, rating: Int = 0,
-                flag: ItemFlag = .none, keywords: [String] = [], modificationDate: Date? = nil, hasEdit: Bool = false)
+                flag: ItemFlag = .none, keywords: [String] = [], modificationDate: Date? = nil, hasEdit: Bool = false,
+                isRAW: Bool = false, pairedAssetID: String? = nil)
     {
         self.id = id
         self.pixelWidth = pixelWidth
@@ -37,6 +41,8 @@ public nonisolated struct LibraryAsset: Identifiable, Hashable, Sendable {
         self.keywords = keywords
         self.modificationDate = modificationDate
         self.hasEdit = hasEdit
+        self.isRAW = isRAW
+        self.pairedAssetID = pairedAssetID
     }
 
     /// Width / height ratio, or 1 when the dimensions are unknown.

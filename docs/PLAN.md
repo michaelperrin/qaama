@@ -283,6 +283,13 @@ Bibliothèque
       Reste : prefetch des vignettes, filtre par type de fichier.
 - [ ] Appariement RAW + JPEG, détection des sidecars, mise à jour en direct des
       changements (Photos et système de fichiers).
+      Fait le 30/10/2026 : appariement par nom (un RAW + une image non RAW dans le même
+      répertoire), jumeau JPEG masqué par défaut avec option pour l'afficher, badge RAW /
+      RAW+JPG sur les vignettes ; sidecars détectés et suivis depuis le 29/10. Reste : FSEvents
+      pour les dossiers. Côté Photos, pas de prédicat RAW dans PhotoKit : badge RAW par tuile
+      visible (requête de ressources à la demande), puis index local des assets Photos (RAW,
+      jumeau) construit en arrière-plan pour filtrer, et option « éditer le RAW » via la
+      ressource alternative.
 - [ ] Inspecteur : métadonnées EXIF, histogramme, localisation (MapKit).
       Fait le 30/10/2026 : EXIF lu sur l'original (boîtier, objectif, exposition, dimensions,
       date) et histogramme RGB (`CIAreaHistogram` sur un échantillon 512 px, comptage en sRGB,

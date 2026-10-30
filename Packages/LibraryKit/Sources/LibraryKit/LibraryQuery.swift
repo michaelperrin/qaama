@@ -34,6 +34,8 @@ public nonisolated struct LibraryQuery: Hashable, Sendable {
     /// Restricts a folder source to one of its subdirectories (relative path); nil means the whole folder.
     /// A scope, not a filter: `isUnfiltered` ignores it and "clear filters" keeps it.
     public var folderPath: String?
+    /// RAW + JPEG pairs show as one photo (the RAW) unless the JPEG twins are asked for. Not a filter.
+    public var includesPairedJPEGs = false
 
     public init() {}
 

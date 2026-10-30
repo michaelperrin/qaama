@@ -66,6 +66,10 @@ struct LibraryQueryToolbar: ToolbarContent {
                 if supports.contains(.favorite) {
                     Toggle("Favorites Only", isOn: query.favoritesOnly)
                 }
+                if supports.contains(.raw) {
+                    Divider()
+                    Toggle("Show JPEG Twins of RAW Files", isOn: query.includesPairedJPEGs)
+                }
                 if !source.query.isUnfiltered {
                     Divider()
                     Button("Clear Filters") {
@@ -73,6 +77,7 @@ struct LibraryQueryToolbar: ToolbarContent {
                         cleared.sort = source.query.sort
                         cleared.ascending = source.query.ascending
                         cleared.folderPath = source.query.folderPath
+                        cleared.includesPairedJPEGs = source.query.includesPairedJPEGs
                         source.query = cleared
                     }
                 }

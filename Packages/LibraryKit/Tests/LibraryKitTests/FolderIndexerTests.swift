@@ -138,6 +138,33 @@ struct FolderIndexerTests {
         #expect(!FileManager.default.fileExists(atPath: Sidecar.url(for: image).path))
     }
 
+    @Test func pairsRAWWithItsJPEGTwinAndHidesTheTwin() async throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        // A fake RAW next to a JPEG of the same name: the pairing looks at types and names, not pixels.
+        try writeImage(to: fixture.root.appendingPathComponent("DSCF0001.jpg"), seed: 3, type: .jpeg)
+        try Data([0x46, 0x55, 0x4A, 0x49]).write(to: fixture.root.appendingPathComponent("DSCF0001.RAF"))
+        try writeImage(to: fixture.root.appendingPathComponent("lonely.jpg"), seed: 4, type: .jpeg)
+
+        _ = try await fixture.index()
+        let all = try await fixture.store.items(inFolder: fixture.folder.id)
+        let raw = try #require(all.first { $0.fileName == "DSCF0001.RAF" })
+        let jpeg = try #require(all.first { $0.fileName == "DSCF0001.jpg" })
+        #expect(raw.isRAW && raw.pairedItemID == jpeg.id && jpeg.pairedItemID == raw.id)
+        #expect(all.first { $0.fileName == "lonely.jpg" }?.pairedItemID == nil)
+
+        var query = LibraryQuery()
+        let shown = try await fixture.store.items(inFolder: fixture.folder.id, query: query).map(\.fileName)
+        #expect(shown.contains("DSCF0001.RAF") && !shown.contains("DSCF0001.jpg") && shown.contains("lonely.jpg"))
+        query.includesPairedJPEGs = true
+        #expect(try await fixture.store.items(inFolder: fixture.folder.id, query: query).count == all.count)
+
+        // The JPEG goes away: the RAW is single again.
+        try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("DSCF0001.jpg"))
+        _ = try await fixture.index()
+        #expect(try await fixture.store.item(id: raw.id)?.pairedItemID == nil)
+    }
+
     @Test func recognizesCopiesByFingerprintAndDuplicateSidecars() async throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }

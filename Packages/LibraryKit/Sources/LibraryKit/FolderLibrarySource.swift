@@ -293,7 +293,9 @@ nonisolated extension LibraryAsset {
             flag: item.flag,
             keywords: item.keywords,
             modificationDate: item.sidecarModified ?? item.contentModified,
-            hasEdit: item.hasEdit
+            hasEdit: item.hasEdit,
+            isRAW: item.isRAW,
+            pairedAssetID: item.pairedItemID?.uuidString
         )
     }
 }

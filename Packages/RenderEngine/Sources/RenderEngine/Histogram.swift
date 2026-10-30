@@ -70,7 +70,9 @@ public nonisolated enum HistogramComputer {
             peak = max(red.max() ?? 0, green.max() ?? 0, blue.max() ?? 0)
         }
         guard peak > 0 else { return nil }
-        func normalized(_ bins: [Float]) -> [Float] { bins.map { min($0 / peak, 1) } }
+        func normalized(_ bins: [Float]) -> [Float] {
+            bins.map { min($0 / peak, 1) }
+        }
         return Histogram(red: normalized(red), green: normalized(green), blue: normalized(blue))
     }
 }
