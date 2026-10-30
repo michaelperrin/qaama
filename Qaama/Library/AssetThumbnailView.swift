@@ -9,6 +9,7 @@ struct AssetThumbnailView: View {
 
     @Environment(\.displayScale) private var displayScale
     @State private var image: CGImage?
+    @State private var resources: AssetResourceInfo?
 
     /// What the thumbnail depends on: a new edit changes the modification date, so the task reruns.
     private struct ThumbnailKey: Hashable {
@@ -41,12 +42,12 @@ struct AssetThumbnailView: View {
                 case .none: EmptyView()
                 }
                 Spacer()
-                if asset.isRAW {
-                    Text(asset.pairedAssetID == nil ? "RAW" : "RAW+JPG")
+                if let resources = resources ?? (asset.isRAW ? AssetResourceInfo(asset) : nil), resources.isRAW {
+                    Text(resources.hasJPEGTwin ? "RAW+JPG" : "RAW")
                         .font(.system(size: 9, weight: .bold))
                         .padding(.horizontal, 4).padding(.vertical, 1)
                         .background(.black.opacity(0.45), in: .capsule)
-                        .help(asset.pairedAssetID == nil ? "RAW file" : "RAW with its JPEG twin")
+                        .help(resources.hasJPEGTwin ? "RAW with its JPEG twin" : "RAW file")
                 }
                 if asset.hasEdit {
                     Image(systemName: "slider.horizontal.3")
@@ -64,6 +65,7 @@ struct AssetThumbnailView: View {
             source.prioritize(asset)
             let pixels = CGSize(width: side * displayScale, height: side * displayScale)
             image = await source.thumbnail(for: asset, pixelSize: pixels)
+            resources = await source.resourceInfo(for: asset)
         }
     }
 }

@@ -4,6 +4,7 @@ import ObjCSupport
 import Observation
 import OSLog
 import Photos
+import UniformTypeIdentifiers
 
 /// "Apple Photos library" source: lists photos and provides their images through PhotoKit.
 ///
@@ -41,6 +42,8 @@ public final class PhotosLibrarySource: LibrarySource {
     /// PHAssets fetched by identifier, kept for image requests and edits. Not observed: it is filled
     /// while views are being built, and mutating observed state there would invalidate them in a loop.
     @ObservationIgnored private var materialized: [String: PHAsset] = [:]
+    /// Resource kinds per asset, found once per session; PhotoKit has no predicate for them.
+    @ObservationIgnored private var resourceInfos: [String: AssetResourceInfo] = [:]
     private let imageManager = PHCachingImageManager()
     private var changeRelay: PhotoLibraryChangeRelay?
     /// Editing inputs kept alive while a photo is open: they hold the access to the original file.
@@ -89,6 +92,23 @@ public final class PhotosLibrarySource: LibrarySource {
             PHAssetChangeRequest(for: phAsset).rating = value
         }
         logger.notice("Rated \(asset.id, privacy: .public) with \(rating) stars")
+    }
+
+    /// Photos stores a RAW + JPEG pair as one asset with two resources. Listing them costs one request per
+    /// asset, so it happens for the tiles on screen only and the answer is cached.
+    public func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo {
+        if let cached = resourceInfos[asset.id] {
+            return cached
+        }
+        guard let phAsset = phAsset(for: asset.id) else { return AssetResourceInfo(asset) }
+        let info = await Task.detached {
+            let photos = PHAssetResource.assetResources(for: phAsset).filter { $0.type == .photo || $0.type == .alternatePhoto }
+            let raw = photos.contains { UTType($0.uniformTypeIdentifier)?.conforms(to: .rawImage) == true }
+            let other = photos.contains { UTType($0.uniformTypeIdentifier)?.conforms(to: .rawImage) == false }
+            return AssetResourceInfo(isRAW: raw, hasJPEGTwin: raw && other)
+        }.value
+        resourceInfos[asset.id] = info
+        return info
     }
 
     /// Keywords live in Photos' extended metadata, fetched per asset rather than for the whole listing.
@@ -205,6 +225,7 @@ public final class PhotosLibrarySource: LibrarySource {
         // changed assets are dropped from the cache and re-read on their next access.
         for changed in details.changedObjects {
             materialized[changed.localIdentifier] = nil
+            resourceInfos[changed.localIdentifier] = nil
         }
         for removed in details.removedObjects {
             materialized[removed.localIdentifier] = nil

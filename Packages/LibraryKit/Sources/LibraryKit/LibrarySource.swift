@@ -42,6 +42,24 @@ public protocol LibrarySource: AnyObject, Observable {
     func endEditing(_ asset: LibraryAsset)
     /// Hint that the asset is on screen, so pending background work (metadata) serves it first.
     func prioritize(_ asset: LibraryAsset)
+    /// What files back the asset (RAW, RAW + JPEG), fetched on demand when the listing doesn't know.
+    func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo
+}
+
+/// Which kind of files stand behind a photo.
+public nonisolated struct AssetResourceInfo: Hashable, Sendable {
+    public var isRAW: Bool
+    /// A JPEG shot together with the RAW: a paired file in a folder, an alternate resource in Photos.
+    public var hasJPEGTwin: Bool
+
+    public init(isRAW: Bool, hasJPEGTwin: Bool) {
+        self.isRAW = isRAW
+        self.hasJPEGTwin = hasJPEGTwin
+    }
+
+    public init(_ asset: LibraryAsset) {
+        self.init(isRAW: asset.isRAW, hasJPEGTwin: asset.pairedAssetID != nil)
+    }
 }
 
 public extension LibrarySource {
@@ -57,6 +75,10 @@ public extension LibrarySource {
 
     func keywords(for asset: LibraryAsset) async -> [String] {
         asset.keywords
+    }
+
+    func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo {
+        AssetResourceInfo(asset)
     }
 }
 
