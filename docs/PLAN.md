@@ -277,6 +277,10 @@ Bibliothèque
 - [ ] Vue unifiée Photos + dossiers, barre latérale (albums, dossiers, favoris, récents).
 - [ ] Grille performante (vignettes en cache, prefetch), tri et filtres (date, type,
       RAW, édité/non édité, favoris), recherche simple.
+      Fait le 30/10/2026 : tri (dates, note, nom), filtres (note, drapeau, modifié, RAW,
+      favoris), recherche noms et mots-clés pour les dossiers ; Photos en natif pour dates,
+      favoris, note (prédicats confirmés par sonde, PhotoKit ne documente pas la note).
+      Reste : prefetch des vignettes, filtre par type de fichier.
 - [ ] Appariement RAW + JPEG, détection des sidecars, mise à jour en direct des
       changements (Photos et système de fichiers).
 - [ ] Inspecteur : métadonnées EXIF, histogramme, localisation (MapKit).
