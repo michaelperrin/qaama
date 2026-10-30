@@ -10,15 +10,19 @@ import Synchronization
 nonisolated enum BrushRenderer {
     /// Long edge of the bitmap strokes are painted into.
     static let paintSize: CGFloat = 1024
-    private static let cache = Mutex<[(key: Int, image: CIImage)]>([])
+    /// What a painted bitmap depends on. Compared by value on lookup: a hash alone could hand a
+    /// different stroke set's mask back on a collision.
+    private struct Key: Hashable {
+        var brush: BrushMask
+        var width: Int
+        var height: Int
+    }
+
+    private static let cache = Mutex<[(key: Key, image: CIImage)]>([])
 
     static func render(_ brush: BrushMask, extent: CGRect) -> CIImage? {
         guard !brush.strokes.isEmpty, extent.width > 0, extent.height > 0 else { return nil }
-        var hasher = Hasher()
-        hasher.combine(brush)
-        hasher.combine(Int(extent.width))
-        hasher.combine(Int(extent.height))
-        let key = hasher.finalize()
+        let key = Key(brush: brush, width: Int(extent.width), height: Int(extent.height))
         if let cached = cache.withLock({ $0.first { $0.key == key }?.image }) {
             return cached
         }
