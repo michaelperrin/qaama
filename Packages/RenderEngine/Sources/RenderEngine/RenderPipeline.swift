@@ -5,7 +5,7 @@ import EditModel
 /// Turns an `EditRecipe` into a Core Image filter chain. Pure function of its inputs.
 ///
 /// Layers are applied in order; within a layer the adjustments run in the engine's fixed order:
-/// white balance, exposure, highlights and shadows, black point, contrast, color, detail, then effects. Masks are carried by the
+/// white balance, exposure, highlights and shadows, black point, contrast, curves, color, detail, then effects. Masks are carried by the
 /// recipe but not rendered yet.
 public nonisolated enum RenderPipeline {
     public static func apply(_ recipe: EditRecipe, to image: CIImage) -> CIImage {
@@ -93,6 +93,10 @@ public nonisolated enum RenderPipeline {
             output = controls.outputImage ?? output
         }
 
+        if let curves = adjustments.curves, !curves.isIdentity {
+            output = applyCurves(curves, to: output)
+        }
+
         if let vibrance = adjustments.vibrance, vibrance != 0 {
             let filter = CIFilter.vibrance()
             filter.inputImage = output
@@ -135,6 +139,28 @@ public nonisolated enum RenderPipeline {
             output = filter.outputImage ?? output
         }
         return output
+    }
+
+    /// Samples per channel in the curve lookup table handed to Core Image.
+    static let curveSamples = 256
+
+    /// Tone curves through CIColorCurves, evaluated in sRGB so the curve maps display values as in
+    /// every other editor, not linear light.
+    static func applyCurves(_ curves: Curves, to image: CIImage) -> CIImage {
+        let tables = curves.lookupTables(count: curveSamples)
+        var data = [Float32](repeating: 0, count: curveSamples * 3)
+        for index in 0 ..< curveSamples {
+            data[index * 3] = Float32(tables.red[index])
+            data[index * 3 + 1] = Float32(tables.green[index])
+            data[index * 3 + 2] = Float32(tables.blue[index])
+        }
+        let bytes = data.withUnsafeBufferPointer { Data(buffer: $0) }
+        guard let filter = CIFilter(name: "CIColorCurves"), let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return image }
+        filter.setValue(image, forKey: kCIInputImageKey)
+        filter.setValue(bytes, forKey: "inputCurvesData")
+        filter.setValue(CIVector(x: 0, y: 1), forKey: "inputCurvesDomain")
+        filter.setValue(colorSpace, forKey: "inputColorSpace")
+        return filter.outputImage ?? image
     }
 
     /// How far the black point moves (in linear input or output) at the end of its slider.

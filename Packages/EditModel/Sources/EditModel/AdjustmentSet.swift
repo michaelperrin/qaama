@@ -27,6 +27,9 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     /// Saturation, -1 (grayscale) to +1 (vivid).
     public var saturation: Double?
 
+    /// Tone curves, after the light adjustments and before color.
+    public var curves: Curves?
+
     /// Detail
     /// Sharpening strength, 0 to 1 (negative values soften).
     public var sharpness: Double?
@@ -77,7 +80,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
 
     /// True when every adjustment is absent or neutral.
     public var isIdentity: Bool {
-        Self.all.allSatisfy { (self[keyPath: $0] ?? 0) == 0 }
+        Self.all.allSatisfy { (self[keyPath: $0] ?? 0) == 0 } && (curves?.isIdentity ?? true)
     }
 
     /// Brings every value back into its range and stores neutral values as absent, so equal edits give
@@ -87,6 +90,9 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
             guard let value = self[keyPath: keyPath] else { continue }
             let clamped = value.clamped(to: Self.range(of: keyPath))
             self[keyPath: keyPath] = clamped == 0 ? nil : clamped
+        }
+        if curves?.isIdentity == true {
+            curves = nil
         }
     }
 

@@ -26,7 +26,7 @@ struct EditorView: View {
                 EditorCanvas(model: model)
                     .frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
                 AdjustmentsInspector(model: model)
-                    .frame(width: 260)
+                    .frame(width: AdjustmentsInspector.width)
             }
             Divider()
             EditorBottomBar(model: model, onExport: exportJPEG, onClose: onClose)

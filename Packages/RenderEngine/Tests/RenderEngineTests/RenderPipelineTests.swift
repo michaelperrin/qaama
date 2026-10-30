@@ -96,6 +96,22 @@ struct RenderPipelineTests {
         #expect(RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(sharpness: 1)), to: gray).extent == gray.extent)
     }
 
+    @Test func curvesLiftMidtonesAndRespectChannels() {
+        var set = AdjustmentSet()
+        var curves = Curves()
+        curves.rgb.insert(CurvePoint(x: 0.5, y: 0.75))
+        set.curves = curves
+        let before = color(of: gray)
+        let lifted = color(of: RenderPipeline.apply(EditRecipe(adjustments: set), to: gray))
+        #expect(lifted.r > before.r + 0.15 && abs(lifted.r - lifted.b) < 0.02)
+
+        var redOnly = Curves()
+        redOnly.red.insert(CurvePoint(x: 0.5, y: 0.25))
+        set.curves = redOnly
+        let tinted = color(of: RenderPipeline.apply(EditRecipe(adjustments: set), to: gray))
+        #expect(tinted.r < before.r - 0.15 && abs(tinted.g - before.g) < 0.02)
+    }
+
     @Test func factorsAreNeutralAtZero() {
         #expect(RenderPipeline.contrastFactor(0) == 1)
         #expect(RenderPipeline.saturationFactor(0) == 1)

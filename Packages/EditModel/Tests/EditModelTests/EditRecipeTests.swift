@@ -100,3 +100,54 @@ struct GeometryTests {
         #expect(try EditRecipe(jsonData: recipe.jsonData()).geometry == nil, "an identity geometry is dropped on read")
     }
 }
+
+struct ToneCurveTests {
+    @Test func identityPassesInputsThrough() {
+        let curve = ToneCurve()
+        #expect(curve.isIdentity)
+        #expect(abs(curve.evaluate(0.3) - 0.3) < 0.0001)
+        #expect(curve.samples(count: 3) == [0, 0.5, 1])
+    }
+
+    @Test func interpolatesMonotonicallyThroughPoints() {
+        var curve = ToneCurve()
+        curve.insert(CurvePoint(x: 0.5, y: 0.7))
+        #expect(!curve.isIdentity && curve.points.count == 3)
+        #expect(abs(curve.evaluate(0.5) - 0.7) < 0.0001)
+        #expect(curve.evaluate(0.25) > 0.25 && curve.evaluate(0.25) < 0.7)
+        let samples = curve.samples(count: 64)
+        #expect(zip(samples, samples.dropFirst()).allSatisfy { $0 <= $1 + 0.0001 }, "no overshoot between points")
+    }
+
+    @Test func editingKeepsEndPointsAndSpacing() {
+        var curve = ToneCurve()
+        let index = curve.insert(CurvePoint(x: 0.4, y: 0.5))
+        curve.move(index, to: CurvePoint(x: 0.99, y: 0.9))
+        #expect(curve.points[index].x <= 1 - ToneCurve.minimumSpacing)
+        curve.move(0, to: CurvePoint(x: 0.5, y: 0.2))
+        #expect(curve.points[0] == CurvePoint(x: 0, y: 0.2), "end points only move vertically")
+        curve.remove(at: 0)
+        #expect(curve.points.count == 3, "end points can't be removed")
+        curve.remove(at: index)
+        #expect(curve.points.count == 2)
+        #expect(ToneCurve(points: [CurvePoint(x: 0.5, y: 0.5)]).points.count == 3, "missing end points are added")
+    }
+
+    @Test func curvesComposeAndCountTowardIdentity() throws {
+        var curves = Curves()
+        #expect(curves.isIdentity)
+        curves.rgb.insert(CurvePoint(x: 0.5, y: 0.6))
+        curves.red.insert(CurvePoint(x: 0.5, y: 0.4))
+        let tables = curves.lookupTables(count: 3)
+        #expect(abs(tables.green[1] - 0.6) < 0.0001)
+        #expect(tables.red[1] < tables.green[1], "the red curve applies after the RGB curve")
+        var set = AdjustmentSet()
+        set.curves = curves
+        #expect(!set.isIdentity)
+        let reloaded = try EditRecipe(jsonData: EditRecipe(adjustments: set).jsonData())
+        #expect(reloaded.global.curves == curves)
+        set.curves = Curves()
+        set.clamp()
+        #expect(set.curves == nil, "identity curves are dropped")
+    }
+}

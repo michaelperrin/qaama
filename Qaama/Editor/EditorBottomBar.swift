@@ -13,6 +13,7 @@ struct EditorBottomBar: View {
         HStack(spacing: 16) {
             if let asset = model.asset {
                 Text(asset.creationDate?.formatted(date: .long, time: .shortened) ?? "Unknown date")
+                    .lineLimit(1)
                 if let sourceImage = model.sourceImage {
                     Text("\(Int(sourceImage.pixelSize.width)) × \(Int(sourceImage.pixelSize.height)) px")
                         .monospacedDigit()
@@ -24,9 +25,13 @@ struct EditorBottomBar: View {
                     }
                 }
                 if let duration = model.renderer?.lastRenderDuration {
+                    // Fixed width: this text changes on every frame, and a changing width would make the
+                    // window columns shift while a slider is dragged.
                     Text("render \(duration.formatted(.units(allowed: [.milliseconds], fractionalPart: .show(length: 1))))")
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .frame(width: 110, alignment: .leading)
                 }
                 Spacer()
                 if model.source.capabilities.contains(.keywords) {
@@ -41,7 +46,7 @@ struct EditorBottomBar: View {
                 }
             }
             if let statusMessage = model.statusMessage {
-                Text(statusMessage).foregroundStyle(.red).lineLimit(1)
+                Text(statusMessage).foregroundStyle(.red).lineLimit(1).layoutPriority(-1)
             }
             if model.isBusy {
                 ProgressView().controlSize(.small)

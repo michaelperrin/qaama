@@ -313,7 +313,8 @@ Bibliothèque
       exposition, hautes lumières (récupération par `CIHighlightShadowAdjust`, remontée par
       courbe), ombres, point noir (courbe tonale), contraste, vibrance, saturation ; netteté,
       réduction de bruit et vignettage le 30/10/2026 (options du vignettage, rayon, dégradé,
-      centre, à ajouter plus tard). Reste : grain, courbes, niveaux, TSL, noir et blanc.
+      centre, à ajouter plus tard). Courbes le 30/10/2026 (RGB et par canal, spline monotone,
+      `CIColorCurves` en sRGB). Reste : grain, niveaux, TSL, noir et blanc.
 - [ ] Recadrage, redressement, rotation, perspective simple.
       Fait le 30/10/2026 : cadre à poignées, grille des tiers, rapports verrouillables
       (original, carré, 3:2, 4:3, 16:9, 5:4), redressement ±45° avec rognage automatique des

@@ -8,6 +8,9 @@ import SwiftUI
 struct AdjustmentsInspector: View {
     @Bindable var model: EditorModel
 
+    /// Width of the inspector column; the editor lays it out at this exact width.
+    static let width: CGFloat = 280
+
     var body: some View {
         Form {
             Section {
@@ -52,6 +55,9 @@ struct AdjustmentsInspector: View {
                 slider("Black Point", \.blackPoint)
                 slider("Contrast", \.contrast)
             }
+            Section("Curves") {
+                CurveEditor(curves: curvesBinding, onEditingEnded: model.commitChange)
+            }
             Section("Color") {
                 slider("Vibrance", \.vibrance)
                 slider("Saturation", \.saturation)
@@ -81,6 +87,14 @@ struct AdjustmentsInspector: View {
         }
         .formStyle(.grouped)
         .disabled(!model.isOpen)
+    }
+
+    /// Curves of the global layer; identity curves are stored as absent.
+    private var curvesBinding: Binding<Curves> {
+        Binding(
+            get: { model.recipe.global.curves ?? Curves() },
+            set: { model.recipe.global.curves = $0.isIdentity ? nil : $0 }
+        )
     }
 
     private var angle: Binding<Double> {
