@@ -1,37 +1,29 @@
 import LibraryKit
 import SwiftUI
 
-/// Lists the Apple Photos library with its albums, and the folders the user added with their subfolders.
+/// Lists the Apple Photos library with its album hierarchy, and the folders the user added with their
+/// subdirectories. Both sections are outlines over `SidebarItem`, so every row selects the same way.
 struct SidebarView: View {
     let catalog: LibraryCatalog
     @Binding var selection: LibrarySelection?
     let addFolder: () -> Void
-    @State private var albumsExpanded = false
 
     var body: some View {
         List(selection: $selection) {
             Section("Apple Photos") {
-                Label("Photos", systemImage: "photo.on.rectangle.angled")
-                    .tag(LibrarySelection.photos)
-                ForEach(catalog.photosAlbums.albums.filter { $0.kind == .favorites }) { album in
-                    albumRow(album, symbol: "heart")
-                }
-                let userAlbums = catalog.photosAlbums.albums.filter { $0.kind == .user }
-                if !userAlbums.isEmpty {
-                    // Libraries can hold hundreds of albums: keep them folded until asked for.
-                    DisclosureGroup(isExpanded: $albumsExpanded) {
-                        ForEach(userAlbums) { album in
-                            albumRow(album, symbol: "rectangle.stack")
-                        }
-                    } label: {
-                        Label("Albums", systemImage: "rectangle.stack.badge.person.crop")
-                            .badge(userAlbums.count)
-                    }
+                OutlineGroup(photosItems, children: \.children) { item in
+                    row(item)
                 }
             }
             Section("Folders") {
-                ForEach(catalog.folders) { folder in
-                    folderRow(folder)
+                OutlineGroup(folderItems, children: \.children) { item in
+                    row(item)
+                        .contextMenu {
+                            if let folder = item.folder {
+                                Button("Rescan Folder") { folder.rescan() }
+                                Button("Remove Folder", role: .destructive) { remove(folder) }
+                            }
+                        }
                 }
                 if catalog.folders.isEmpty {
                     Text("No folders yet")
@@ -50,31 +42,41 @@ struct SidebarView: View {
         }
     }
 
-    private func albumRow(_ album: PhotosAlbum, symbol: String) -> some View {
-        Label(album.title, systemImage: symbol)
-            .tag(LibrarySelection.photosAlbum(album.id))
-            .badge(album.estimatedCount > 0 ? album.estimatedCount : 0)
+    @ViewBuilder
+    private func row(_ item: SidebarItem) -> some View {
+        let label = Label(item.title, systemImage: item.symbol)
+            .badge(item.badge ?? 0)
+            .help(item.help ?? "")
+        if let selection = item.selection {
+            label.tag(selection)
+        } else {
+            label.selectionDisabled()
+        }
     }
 
-    @ViewBuilder
-    private func folderRow(_ folder: FolderLibrarySource) -> some View {
-        let label = Label(folder.displayName, systemImage: "folder")
-            .help(folder.folderURL.path(percentEncoded: false))
-            .contextMenu {
-                Button("Rescan Folder") { folder.rescan() }
-                Button("Remove Folder", role: .destructive) { remove(folder) }
-            }
-        if folder.subfolders.isEmpty {
-            label.tag(LibrarySelection.folder(folder.id))
-        } else {
-            DisclosureGroup {
-                OutlineGroup(folder.subfolders, children: \.optionalChildren) { node in
-                    Label(node.name, systemImage: "folder")
-                        .tag(LibrarySelection.subfolder(folder.id, node.path))
-                }
-            } label: {
-                label.tag(LibrarySelection.folder(folder.id))
-            }
+    // MARK: - Items
+
+    private var photosItems: [SidebarItem] {
+        let albums = catalog.photosAlbums
+        var items = [SidebarItem(id: "photos", title: "Photos", symbol: "photo.on.rectangle.angled", selection: .photos)]
+        if let favorites = albums.favorites {
+            items.append(SidebarItem(id: favorites.id, title: favorites.title, symbol: "heart",
+                                     selection: .photosAlbum(favorites.id), badge: favorites.estimatedCount))
+        }
+        if !albums.tree.isEmpty {
+            // Libraries can hold hundreds of albums: one collapsed root keeps the sidebar short.
+            items.append(SidebarItem(id: "albums", title: "Albums", symbol: "rectangle.stack.badge.person.crop", selection: nil,
+                                     badge: albums.albums.filter { $0.kind == .user }.count,
+                                     children: albums.tree.map(SidebarItem.init)))
+        }
+        return items
+    }
+
+    private var folderItems: [SidebarItem] {
+        catalog.folders.map { folder in
+            SidebarItem(id: folder.id.uuidString, title: folder.displayName, symbol: "folder", selection: .folder(folder.id),
+                        help: folder.folderURL.path(percentEncoded: false), folder: folder,
+                        children: folder.subfolders.isEmpty ? nil : folder.subfolders.map { SidebarItem(folderID: folder.id, node: $0) })
         }
     }
 
@@ -87,10 +89,43 @@ struct SidebarView: View {
     }
 }
 
-private extension FolderNode {
-    /// `OutlineGroup` wants nil for leaves, not an empty array.
-    var optionalChildren: [FolderNode]? {
-        children.isEmpty ? nil : children
+/// One row of the sidebar outline.
+private struct SidebarItem: Identifiable {
+    let id: String
+    let title: String
+    let symbol: String
+    /// Nil for rows that only group others (album folders, the Albums root).
+    let selection: LibrarySelection?
+    var badge: Int?
+    var help: String?
+    var folder: FolderLibrarySource?
+    var children: [SidebarItem]?
+
+    init(id: String, title: String, symbol: String, selection: LibrarySelection?, badge: Int? = nil, help: String? = nil,
+         folder: FolderLibrarySource? = nil, children: [SidebarItem]? = nil)
+    {
+        self.id = id
+        self.title = title
+        self.symbol = symbol
+        self.selection = selection
+        self.badge = badge.flatMap { $0 > 0 && $0 != NSNotFound ? $0 : nil }
+        self.help = help
+        self.folder = folder
+        self.children = children
+    }
+
+    init(_ node: PhotosAlbumNode) {
+        switch node {
+        case let .album(album):
+            self.init(id: album.id, title: album.title, symbol: "rectangle.stack", selection: .photosAlbum(album.id), badge: album.estimatedCount)
+        case let .folder(id, title, children):
+            self.init(id: id, title: title, symbol: "folder", selection: nil, children: children.map(SidebarItem.init))
+        }
+    }
+
+    init(folderID: FolderLibrarySource.ID, node: FolderNode) {
+        self.init(id: "\(folderID)/\(node.path)", title: node.name, symbol: "folder", selection: .subfolder(folderID, node.path),
+                  children: node.children.isEmpty ? nil : node.children.map { SidebarItem(folderID: folderID, node: $0) })
     }
 }
 
