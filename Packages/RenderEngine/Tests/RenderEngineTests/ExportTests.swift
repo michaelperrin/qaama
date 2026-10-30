@@ -102,6 +102,20 @@ struct ExportTests {
         #expect(WatermarkRenderer.apply(watermark, to: photo, picture: nil) === photo)
     }
 
+    @Test func shadowIsDarkAndCrispJustBelowTheStamp() {
+        let stamp = CIImage(color: CIColor(red: 1, green: 1, blue: 1)).cropped(to: CGRect(x: 0, y: 0, width: 200, height: 100))
+        let shadowed = WatermarkRenderer.withShadow(stamp)
+        // Offset 4 px (4 % of 100), sigma 1.5: two pixels inside the shadow's bottom edge it is nearly
+        // opaque and black, twelve pixels out it has faded away.
+        #expect(alpha(shadowed, 100, -2) > 0.75)
+        let context = CIContext(options: [.useSoftwareRenderer: true])
+        var p = [Float](repeating: 0, count: 4)
+        context.render(shadowed, toBitmap: &p, rowBytes: 16, bounds: CGRect(x: 100, y: -2, width: 1, height: 1), format: .RGBAf, colorSpace: nil)
+        #expect(p[0] < 0.05)
+        #expect(alpha(shadowed, 100, -12) < 0.02)
+        #expect(alpha(shadowed, 100, 50) == 1) // the stamp itself is untouched
+    }
+
     @Test func namingSchemesBuildTheBaseName() {
         #expect(ExportNaming.original.fileName(original: "DSCF0001", index: 3) == "DSCF0001")
         let sequence = ExportNaming.sequence(prefix: "Trip-", start: 1, digits: 3)

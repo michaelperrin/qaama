@@ -282,6 +282,7 @@ struct ExportView: View {
                     }
                     Toggle("Add Shadow", isOn: $model.settings.watermark.hasShadow)
                 }
+                .disabled(!model.settings.watermark.isEnabled)
                 Section {
                     Picker("Position", selection: $model.settings.watermark.position) {
                         ForEach(ExportWatermark.Position.allCases, id: \.self) { Text($0.displayName).tag($0) }

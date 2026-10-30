@@ -13,6 +13,12 @@ nonisolated enum WatermarkRenderer {
     static let marginFraction = 0.03
     /// Gap between tiles as a fraction of the stamp's width.
     static let tileGapFraction = 0.6
+    /// Shadow offset toward the bottom right, blur sigma and opacity, as fractions of the stamp's
+    /// height. The proportions of a CSS `4px 4px 3px` shadow on a line of text: crisp and dark, so
+    /// it reads as an edge rather than a glow.
+    static let shadowOffsetFraction = 0.04
+    static let shadowBlurFraction = 0.015
+    static let shadowOpacity = 0.85
 
     /// `picture` is the decoded image for an image watermark; a missing picture leaves the photo as is.
     static func apply(_ watermark: ExportWatermark, to photo: CIImage, picture: CIImage?) -> CIImage {
@@ -83,12 +89,13 @@ nonisolated enum WatermarkRenderer {
         return output.cropped(to: CGRect(x: 0, y: 0, width: (image.extent.width * factor).rounded(), height: (image.extent.height * factor).rounded()))
     }
 
-    /// A soft dark copy under the stamp, offset toward the bottom right, so light marks stay readable on
-    /// light photos.
+    /// A dark copy under the stamp, slightly blurred and offset toward the bottom right, so light
+    /// marks stay readable on light photos.
     static func withShadow(_ stamp: CIImage) -> CIImage {
-        let offset = max(1, stamp.extent.height * 0.04)
-        let shadow = faded(tinted(stamp, with: .black), to: 0.6)
-            .applyingGaussianBlur(sigma: Double(offset))
+        let offset = max(1, (stamp.extent.height * shadowOffsetFraction).rounded())
+        let sigma = max(0.5, stamp.extent.height * shadowBlurFraction)
+        let shadow = faded(tinted(stamp, with: .black), to: shadowOpacity)
+            .applyingGaussianBlur(sigma: Double(sigma))
             .transformed(by: CGAffineTransform(translationX: offset, y: -offset))
         return stamp.composited(over: shadow)
     }
