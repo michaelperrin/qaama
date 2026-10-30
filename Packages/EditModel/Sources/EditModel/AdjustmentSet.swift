@@ -16,6 +16,8 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     public var highlights: Double?
     /// Lift (+) or deepen (-) the shadows, -1 to +1.
     public var shadows: Double?
+    /// Where black starts: deeper (-) clips the darkest tones, lifted (+) turns black into dark gray.
+    public var blackPoint: Double?
     /// Contrast, -1 (flat) to +1 (punchy).
     public var contrast: Double?
 
@@ -29,13 +31,15 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     public static let unitRange: ClosedRange<Double> = -1 ... 1
 
     public init(temperature: Double? = nil, tint: Double? = nil, exposure: Double? = nil, highlights: Double? = nil,
-                shadows: Double? = nil, contrast: Double? = nil, vibrance: Double? = nil, saturation: Double? = nil)
+                shadows: Double? = nil, blackPoint: Double? = nil, contrast: Double? = nil, vibrance: Double? = nil,
+                saturation: Double? = nil)
     {
         self.temperature = temperature
         self.tint = tint
         self.exposure = exposure
         self.highlights = highlights
         self.shadows = shadows
+        self.blackPoint = blackPoint
         self.contrast = contrast
         self.vibrance = vibrance
         self.saturation = saturation
@@ -44,7 +48,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
 
     /// Every adjustment, in the order the engine applies them.
     public static let all: [WritableKeyPath<AdjustmentSet, Double?> & Sendable] = [
-        \.temperature, \.tint, \.exposure, \.highlights, \.shadows, \.contrast, \.vibrance, \.saturation,
+        \.temperature, \.tint, \.exposure, \.highlights, \.shadows, \.blackPoint, \.contrast, \.vibrance, \.saturation,
     ]
 
     public static func range(of keyPath: WritableKeyPath<AdjustmentSet, Double?>) -> ClosedRange<Double> {

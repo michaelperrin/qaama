@@ -5,7 +5,7 @@ import EditModel
 /// Turns an `EditRecipe` into a Core Image filter chain. Pure function of its inputs.
 ///
 /// Layers are applied in order; within a layer the adjustments run in the engine's fixed order:
-/// white balance, exposure, highlights and shadows, contrast, then color. Masks are carried by the
+/// white balance, exposure, highlights and shadows, black point, contrast, then color. Masks are carried by the
 /// recipe but not rendered yet.
 public nonisolated enum RenderPipeline {
     public static func apply(_ recipe: EditRecipe, to image: CIImage) -> CIImage {
@@ -60,6 +60,19 @@ public nonisolated enum RenderPipeline {
             }
         }
 
+        if let blackPoint = adjustments.blackPoint, blackPoint != 0 {
+            // A tone curve anchored at the black end: negative values push the darkest input to black,
+            // positive values raise what black maps to. The rest of the curve stays on the diagonal.
+            let curve = CIFilter.toneCurve()
+            curve.inputImage = output
+            curve.point0 = blackPoint < 0 ? CGPoint(x: -blackPoint * Self.blackPointSpan, y: 0) : CGPoint(x: 0, y: blackPoint * Self.blackPointSpan)
+            curve.point1 = CGPoint(x: 0.25, y: 0.25)
+            curve.point2 = CGPoint(x: 0.5, y: 0.5)
+            curve.point3 = CGPoint(x: 0.75, y: 0.75)
+            curve.point4 = CGPoint(x: 1, y: 1)
+            output = curve.outputImage ?? output
+        }
+
         let contrast = adjustments.contrast ?? 0
         let saturation = adjustments.saturation ?? 0
         if contrast != 0 || saturation != 0 {
@@ -79,6 +92,9 @@ public nonisolated enum RenderPipeline {
         }
         return output
     }
+
+    /// How far the black point moves (in linear input or output) at the end of its slider.
+    static let blackPointSpan = 0.15
 
     /// Kelvin covered by the full temperature slider on either side of neutral.
     static let temperatureSpan = 2500.0

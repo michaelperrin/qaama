@@ -21,6 +21,7 @@ struct AdjustmentsInspector: View {
                 slider("Exposure", \.exposure, unit: "EV")
                 slider("Highlights", \.highlights)
                 slider("Shadows", \.shadows)
+                slider("Black Point", \.blackPoint)
                 slider("Contrast", \.contrast)
             }
             Section("Color") {

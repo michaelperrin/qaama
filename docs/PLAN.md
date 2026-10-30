@@ -311,7 +311,7 @@ Bibliothèque
       vignettage, grain, courbes, niveaux, teinte/saturation sélective, noir et blanc.
       Fait le 30/10/2026 : balance des blancs (température, teinte via `CITemperatureAndTint`),
       exposition, hautes lumières (récupération par `CIHighlightShadowAdjust`, remontée par
-      courbe), ombres, contraste, vibrance, saturation. Reste : netteté, bruit, vignettage,
+      courbe), ombres, point noir (courbe tonale), contraste, vibrance, saturation. Reste : netteté, bruit, vignettage,
       grain, courbes, niveaux, TSL, noir et blanc.
 - [ ] Recadrage, redressement, rotation, perspective simple.
 - [ ] Préréglages (sauvegarde/import de recettes), copier/coller les ajustements.

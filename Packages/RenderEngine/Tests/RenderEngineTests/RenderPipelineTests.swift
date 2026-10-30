@@ -62,6 +62,15 @@ struct RenderPipelineTests {
         #expect(recovered.r < before.r - 0.03)
     }
 
+    @Test func blackPointClipsOrLiftsTheDarkEnd() {
+        let dark = CIImage(color: CIColor(red: 0.05, green: 0.05, blue: 0.05)).cropped(to: CGRect(x: 0, y: 0, width: 16, height: 16))
+        let deeper = color(of: RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(blackPoint: -1)), to: dark))
+        #expect(deeper.r < 0.01, "the darkest tones become black")
+        let black = CIImage(color: CIColor(red: 0, green: 0, blue: 0)).cropped(to: CGRect(x: 0, y: 0, width: 16, height: 16))
+        let lifted = color(of: RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(blackPoint: 1)), to: black))
+        #expect(lifted.r > 0.1, "black turns into dark gray")
+    }
+
     @Test func vibranceIncreasesSaturation() {
         let before = color(of: red)
         let after = color(of: RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(vibrance: 1)), to: red))
