@@ -369,8 +369,19 @@ Interface
       fonction : largeur, hauteur et rotation séparées). Reste : pipette de luminance et de
       couleur, choix d'une instance de sujet au clic, masques en vignette dans la liste des
       calques. Retour de Michaël le 30/10/2026 : le pinceau est « un peu lent au dessin, mais
-      acceptable » (chaque point relance le rendu complet ; à mesurer, puis ne retracer que le
-      masque pendant le trait) et l'UI/UX des masques sera revue plus tard, sans priorité.
+      acceptable » et l'UI/UX des masques sera revue plus tard, sans priorité.
+      Pinceau accéléré le 30/10/2026 : mesuré sur 5 traits de 150 points plus un trait en
+      cours, chaque point repeignait tout le masque en CPU, 23 ms à rayon 0,03 et 177 ms à
+      rayon 0,1 (Debug). Le bitmap du dernier pinceau reste ouvert et seuls les nouveaux
+      « dabs » y sont tracés (une tache pré-rendue par trait, tamponnée au pixel près) : 0,14 ms
+      et 0,5 ms par point. Le repaint complet (ouverture, annulation) reste à 18 et 166 ms.
+      Mais dans l'app (1/11/2026) les points n'arrivaient toujours que toutes les 31 ms, pour
+      1 ms de modèle et 6 ms de canevas : le reste était SwiftUI, qui réévaluait l'inspecteur à
+      chaque mutation de la recette. Le trait en cours reste désormais hors de la recette
+      (`previewRecipe` le fusionne pour l'aperçu) et n'y entre qu'au relâchement : 8,5 ms par
+      point, soit la cadence de la souris, une image par point. Leçon : pendant un geste, ne pas
+      écrire dans une propriété observée par beaucoup de vues ; le journal « Brush stroke »
+      (notice) donne la répartition modèle / encodage / GPU par trait.
 - [ ] Super‑résolution et débruitage via modèles open source convertis en Core ML.
 - [ ] Outil de retouche/suppression d'objets (approche simple d'abord : clonage,
       inpainting basique).

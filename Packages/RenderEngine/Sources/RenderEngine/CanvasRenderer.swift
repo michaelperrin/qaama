@@ -32,6 +32,21 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
     /// GPU time of the last frame, for the latency measurements of the proof of concept.
     public private(set) var lastRenderDuration: Duration?
 
+    /// Frames drawn since the last reset, with the main-thread time spent encoding them and the
+    /// time until the GPU finished. The editor sums them over a gesture to say where a slow
+    /// brush stroke spends its time.
+    public struct DrawStats: Sendable {
+        public var frames = 0
+        public var encode: Duration = .zero
+        public var completion: Duration = .zero
+    }
+
+    public private(set) var drawStats = DrawStats()
+
+    public func resetDrawStats() {
+        drawStats = DrawStats()
+    }
+
     public let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let context: CIContext
@@ -87,9 +102,14 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
         logger.debug("Canvas draw: texture \(drawable.texture.width)x\(drawable.texture.height)")
         guard render(image, into: drawable.texture, commandBuffer: commandBuffer,
                      pointScale: view.drawableSize.width / max(view.bounds.width, 1)) else { return }
+        drawStats.frames += 1
+        drawStats.encode += clock.now - start
         commandBuffer.addCompletedHandler { [weak self] _ in
             let duration = clock.now - start
-            Task { @MainActor in self?.lastRenderDuration = duration }
+            Task { @MainActor in
+                self?.lastRenderDuration = duration
+                self?.drawStats.completion += duration
+            }
         }
         commandBuffer.present(drawable)
         commandBuffer.commit()

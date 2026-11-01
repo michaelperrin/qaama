@@ -72,7 +72,12 @@ public final class EditorModel {
     }
 
     public var brushTool: BrushTool?
-    private var currentStroke: BrushMask.Stroke?
+    /// The stroke being painted. It stays out of `recipe` until the mouse goes up: every view that
+    /// reads the recipe would otherwise be re-evaluated per point, which costs far more than the
+    /// render itself. The preview merges it in through `previewRecipe`.
+    @ObservationIgnored private var currentStroke: BrushMask.Stroke?
+    /// Where the time of the stroke being painted goes; reported once the stroke ends.
+    private var strokeTiming: (start: ContinuousClock.Instant, points: Int, model: Duration)?
 
     /// True while a masked layer is selected and shown: canvas gestures go to the mask, not to zoom/pan.
     public var isEditingMask: Bool {
@@ -98,32 +103,50 @@ public final class EditorModel {
     public func beginStroke(at point: UnitPoint2D) {
         guard let tool = brushTool else { return }
         currentStroke = BrushMask.Stroke(points: [point], radius: tool.radius, hardness: tool.hardness, opacity: 1, erases: tool.erases)
-        appendCurrentStroke(replacingLast: false)
+        renderer?.resetDrawStats()
+        strokeTiming = (.now, 1, .zero)
+        renderPreview()
     }
 
     public func extendStroke(to point: UnitPoint2D) {
         guard currentStroke != nil else { return }
+        let start = ContinuousClock.now
         currentStroke?.points.append(point)
-        appendCurrentStroke(replacingLast: true)
+        renderPreview()
+        strokeTiming?.points += 1
+        strokeTiming?.model += .now - start
     }
 
+    /// Writes the stroke into the recipe, as one undoable change.
     public func endStroke() {
-        guard currentStroke != nil else { return }
+        guard let stroke = currentStroke else { return }
         currentStroke = nil
+        recipe = recipe(adding: stroke)
         commitChange()
+        if let timing = strokeTiming, let stats = renderer?.drawStats {
+            let total = ContinuousClock.now - timing.start
+            let ms = { (d: Duration) in Double(d.components.attoseconds) / 1e15 + Double(d.components.seconds) * 1000 }
+            let points = max(timing.points, 1), frames = max(stats.frames, 1)
+            logger.notice("Brush stroke: \(timing.points) points in \(ms(total), format: .fixed(precision: 0)) ms (\(ms(total) / Double(points), format: .fixed(precision: 1)) ms/point), model+graph \(ms(timing.model) / Double(points), format: .fixed(precision: 1)) ms/point, canvas \(stats.frames) frames, encode \(ms(stats.encode) / Double(frames), format: .fixed(precision: 1)) ms, completion \(ms(stats.completion) / Double(frames), format: .fixed(precision: 1)) ms")
+        }
+        strokeTiming = nil
     }
 
-    private func appendCurrentStroke(replacingLast: Bool) {
-        guard let tool = brushTool, let stroke = currentStroke, let layer = selectedLayer else { return }
-        updateMask(layer.id) { mask in
-            guard let index = mask.components.firstIndex(where: { $0.id == tool.componentID }),
-                  case var .brush(brush) = mask.components[index].kind else { return }
-            if replacingLast, !brush.strokes.isEmpty {
-                brush.strokes.removeLast()
-            }
-            brush.strokes.append(stroke)
-            mask.components[index].kind = .brush(brush)
-        }
+    /// The recipe with `stroke` appended to the brush component being painted.
+    private func recipe(adding stroke: BrushMask.Stroke) -> EditRecipe {
+        guard let tool = brushTool, let layerIndex = selectedLayerIndex, layerIndex > 0, var mask = recipe.layers[layerIndex].mask,
+              let index = mask.components.firstIndex(where: { $0.id == tool.componentID }),
+              case var .brush(brush) = mask.components[index].kind else { return recipe }
+        brush.strokes.append(stroke)
+        mask.components[index].kind = .brush(brush)
+        var recipe = recipe
+        recipe.layers[layerIndex].mask = mask
+        return recipe
+    }
+
+    /// What the canvas shows: the recipe, plus the stroke being painted.
+    private var previewRecipe: EditRecipe {
+        currentStroke.map { recipe(adding: $0) } ?? recipe
     }
 
     // MARK: - Reference frame
@@ -461,6 +484,7 @@ public final class EditorModel {
 
     private func renderPreview() {
         guard let sourceImage else { return }
+        let recipe = previewRecipe
         let shown: CIImage = if isShowingOriginal {
             sourceImage.image
         } else if isCropping {
@@ -469,7 +493,7 @@ public final class EditorModel {
         } else {
             RenderPipeline.apply(recipe, to: sourceImage.image, geometry: recipe.geometry, masks: maskImages)
         }
-        renderer?.image = showsMaskOverlay ? withMaskOverlay(shown, source: sourceImage.image) : shown
+        renderer?.image = showsMaskOverlay ? withMaskOverlay(shown, of: recipe, source: sourceImage.image) : shown
         scheduleHistogram(of: shown)
     }
 
@@ -507,8 +531,8 @@ public final class EditorModel {
     }
 
     /// Red tint where the selected layer's mask selects, over the rendered image.
-    private func withMaskOverlay(_ image: CIImage, source: CIImage) -> CIImage {
-        guard let layer = selectedLayer, let mask = layer.mask else { return image }
+    private func withMaskOverlay(_ image: CIImage, of recipe: EditRecipe, source: CIImage) -> CIImage {
+        guard let index = selectedLayerIndex, let mask = recipe.layers[index].mask else { return image }
         let geometry = isCropping ? recipe.geometry?.withoutCrop : recipe.geometry
         let reference = geometry.map { GeometryRenderer.straighten(source, with: $0) } ?? source
         guard var maskImage = MaskRenderer.render(mask, reference: reference, resolved: maskImages) else { return image }
