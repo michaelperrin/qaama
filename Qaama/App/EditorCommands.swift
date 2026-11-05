@@ -34,12 +34,19 @@ extension FocusedValues {
     }
 }
 
-/// File › Export…, and Image › Adjustments: copy, paste, create a preset. Act on the focused editor.
+/// File › Export…, View › Show Inspector, and Image › Adjustments: copy, paste, create a preset.
+/// Act on the focused editor.
 struct EditorCommands: Commands {
     @FocusedValue(\.editor) private var editor
     @FocusedValue(\.exportAction) private var exportAction
+    @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
 
     var body: some Commands {
+        CommandGroup(after: .sidebar) {
+            Button(isInspectorVisible ? "Hide Inspector" : "Show Inspector") { isInspectorVisible.toggle() }
+                .keyboardShortcut("i", modifiers: [.command, .option])
+                .disabled(editor == nil)
+        }
         CommandGroup(after: .saveItem) {
             Divider()
             Button("Export…") { exportAction?.run() }

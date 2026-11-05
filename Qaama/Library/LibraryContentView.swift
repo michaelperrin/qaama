@@ -1,20 +1,25 @@
+import EditorKit
 import LibraryKit
 import SwiftUI
 
 /// Detail column of a library: the thumbnail grid, replaced by the editor while a photo is open.
 struct LibraryContentView: View {
     let source: any LibrarySource
-    @State private var editedAssetID: LibraryAsset.ID?
+    /// The stay in the editor, from opening a photo to closing; it moves from photo to photo by itself.
+    @State private var editorSession: EditorSession?
     @State private var selection: Set<LibraryAsset.ID> = []
 
     var body: some View {
-        if let editedAssetID {
-            EditorView(assetID: editedAssetID, source: source) { self.editedAssetID = nil }
-                .id(editedAssetID)
-                .navigationTitle(source.displayName)
-                .navigationSubtitle("Editing")
+        if let editorSession {
+            EditorView(session: editorSession) {
+                // Back in the grid, the photo last edited is the one selected.
+                selection = [editorSession.model.assetID]
+                self.editorSession = nil
+            }
+            .navigationTitle(source.displayName)
+            .navigationSubtitle("Editing")
         } else {
-            AssetGridView(source: source, selection: $selection) { editedAssetID = $0 }
+            AssetGridView(source: source, selection: $selection) { editorSession = EditorSession(assetID: $0, source: source) }
                 .navigationTitle(source.displayName)
                 .navigationSubtitle(subtitle)
                 .toolbar { LibraryQueryToolbar(source: source) }

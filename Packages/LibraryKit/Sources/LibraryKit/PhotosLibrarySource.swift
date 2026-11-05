@@ -340,6 +340,13 @@ public final class PhotosLibrarySource: LibrarySource {
         return phAsset(for: id).map(Self.makeAsset)
     }
 
+    /// Asks the fetch result itself: no need to materialize every row of a large library.
+    public func index(of id: LibraryAsset.ID) -> Int? {
+        guard let fetchResult, let asset = phAsset(for: id) else { return nil }
+        let index = fetchResult.index(of: asset)
+        return index == NSNotFound ? nil : index
+    }
+
     /// The PHAsset behind an identifier: from the rows already shown, or fetched on its own (a few ms).
     private func phAsset(for id: String) -> PHAsset? {
         if let cached = materialized[id] {

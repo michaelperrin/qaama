@@ -12,6 +12,8 @@ public protocol LibrarySource: AnyObject, Observable {
     var assets: AssetCollection { get }
     /// One photo by identifier, without scanning the collection.
     func asset(id: LibraryAsset.ID) -> LibraryAsset?
+    /// Position of a photo in `assets`, or nil when the current query doesn't list it.
+    func index(of id: LibraryAsset.ID) -> Int?
     /// Duration of the last listing, for performance tracking.
     var lastLoadDuration: Duration? { get }
     /// What this source can store about a photo.
@@ -68,6 +70,19 @@ public nonisolated struct AssetResourceInfo: Hashable, Sendable {
 }
 
 public extension LibrarySource {
+    /// A linear scan; sources that can do better override it.
+    func index(of id: LibraryAsset.ID) -> Int? {
+        assets.firstIndex { $0.id == id }
+    }
+
+    /// The photo `offset` places after `id` in `assets` (negative: before), for stepping through
+    /// the library from the editor. Nil at either end, or when `id` is no longer listed.
+    func neighbor(of id: LibraryAsset.ID, offset: Int) -> LibraryAsset.ID? {
+        guard let index = index(of: id) else { return nil }
+        let target = index + offset
+        return assets.indices.contains(target) ? assets[target].id : nil
+    }
+
     func endEditing(_: LibraryAsset) {}
     func prioritize(_: LibraryAsset) {}
     func setFlag(_: ItemFlag, for _: LibraryAsset) async throws {

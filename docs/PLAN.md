@@ -292,6 +292,13 @@ Bibliothèque
       visible (requête de ressources à la demande), puis index local des assets Photos (RAW,
       jumeau) construit en arrière-plan pour filtrer, et option « éditer le RAW » via la
       ressource alternative.
+      Demandé par Michaël le 5/11/2026 comme prochaine étape (ses RAW sont dans Photos, où le
+      filtre RAW Only manque) : à démarrer dans une session neuve. Points à cadrer : où stocker
+      l'index (catalogue GRDB existant, table par identifiant local PhotoKit), construction en
+      arrière-plan par lots avec `PHAssetResource`, mise à jour par `PHPhotoLibraryChangeObserver`,
+      ce qu'on y met (RAW, jumeau JPEG, nom de fichier d'origine, donc aussi tri par nom et
+      recherche), et comment `PhotosLibrarySource` filtre ensuite (liste d'identifiants ou
+      collection en mémoire plutôt que prédicat PhotoKit).
 - [ ] Inspecteur : métadonnées EXIF, histogramme, localisation (MapKit).
       Fait le 30/10/2026 : EXIF lu sur l'original (boîtier, objectif, exposition, dimensions,
       date) et histogramme RGB (`CIAreaHistogram` sur un échantillon 512 px, comptage en sRGB,
@@ -354,6 +361,58 @@ Interface
 
 - [ ] Revue générale de l'interface une fois les fonctions du MVP en place (demandé par
       Michaël le 30/10/2026) : histogramme, inspecteur, barre du bas, grille, barre latérale.
+      Commencée le 5/11/2026 : inspecteur en trois onglets à icônes (Info, Crop & Straighten,
+      Adjustments), placés dans la barre d'outils de la fenêtre au-dessus de la colonne : un
+      `Picker` segmenté y est dessiné par macOS en capsule Liquid Glass, alors que dans la
+      colonne il reste tassé (SwiftUI n'étire pas les segments à icône) ; vérifié par rendu
+      hors écran d'une fenêtre sonde. L'onglet Crop est l'outil de recadrage lui-même (y entrer cadre l'image, en
+      sortir applique), le modèle restant la source de vérité du mode. L'invite de nom de
+      préréglage est attachée à la vue de l'éditeur pour répondre au menu Image quel que soit
+      l'onglet, colonne masquée comprise. Bouton et menu View › Hide Inspector (⌥⌘I) pour
+      masquer la colonne. Piège rencontré : des modificateurs posés sur un `Group` autour d'un
+      `switch` sont appliqués à chaque branche, donc `onAppear` se redéclenche et `onChange` ne
+      voit jamais la transition ; l'onglet Crop ne faisait rien. Les commandes de l'inspecteur
+      (onglets, touche C, lien avec le mode recadrage) vivent dans un modificateur de la vue de
+      l'éditeur, pas dans la colonne, pour fonctionner aussi quand elle est masquée.
+      Mesure du 5/11/2026 : réafficher la colonne sur l'onglet Adjustments bloque le fil
+      principal 145 à 170 ms en Debug (37 ms pour la masquer), le temps que SwiftUI reconstruise
+      le formulaire (une quarantaine de curseurs, courbes, masques) ; le redimensionnement du
+      canevas et l'histogramme n'y sont pour rien. Avec le panneau Info, léger, il reste 75 ms :
+      coût fixe (barre d'outils, mise en page, redimensionnement du canevas). Corrigé le même
+      jour : la colonne masquée reste vivante, rognée hors de la vue (réaffichage 66 à 78 ms,
+      soit le seul coût fixe). Sur demande de Michaël, elle n'est construite que si elle a été
+      affichée pour cette photo, et seulement 200 ms après l'apparition de la photo : naviguer
+      vite d'une photo à l'autre ne paie jamais le formulaire. Navigation aux flèches gauche et
+      droite dans l'ordre de la grille (`LibrarySource.neighbor(of:offset:)`), avec invite
+      Save / Discard / Cancel s'il y a des modifications non enregistrées ; journal « Opened …
+      in … ms » par photo. Mesure en maintenant la flèche (répétition clavier à 30 ms) : une
+      photo toutes les 135 à 165 ms pour 35 à 50 ms d'ouverture, le reste étant la recréation de
+      la vue, du canevas Metal et de son `CIContext` à chaque photo. Corrigé le même jour par
+      `EditorSession` (EditorKit) : la session garde le canevas et la vue, et ne remplace que
+      l'`EditorModel` de la photo (un modèle par photo, donc aucun état hérité). Un modèle fermé
+      lâche le canevas et ne dessine plus, même si son ouverture ou ses masques finissent après
+      coup. Le canevas garde la photo précédente jusqu'au décodage de la suivante, et
+      l'indicateur de chargement n'apparaît qu'après 300 ms. Journal « Showed … ms after it was
+      asked for » par photo. Mesure après coup : photo à l'écran 31 à 47 ms après la touche
+      colonne masquée, 85 à 135 ms colonne affichée, les 60 ms d'écart étant le remplissage du
+      formulaire avec les valeurs de la nouvelle photo. (L'intervalle de 150 ms entre photos pris
+      d'abord pour une limite de l'app était le rythme d'appui de Michaël : la mesure « avant »
+      n'était pas comparable.) D'où le gel du panneau : il suit avec 200 ms de retard, grisé
+      (opacité, pas `disabled`, qui redessinerait tous les contrôles) tant qu'il montre encore
+      la photo précédente. Préchargement des voisines : à décider après mesure sur des RAW,
+      le coût mémoire d'une image décodée (environ 200 Mo pour 24 Mpx) n'étant pas justifié
+      pour des JPEG affichés en 36 ms. Gel du panneau mesuré : JPEG à l'écran en 44 à 91 ms
+      colonne affichée (85 à 135 avant). RAW de la photothèque Photos (26 Mpx) : environ 400 ms
+      ressentis, soit 85 à 150 ms d'ouverture (PhotoKit, `CIRAWFilter`) puis le dématriçage au
+      premier rendu ; le journal sous-estimait ce second temps (il prenait pour première image
+      un redessin de la photo précédente) et attend désormais l'image réellement présentée
+      (`CanvasRenderer.presentedImage`). Piste pour les RAW, à valider par une mesure sur un
+      vrai fichier : affichage en deux temps, d'abord un décodage rapide à échelle réduite
+      (`CIRAWFilter.isDraftModeEnabled`, `scaleFactor`) par le même moteur donc sans saut de
+      couleur, puis la pleine résolution une fois la photo stabilisée ; et préparation des deux
+      voisines (entrée d'édition, décodage réduit) après stabilisation, annulée si on repart.
+      Restent : le changement d'onglet reconstruit encore le formulaire ; le bouton Close
+      abandonne toujours les modifications sans prévenir.
 
 ### Phase 3 — Au-delà du MVP (selon l'envie)
 

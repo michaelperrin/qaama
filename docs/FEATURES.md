@@ -52,6 +52,15 @@ can feed a website one day. Dates are when the feature landed.
   thumbnails' context menu without opening the editor, to one photo or the whole selection);
   the crop stays with each photo; undoable (2026-10-30).
 - Zoom with a pinch, pan by dragging, double-click to fit (2026-10-29).
+- Inspector in three icon tabs in the toolbar: Info (histogram and file metadata), Crop & Straighten (the crop
+  tool: opening the tab frames the image, leaving it or pressing Done applies the crop; C toggles
+  it from anywhere) and Adjustments; the tab is remembered from one photo to the next
+  (2026-11-05).
+- Show or hide the inspector to give the whole window to the photo: toolbar button, or View ›
+  Hide Inspector (⌥⌘I); remembered between sessions (2026-11-05).
+- Step to the previous or next photo of the library with the left and right arrow keys, in the
+  grid's order and within its filters; unsaved edits prompt to save, discard or stay. The photo
+  shows first, the inspector follows once you stop on a photo (2026-11-05).
 
 ### Adjustments
 - White balance: temperature, tint (2026-10-30).

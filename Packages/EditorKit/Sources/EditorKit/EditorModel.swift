@@ -12,13 +12,19 @@ import RenderEngine
 /// Everything the editor does, without the views: opens the original through the library source,
 /// keeps the recipe and its undo history, renders the preview into the canvas, saves and exports.
 ///
-/// One instance per edited photo. Views read its state and call its actions.
+/// One instance per edited photo, so a photo never inherits state from the previous one. The canvas
+/// can outlive it: an `EditorSession` hands the same renderer to each photo's model in turn, and
+/// `close()` cuts a model off from it for good.
 @Observable
 public final class EditorModel {
     public let assetID: LibraryAsset.ID
     public let source: any LibrarySource
-    /// The Metal canvas the preview is rendered into; nil when Metal is unavailable or in tests.
-    public let renderer: CanvasRenderer?
+    /// The Metal canvas the preview is rendered into; nil when Metal is unavailable, in tests, and
+    /// once the model is closed.
+    public private(set) var renderer: CanvasRenderer?
+    /// True once `close()` was called: the canvas may now belong to another photo, so nothing this
+    /// model still has in flight (opening, mask computation) may draw.
+    public private(set) var isClosed = false
 
     public private(set) var sourceImage: SourceImage?
     /// File name without extension, for export suggestions.
@@ -387,13 +393,20 @@ public final class EditorModel {
 
     /// Loads keywords, the saved recipe and the original, then renders the first preview.
     public func open() async {
+        guard !isClosed else { return }
         guard let asset else {
             statusMessage = LibrarySourceError.assetUnavailable.localizedDescription
             return
         }
+        let start = ContinuousClock.now
         do {
             keywords = await source.keywords(for: asset)
             let input = try await source.editingInput(for: asset)
+            guard !isClosed else {
+                // Closed while the source was preparing the edit: release what it just handed over.
+                source.endEditing(asset)
+                return
+            }
             if let url = input.imageURL {
                 baseName = url.deletingPathExtension().lastPathComponent
                 imageURL = url
@@ -416,19 +429,31 @@ public final class EditorModel {
             } else {
                 throw LibrarySourceError.editingFailed("no image data")
             }
-            sourceImage = try await Task.detached(priority: .userInitiated) { try SourceImageLoader.load(renderSource) }.value
+            let loaded = try await Task.detached(priority: .userInitiated) { try SourceImageLoader.load(renderSource) }.value
+            guard !isClosed else { return }
+            sourceImage = loaded
             renderPreview()
+            logger.notice("Opened \(self.assetID, privacy: .public) in \((ContinuousClock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
             resolveModelMasksIfNeeded()
             if let url = input.imageURL {
                 metadata = await Task.detached { try? ImageMetadataReader.read(url) }.value
             }
         } catch {
             statusMessage = error.localizedDescription
+            // The canvas may still show the previous photo of the session: don't leave it there
+            // under this photo's name.
+            renderer?.image = nil
         }
     }
 
-    /// Releases what the source held for the edit. Call when the editor goes away.
+    /// Releases what the source held for the edit and lets go of the canvas. Call when the editor
+    /// goes away or moves to another photo; a closed model stays closed.
     public func close() {
+        guard !isClosed else { return }
+        isClosed = true
+        renderer = nil
+        maskResolution?.cancel()
+        histogramTask?.cancel()
         undoManager?.removeAllActions(withTarget: self)
         if let asset {
             source.endEditing(asset)
@@ -483,7 +508,7 @@ public final class EditorModel {
     }
 
     private func renderPreview() {
-        guard let sourceImage else { return }
+        guard !isClosed, let sourceImage else { return }
         let recipe = previewRecipe
         let shown: CIImage = if isShowingOriginal {
             sourceImage.image

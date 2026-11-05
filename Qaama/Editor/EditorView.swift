@@ -6,35 +6,117 @@ import UniformTypeIdentifiers
 /// Non-destructive editor: Metal canvas on the left, adjustments on the right. Shown in place of the
 /// grid, not in a sheet: a Metal layer doesn't display inside macOS 27 sheets.
 ///
-/// All behavior lives in `EditorModel`; this view only lays out its parts.
+/// All behavior lives in `EditorSession` and its `EditorModel`; this view only lays out its parts.
+///
+/// The view lives as long as the session. Stepping to another photo with the arrow keys swaps the
+/// session's model under it: the canvas, the toolbar, the bottom bar and the inspector stay in
+/// place and show the new photo, nothing is rebuilt. Always read the model from the session.
+///
+/// The photo comes first. The inspector's form takes about 150 ms to build and 60 ms to refill with
+/// another photo's values, so it follows a moment behind: it is built only once a photo has stayed
+/// on screen, and only if the column is shown; after that it stays alive, hidden or not, and while
+/// photos go by it keeps the last photo it showed, dimmed, until one of them stays.
 struct EditorView: View {
+    let session: EditorSession
     let onClose: () -> Void
 
-    @State private var model: EditorModel
     @State private var exportModel: ExportModel?
+    @State private var presets = PresetStore()
+    @State private var inspectorTab = InspectorTab.adjustments
+    /// Hiding the inspector gives the whole window to the photo.
+    @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
+    /// True once the column has been shown in this session: only then is the inspector worth building.
+    @State private var inspectorWasShown = false
+    /// The photo the inspector shows: the session's, once it has stayed on screen for a moment.
+    /// Nil until the first photo has; behind the session's model while photos go by.
+    @State private var inspectedModel: EditorModel?
+    /// The photo to move to once the user has decided what to do with unsaved changes.
+    @State private var pendingNavigation: LibraryAsset.ID?
     @Environment(\.undoManager) private var undoManager
 
-    init(assetID: LibraryAsset.ID, source: any LibrarySource, onClose: @escaping () -> Void) {
-        _model = State(initialValue: EditorModel(assetID: assetID, source: source))
-        self.onClose = onClose
+    /// How long a photo must stay on screen before the inspector takes it up: stepping quickly
+    /// through photos never pays for a form nobody has the time to read.
+    private static let inspectorDelay = Duration.milliseconds(200)
+
+    private var model: EditorModel {
+        session.model
+    }
+
+    /// True while the inspector has not caught up with the photo on the canvas.
+    private var isInspectorBehind: Bool {
+        inspectedModel !== model
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            HSplitView {
+            HStack(spacing: 0) {
                 EditorCanvas(model: model)
                     .frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
-                AdjustmentsInspector(model: model)
-                    .frame(width: AdjustmentsInspector.width)
+                // Hidden, the inspector stays alive at its full width, clipped out of view: removing
+                // it would rebuild the whole adjustments form on the way back (150 ms measured).
+                HStack(spacing: 0) {
+                    Divider()
+                    ZStack {
+                        if inspectorWasShown, let inspectedModel {
+                            // Dimmed rather than disabled while it lags: disabling would redraw
+                            // every control, the very cost the lag is there to avoid.
+                            EditorInspector(model: inspectedModel, presets: presets, tab: $inspectorTab)
+                                .opacity(isInspectorBehind ? 0.35 : 1)
+                                .allowsHitTesting(!isInspectorBehind)
+                        }
+                        if isInspectorBehind {
+                            ProgressView().controlSize(.small)
+                        }
+                    }
+                    .frame(width: EditorInspector.width)
+                    .frame(maxHeight: .infinity)
+                }
+                .frame(width: isInspectorVisible ? nil : 0, alignment: .leading)
+                .clipped()
+                .allowsHitTesting(isInspectorVisible)
+                .accessibilityHidden(!isInspectorVisible)
             }
             Divider()
             EditorBottomBar(model: model, onExport: openExport, onClose: onClose)
         }
+        .modifier(InspectorControls(model: model, tab: $inspectorTab, isVisible: $isInspectorVisible))
+        .presetNamingPrompt(model: model, presets: presets)
         .focusedSceneValue(\.editor, model)
         .focusedSceneValue(\.exportAction, model.canExport ? ExportAction(openExport) : nil)
-        .onChange(of: undoManager, initial: true) { _, manager in model.undoManager = manager }
-        .task { await model.open() }
-        .onDisappear { model.close() }
+        .onChange(of: undoManager, initial: true) { _, manager in session.undoManager = manager }
+        .background(navigationShortcuts)
+        .onChange(of: isInspectorVisible, initial: true) { _, isVisible in
+            if isVisible {
+                inspectorWasShown = true
+            }
+        }
+        .task(id: model.assetID) {
+            await session.openCurrentPhoto()
+            // Moving to another photo restarts this task, and the wait with it.
+            try? await Task.sleep(for: Self.inspectorDelay)
+            guard !Task.isCancelled else { return }
+            inspectedModel = session.model
+        }
+        .confirmationDialog("Save the changes to this photo?", isPresented: Binding(get: { pendingNavigation != nil }, set: {
+            if !$0 {
+                pendingNavigation = nil
+            }
+        }), titleVisibility: .visible, presenting: pendingNavigation) { destination in
+            Button("Save") {
+                let edited = model
+                Task {
+                    await edited.save()
+                    if !edited.hasUnsavedChanges {
+                        session.show(destination)
+                    }
+                }
+            }
+            Button("Discard Changes", role: .destructive) { session.show(destination) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Moving to another photo discards the edits you haven't saved.")
+        }
+        .onDisappear { session.close() }
         .sheet(isPresented: Binding(get: { exportModel != nil }, set: {
             if !$0 {
                 exportModel = nil
@@ -43,6 +125,26 @@ struct EditorView: View {
             if let exportModel {
                 ExportView(model: exportModel) { self.exportModel = nil }
             }
+        }
+    }
+
+    /// The left and right arrow keys step through the library, in the grid's order. Text fields
+    /// keep their arrows: an unmodified shortcut only fires when nothing else used the key.
+    private var navigationShortcuts: some View {
+        Group {
+            Button("") { navigate(by: -1) }.keyboardShortcut(.leftArrow, modifiers: [])
+            Button("") { navigate(by: 1) }.keyboardShortcut(.rightArrow, modifiers: [])
+        }
+        .hidden()
+        .frame(width: 0, height: 0)
+    }
+
+    private func navigate(by offset: Int) {
+        guard !model.isBusy, let destination = session.neighbor(offset: offset) else { return }
+        if model.hasUnsavedChanges {
+            pendingNavigation = destination
+        } else {
+            session.show(destination)
         }
     }
 

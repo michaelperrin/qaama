@@ -6,8 +6,11 @@ import SwiftUI
 struct MetalCanvasView: View {
     let renderer: CanvasRenderer
 
-    @State private var zoomAtGestureStart: CGFloat = 1
-    @State private var panAtGestureStart: CGPoint = .zero
+    /// Zoom and pan when the gesture under way began; nil between gestures. Read from the renderer
+    /// at that moment rather than remembered, because the session resets the viewport when the
+    /// photo changes.
+    @State private var zoomAtGestureStart: CGFloat?
+    @State private var panAtGestureStart: CGPoint?
 
     var body: some View {
         MetalViewRepresentable(renderer: renderer)
@@ -20,27 +23,26 @@ struct MetalCanvasView: View {
     private var magnify: some Gesture {
         MagnifyGesture()
             .onChanged { value in
-                renderer.zoom = (zoomAtGestureStart * value.magnification).clampedZoom
+                let start = zoomAtGestureStart ?? renderer.zoom
+                zoomAtGestureStart = start
+                renderer.zoom = (start * value.magnification).clampedZoom
             }
-            .onEnded { _ in zoomAtGestureStart = renderer.zoom }
+            .onEnded { _ in zoomAtGestureStart = nil }
     }
 
     private var drag: some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
-                renderer.panOffset = CGPoint(
-                    x: panAtGestureStart.x + value.translation.width,
-                    y: panAtGestureStart.y + value.translation.height
-                )
+                let start = panAtGestureStart ?? renderer.panOffset
+                panAtGestureStart = start
+                renderer.panOffset = CGPoint(x: start.x + value.translation.width, y: start.y + value.translation.height)
             }
-            .onEnded { _ in panAtGestureStart = renderer.panOffset }
+            .onEnded { _ in panAtGestureStart = nil }
     }
 
     private func resetViewport() {
         renderer.zoom = 1
         renderer.panOffset = .zero
-        zoomAtGestureStart = 1
-        panAtGestureStart = .zero
     }
 }
 

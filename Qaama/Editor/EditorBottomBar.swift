@@ -36,6 +36,8 @@ struct EditorBottomBar: View {
                 Spacer()
                 if model.source.capabilities.contains(.keywords) {
                     KeywordsField(keywords: model.keywords) { new in Task { await model.setKeywords(new) } }
+                        // A keyword half typed belongs to the photo it was typed for.
+                        .id(model.assetID)
                 }
                 if model.source.capabilities.contains(.flag) {
                     FlagView(flag: asset.flag) { flag in Task { await model.setFlag(flag) } }

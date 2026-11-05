@@ -43,6 +43,11 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
 
     public private(set) var drawStats = DrawStats()
 
+    /// The image of the last frame the GPU finished: equal to `image` once the canvas has caught up
+    /// with it. Lets a caller wait until what it asked for is really on screen, however long the
+    /// first render of a RAW takes.
+    @ObservationIgnored public private(set) var presentedImage: CIImage?
+
     public func resetDrawStats() {
         drawStats = DrawStats()
     }
@@ -104,11 +109,13 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
                      pointScale: view.drawableSize.width / max(view.bounds.width, 1)) else { return }
         drawStats.frames += 1
         drawStats.encode += clock.now - start
+        let drawn = image
         commandBuffer.addCompletedHandler { [weak self] _ in
             let duration = clock.now - start
             Task { @MainActor in
                 self?.lastRenderDuration = duration
                 self?.drawStats.completion += duration
+                self?.presentedImage = drawn
             }
         }
         commandBuffer.present(drawable)
