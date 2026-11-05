@@ -11,13 +11,16 @@ struct LibraryContentView: View {
 
     var body: some View {
         if let editorSession {
-            EditorView(session: editorSession) {
-                // Back in the grid, the photo last edited is the one selected.
-                selection = [editorSession.model.assetID]
-                self.editorSession = nil
-            }
-            .navigationTitle(source.displayName)
-            .navigationSubtitle("Editing")
+            EditorView(session: editorSession) { closeEditor(editorSession) }
+                .navigationTitle(source.displayName)
+                .navigationSubtitle("Editing")
+                .toolbar {
+                    // Icon-only toolbar buttons get the system's round Liquid Glass bezel.
+                    ToolbarItem(placement: .navigation) {
+                        Button("Back", systemImage: "chevron.left") { closeEditor(editorSession) }
+                            .help("Back to the photos")
+                    }
+                }
         } else {
             AssetGridView(source: source, selection: $selection) { editorSession = EditorSession(assetID: $0, source: source) }
                 .navigationTitle(source.displayName)
@@ -26,6 +29,13 @@ struct LibraryContentView: View {
                 .searchable(text: searchText, placement: .toolbar, prompt: "Search names and keywords")
                 .searchSuggestions {}
         }
+    }
+
+    /// Returns to the grid, from the editor's Close button or the toolbar's Back button.
+    private func closeEditor(_ session: EditorSession) {
+        // Back in the grid, the photo last edited is the one selected.
+        selection = [session.model.assetID]
+        editorSession = nil
     }
 
     private var searchText: Binding<String> {

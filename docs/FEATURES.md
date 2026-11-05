@@ -52,6 +52,7 @@ can feed a website one day. Dates are when the feature landed.
   thumbnails' context menu without opening the editor, to one photo or the whole selection);
   the crop stays with each photo; undoable (2026-10-30).
 - Zoom with a pinch, pan by dragging, double-click to fit (2026-10-29).
+- Round Back button at the top left of the toolbar returns to the photo grid (2026-11-05).
 - Inspector in three icon tabs in the toolbar: Info (histogram and file metadata), Crop & Straighten (the crop
   tool: opening the tab frames the image, leaving it or pressing Done applies the crop; C toggles
   it from anywhere) and Adjustments; the tab is remembered from one photo to the next
