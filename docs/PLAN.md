@@ -411,6 +411,49 @@ Interface
       (`CIRAWFilter.isDraftModeEnabled`, `scaleFactor`) par le même moteur donc sans saut de
       couleur, puis la pleine résolution une fois la photo stabilisée ; et préparation des deux
       voisines (entrée d'édition, décodage réduit) après stabilisation, annulée si on repart.
+      Fait le 5/11/2026, après mesure sur trois RAF publics de X-T4 (26 Mpx, raw.pixls.us) dans
+      un contexte Core Image configuré comme celui du canevas : création du `CIRAWFilter` 50 ms ;
+      décodage complet 210 à 520 ms ; brouillon à demi-échelle 100 à 140 ms (un quart n'apporte
+      rien, le JPEG embarqué non plus : 100 à 120 ms et un autre rendu) ; une même instance du
+      filtre donne les deux images, de couleur identique. Le cache des intermédiaires ne ressert
+      un décodage que pour le même objet `CIImage` (un nouveau filtre sur le même fichier
+      redécode), d'où la nécessité de garder et de transmettre l'image préparée ; un pré-rendu
+      hors écran dans une texture de 256 px suffit à le remplir (affichage ensuite en 12 ms) ; une
+      image pleine et trois brouillons y tiennent ensemble et l'empreinte se stabilise (environ
+      3 Go avec un RAW ouvert, comme avant). Mise en œuvre : `SourceImage.draft` (brouillon
+      étiré à l'étendue de l'image pleine, donc transparent pour le pipeline et les masques),
+      `PreparedPhoto` (tout ce que lit `open()`, réutilisable), `EditorSession` qui, une fois la
+      photo stabilisée (200 ms), passe en pleine résolution, met à jour le panneau puis lit les
+      deux voisines et décode leur brouillon (`CanvasRenderer.warm`). La session possède les
+      entrées d'édition lues en avance et les rend à la source ; la photo qu'on vient de quitter
+      est toujours relue (elle a pu être modifiée). Effet à surveiller : dans Photos, lire une
+      voisine en avance télécharge son original s'il n'est que dans iCloud.
+      Mesures sur les RAF compressés de Michaël (X-Trans 26 Mpx, 25 Mo), par le vrai chemin de
+      code : avant, 440 à 670 ms jusqu'à l'écran (ouverture 100 ms, première image 340 à 570) ;
+      photo non préparée, environ 250 à 350 ms (ouverture 62 ms, brouillon 180 à 290 ms, soit
+      60 % d'un décodage complet : la décompression CPU domine, l'échelle n'y change rien) ;
+      voisine lue en avance, 17 à 47 ms. Préparer une voisine coûte 60 ms plus 170 à 390 ms de
+      décodage en arrière-plan ; à priorité `utility` ce décodage passait sur les cœurs économes
+      (500 à 990 ms), d'où la priorité `userInitiated` : c'est l'ordre des opérations qui
+      protège la photo affichée, pas la priorité. Après le brouillon, la pleine résolution ne
+      demande que 150 ms de plus quand elle suit de près : le deux temps ne coûte rien au total.
+      Les mesures varient du simple au triple selon la charge mémoire de la machine. La voisine
+      dans le sens de la marche est lue en premier. Ordre retenu, celui demandé par Michaël :
+      pleine résolution de la photo affichée, puis voisines ; l'inverse rendrait la voisine
+      prête 300 ms plus tôt, à essayer si la navigation à une photo par demi-seconde accroche.
+      Correction après la navigation de Michaël : les voisines préparées s'affichaient en 55 à
+      160 ms au lieu de 20. Reproduit hors app : le cache d'intermédiaires de Core Image évince
+      les brouillons décodés en avance dès que quelques images pleines (200 Mo chacune) le
+      remplissent, sans ordre prévisible (42 ms ou 640 ms pour le même pas). On ne s'y fie donc
+      plus pour les voisines : `CanvasRenderer.rasterized` décode leur brouillon dans un
+      `CVPixelBuffer` demi-flottant (52 Mo, espace de travail linéaire étendu, valeurs au-delà
+      du blanc conservées) que la session garde avec la photo préparée. Résultat sur les mêmes
+      scénarios : 2 à 30 ms dans tous les cas. Le brouillon de la photo affichée, utilisé tout
+      de suite, passe toujours par le cache.
+      Confirmé dans l'app par le journal : voisine prête affichée en 30 à 53 ms (96 ms si on
+      arrive pendant son décodage), RAW non préparé en 250 à 400 ms avec deux pointes à 570,
+      pleine résolution 200 à 450 ms après stabilisation, lecture en avance 200 à 270 ms par
+      voisine.
       Restent : le changement d'onglet reconstruit encore le formulaire ; le bouton Close
       abandonne toujours les modifications sans prévenir.
 

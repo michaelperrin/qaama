@@ -1,4 +1,5 @@
 import CoreImage
+import CoreVideo
 import Foundation
 import Metal
 import MetalKit
@@ -82,6 +83,37 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         self.view = view
         return view
+    }
+
+    /// Decodes `image` now, off the main actor, and returns it as pixels the canvas draws at once:
+    /// an image of the same extent and values, backed by memory the caller owns for as long as it
+    /// keeps the result. Meant for the draft of a photo the user may step to next.
+    ///
+    /// Core Image's own cache of intermediates can't be relied on for this: once a few full-size
+    /// decodes fill it, it evicts drafts decoded ahead in no predictable order (measured: 40 ms or
+    /// 600 ms for the same step). Half-float pixels in the working space keep values above one.
+    ///
+    /// At user-initiated priority on purpose: a RAW is mostly decompressed on the CPU, and a
+    /// lower priority sends that to the efficiency cores, three times slower (measured). What keeps
+    /// it out of the way of the photo on screen is when the caller starts it, not its priority.
+    public func rasterized(_ image: CIImage) async -> CIImage? {
+        let context = context
+        return await Task.detached(priority: .userInitiated) {
+            let extent = image.extent.integral
+            guard !extent.isInfinite, extent.width >= 1, extent.height >= 1, let space = CGColorSpace(name: CGColorSpace.extendedLinearSRGB) else { return nil }
+            let attributes: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [CFString: Any](), kCVPixelBufferMetalCompatibilityKey: true]
+            var created: CVPixelBuffer?
+            guard CVPixelBufferCreate(nil, Int(extent.width), Int(extent.height), kCVPixelFormatType_64RGBAHalf, attributes as CFDictionary, &created) == kCVReturnSuccess,
+                  let buffer = created else { return nil }
+            // Rendered from the origin, then moved back: the buffer has no notion of the extent's origin.
+            let destination = CIRenderDestination(pixelBuffer: buffer)
+            destination.colorSpace = space
+            let atOrigin = image.transformed(by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY))
+            guard let task = try? context.startTask(toRender: atOrigin, from: CGRect(origin: .zero, size: extent.size), to: destination, at: .zero),
+                  (try? task.waitUntilCompleted()) != nil else { return nil }
+            return CIImage(cvPixelBuffer: buffer, options: [.colorSpace: space])
+                .transformed(by: CGAffineTransform(translationX: extent.minX, y: extent.minY))
+        }.value
     }
 
     /// Shared Core Image context, for exports that must match what the canvas shows.

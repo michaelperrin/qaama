@@ -21,11 +21,17 @@ final class StubSource: LibrarySource {
     var savedOutputs: [EditingOutput] = []
     var ratings: [Int] = []
     var endedEditing = false
+    /// Photos the editor asked the editing input of, and released, in order.
+    var inputRequests: [String] = []
+    var endedIDs: [String] = []
 
-    init(imageURL: URL, recipeData: Data? = nil) {
+    /// `count` photos sharing the one file: "stub", then "stub-1", "stub-2"…
+    init(imageURL: URL, recipeData: Data? = nil, count: Int = 1) {
         self.imageURL = imageURL
         self.recipeData = recipeData
-        assets = AssetCollection([LibraryAsset(id: "stub", pixelWidth: 32, pixelHeight: 16, creationDate: nil, isFavorite: false)])
+        assets = AssetCollection((0 ..< count).map { index in
+            LibraryAsset(id: index == 0 ? "stub" : "stub-\(index)", pixelWidth: 32, pixelHeight: 16, creationDate: nil, isFavorite: false)
+        })
     }
 
     func asset(id: LibraryAsset.ID) -> LibraryAsset? {
@@ -48,16 +54,18 @@ final class StubSource: LibrarySource {
     func setFlag(_: ItemFlag, for _: LibraryAsset) async throws {}
     func setKeywords(_: [String], for _: LibraryAsset) async throws {}
 
-    func editingInput(for _: LibraryAsset) async throws -> EditingInput {
-        EditingInput(imageURL: imageURL, recipeData: recipeData)
+    func editingInput(for asset: LibraryAsset) async throws -> EditingInput {
+        inputRequests.append(asset.id)
+        return EditingInput(imageURL: imageURL, recipeData: recipeData)
     }
 
     func saveEdit(_ output: EditingOutput, for _: LibraryAsset) async throws {
         savedOutputs.append(output)
     }
 
-    func endEditing(_: LibraryAsset) {
+    func endEditing(_ asset: LibraryAsset) {
         endedEditing = true
+        endedIDs.append(asset.id)
     }
 }
 

@@ -27,6 +27,9 @@ public final class EditorModel {
     public private(set) var isClosed = false
 
     public private(set) var sourceImage: SourceImage?
+    /// True while the canvas shows the source's draft instead of its full resolution: a RAW appears
+    /// with its quick draft decode, and gets the full one once the user stays on it.
+    public private(set) var showsDraft = false
     /// File name without extension, for export suggestions.
     public private(set) var baseName = "Photo"
     /// The original file, when the source exposes one: exports copy its metadata.
@@ -352,10 +355,18 @@ public final class EditorModel {
     private var checkpoint = EditRecipe.identity
     private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "EditorModel")
 
-    public init(assetID: LibraryAsset.ID, source: any LibrarySource, renderer: CanvasRenderer? = CanvasRenderer()) {
+    /// What `open()` reads, when it was started ahead of time: an `EditorSession` prepares the
+    /// photos next to the current one. The session then owns what the source holds for the edit,
+    /// and releases it; without a preparation the model asks the source itself and releases on close.
+    private let preparation: Task<PreparedPhoto, Error>?
+
+    public init(assetID: LibraryAsset.ID, source: any LibrarySource, renderer: CanvasRenderer? = CanvasRenderer(),
+                preparation: Task<PreparedPhoto, Error>? = nil)
+    {
         self.assetID = assetID
         self.source = source
         self.renderer = renderer
+        self.preparation = preparation
     }
 
     // MARK: - Derived state
@@ -400,18 +411,24 @@ public final class EditorModel {
         }
         let start = ContinuousClock.now
         do {
-            keywords = await source.keywords(for: asset)
-            let input = try await source.editingInput(for: asset)
+            let photo = if let preparation {
+                try await preparation.value
+            } else {
+                try await PreparedPhoto.prepare(asset, in: source)
+            }
             guard !isClosed else {
                 // Closed while the source was preparing the edit: release what it just handed over.
-                source.endEditing(asset)
+                if preparation == nil {
+                    source.endEditing(asset)
+                }
                 return
             }
-            if let url = input.imageURL {
+            keywords = photo.keywords
+            if let url = photo.input.imageURL {
                 baseName = url.deletingPathExtension().lastPathComponent
                 imageURL = url
             }
-            if let data = input.recipeData {
+            if let data = photo.input.recipeData {
                 if let saved = try? EditRecipe(jsonData: data) {
                     recipe = saved
                     savedRecipe = saved
@@ -421,23 +438,12 @@ public final class EditorModel {
                 }
             }
             checkpoint = recipe
-            let renderSource: RenderSource
-            if let url = input.imageURL {
-                renderSource = .file(url)
-            } else if let image = input.image {
-                renderSource = .image(image)
-            } else {
-                throw LibrarySourceError.editingFailed("no image data")
-            }
-            let loaded = try await Task.detached(priority: .userInitiated) { try SourceImageLoader.load(renderSource) }.value
-            guard !isClosed else { return }
-            sourceImage = loaded
+            sourceImage = photo.sourceImage
+            showsDraft = photo.sourceImage.draft != nil
             renderPreview()
             logger.notice("Opened \(self.assetID, privacy: .public) in \((ContinuousClock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
             resolveModelMasksIfNeeded()
-            if let url = input.imageURL {
-                metadata = await Task.detached { try? ImageMetadataReader.read(url) }.value
-            }
+            metadata = await photo.metadata?.value
         } catch {
             statusMessage = error.localizedDescription
             // The canvas may still show the previous photo of the session: don't leave it there
@@ -455,9 +461,18 @@ public final class EditorModel {
         maskResolution?.cancel()
         histogramTask?.cancel()
         undoManager?.removeAllActions(withTarget: self)
-        if let asset {
+        if preparation == nil, let asset {
             source.endEditing(asset)
         }
+    }
+
+    /// Replaces the draft on the canvas with the full resolution. The session calls it once the
+    /// user stays on the photo: the full decode of a RAW keeps the GPU busy for a few hundred
+    /// milliseconds, which stepping through photos must not queue up behind.
+    public func showFullResolution() {
+        guard showsDraft, !isClosed else { return }
+        showsDraft = false
+        renderPreview()
     }
 
     // MARK: - Recipe and history
@@ -510,15 +525,17 @@ public final class EditorModel {
     private func renderPreview() {
         guard !isClosed, let sourceImage else { return }
         let recipe = previewRecipe
+        // The draft has the full image's extent, so everything downstream treats it the same.
+        let source = showsDraft ? sourceImage.draft ?? sourceImage.image : sourceImage.image
         let shown: CIImage = if isShowingOriginal {
-            sourceImage.image
+            source
         } else if isCropping {
             // The crop tool frames the straightened image: show it whole, the frame does the cropping.
-            RenderPipeline.apply(recipe, to: sourceImage.image, geometry: recipe.geometry?.withoutCrop, masks: maskImages)
+            RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry?.withoutCrop, masks: maskImages)
         } else {
-            RenderPipeline.apply(recipe, to: sourceImage.image, geometry: recipe.geometry, masks: maskImages)
+            RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry, masks: maskImages)
         }
-        renderer?.image = showsMaskOverlay ? withMaskOverlay(shown, of: recipe, source: sourceImage.image) : shown
+        renderer?.image = showsMaskOverlay ? withMaskOverlay(shown, of: recipe, source: source) : shown
         scheduleHistogram(of: shown)
     }
 

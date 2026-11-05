@@ -61,6 +61,9 @@ can feed a website one day. Dates are when the feature landed.
 - Step to the previous or next photo of the library with the left and right arrow keys, in the
   grid's order and within its filters; unsaved edits prompt to save, discard or stay. The photo
   shows first, the inspector follows once you stop on a photo (2026-11-05).
+- Fast RAW browsing: a RAW first appears as a quick draft decode by the same RAW engine (same
+  colors), and gets its full resolution once you stay on it; the photos before and after the one
+  on screen are read and decoded ahead, so stepping to them is immediate (2026-11-05).
 
 ### Adjustments
 - White balance: temperature, tint (2026-10-30).

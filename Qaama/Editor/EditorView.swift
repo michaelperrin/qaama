@@ -13,9 +13,9 @@ import UniformTypeIdentifiers
 /// place and show the new photo, nothing is rebuilt. Always read the model from the session.
 ///
 /// The photo comes first. The inspector's form takes about 150 ms to build and 60 ms to refill with
-/// another photo's values, so it follows a moment behind: it is built only once a photo has stayed
-/// on screen, and only if the column is shown; after that it stays alive, hidden or not, and while
-/// photos go by it keeps the last photo it showed, dimmed, until one of them stays.
+/// another photo's values, so it shows the session's settled photo, a moment behind: it is built
+/// only once a photo has stayed on screen, and only if the column is shown; after that it stays
+/// alive, hidden or not, and while photos go by it keeps the last photo it showed, dimmed.
 struct EditorView: View {
     let session: EditorSession
     let onClose: () -> Void
@@ -27,16 +27,9 @@ struct EditorView: View {
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
     /// True once the column has been shown in this session: only then is the inspector worth building.
     @State private var inspectorWasShown = false
-    /// The photo the inspector shows: the session's, once it has stayed on screen for a moment.
-    /// Nil until the first photo has; behind the session's model while photos go by.
-    @State private var inspectedModel: EditorModel?
     /// The photo to move to once the user has decided what to do with unsaved changes.
     @State private var pendingNavigation: LibraryAsset.ID?
     @Environment(\.undoManager) private var undoManager
-
-    /// How long a photo must stay on screen before the inspector takes it up: stepping quickly
-    /// through photos never pays for a form nobody has the time to read.
-    private static let inspectorDelay = Duration.milliseconds(200)
 
     private var model: EditorModel {
         session.model
@@ -44,7 +37,7 @@ struct EditorView: View {
 
     /// True while the inspector has not caught up with the photo on the canvas.
     private var isInspectorBehind: Bool {
-        inspectedModel !== model
+        session.settledModel !== model
     }
 
     var body: some View {
@@ -57,7 +50,7 @@ struct EditorView: View {
                 HStack(spacing: 0) {
                     Divider()
                     ZStack {
-                        if inspectorWasShown, let inspectedModel {
+                        if inspectorWasShown, let inspectedModel = session.settledModel {
                             // Dimmed rather than disabled while it lags: disabling would redraw
                             // every control, the very cost the lag is there to avoid.
                             EditorInspector(model: inspectedModel, presets: presets, tab: $inspectorTab)
@@ -90,13 +83,8 @@ struct EditorView: View {
                 inspectorWasShown = true
             }
         }
-        .task(id: model.assetID) {
-            await session.openCurrentPhoto()
-            // Moving to another photo restarts this task, and the wait with it.
-            try? await Task.sleep(for: Self.inspectorDelay)
-            guard !Task.isCancelled else { return }
-            inspectedModel = session.model
-        }
+        // Moving to another photo restarts this task, and with it the wait before the photo settles.
+        .task(id: model.assetID) { await session.followCurrentPhoto() }
         .confirmationDialog("Save the changes to this photo?", isPresented: Binding(get: { pendingNavigation != nil }, set: {
             if !$0 {
                 pendingNavigation = nil
