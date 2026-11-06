@@ -37,6 +37,15 @@ can feed a website one day. Dates are when the feature landed.
 - Thumbnails of edited photos show the real edit, from a cached preview (2026-10-29).
 - Multiple selection in the grid: click, ⌘-click, ⇧-click, ⌘A, Escape; double-click opens the
   editor; the context menu acts on the whole selection (2026-10-30).
+- Image › Rating and Image › Flag: rate (No Rating to 5 Stars, keys 0–5) and pick, reject or
+  unflag (P, X, U) the photos selected in the grid or the photo open in the editor; the menu
+  checks the current value. Undoable (2026-11-06).
+- Rating, flag and keywords in the Info panel next to the grid, to read and to change without
+  opening a photo. With several photos
+  selected (up to 50), the panel shows what they share (rating, flag, keywords, camera, lens,
+  exposure, size, the span of their dates) and says "Mixed" where they differ; a rating or a
+  flag set there goes to every photo, a keyword added or removed is added to or removed from
+  every photo, and the keywords only some have are left alone. Undoable (2026-11-06).
 - Info panel next to the grid: selecting a photo shows its histogram, camera, lens, exposure,
   size, capture date and file name in the right column, without opening it; the same panel as
   the editor's Info tab, shown or hidden with the same toolbar button and View › Hide Inspector

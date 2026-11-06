@@ -672,19 +672,7 @@ public final class EditorModel {
     }
 
     /// A rating, flag or keyword change, with the value it replaces so it can be undone.
-    enum Decision: Sendable {
-        case rating(Int)
-        case flag(ItemFlag)
-        case keywords([String])
-
-        var actionName: String {
-            switch self {
-            case .rating: "Rating"
-            case .flag: "Flag"
-            case .keywords: "Keywords"
-            }
-        }
-    }
+    typealias Decision = LibraryDecision
 
     /// Registers the inverse with the undo manager first, synchronously, then applies the decision
     /// through the source.
@@ -708,15 +696,10 @@ public final class EditorModel {
 
     private func apply(_ decision: Decision) async {
         guard let asset else { return }
-        switch decision {
-        case let .rating(rating):
-            await report { try await source.setRating(rating, for: asset) }
-        case let .flag(flag):
-            await report { try await source.setFlag(flag, for: asset) }
-        case let .keywords(keywords):
+        if case let .keywords(keywords) = decision {
             self.keywords = keywords
-            await report { try await source.setKeywords(keywords, for: asset) }
         }
+        await report { try await source.apply(decision, to: asset) }
     }
 
     // MARK: - Helpers

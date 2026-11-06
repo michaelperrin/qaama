@@ -44,7 +44,6 @@ struct EditorBottomBar: View {
                 }
                 if model.source.capabilities.contains(.rating) {
                     RatingView(rating: asset.rating) { value in Task { await model.setRating(value) } }
-                    ratingShortcuts
                 }
             }
             if let statusMessage = model.statusMessage {
@@ -70,16 +69,6 @@ struct EditorBottomBar: View {
         }
         .font(.callout)
         .padding(12)
-    }
-
-    /// Hidden buttons so the 0–5 keys set the rating, as in most photo browsers.
-    private var ratingShortcuts: some View {
-        ForEach(0 ... 5, id: \.self) { value in
-            Button("") { Task { await model.setRating(value) } }
-                .keyboardShortcut(KeyEquivalent(Character("\(value)")), modifiers: [])
-                .hidden()
-                .frame(width: 0, height: 0)
-        }
     }
 }
 

@@ -112,6 +112,30 @@ struct MetadataEditingTests {
         #expect(source.captureDate(for: second) == secondDate.addingTimeInterval(3600))
     }
 
+    @Test func decisionsAreWrittenToManyPhotosAsOneUndoableStepAndSkipWhatIsAlreadySo() async throws {
+        let source = SampleLibrarySource(count: 4)
+        // Ratings are 0, 1, 2 to start with.
+        let assets = Array(source.assets.prefix(3)).sorted { $0.rating < $1.rating }
+        let manager = UndoManager()
+        manager.groupsByEvent = false
+
+        manager.beginUndoGrouping()
+        let written = try await MetadataEditing.apply(assets.map { ($0, .rating(2)) }, in: source, undoManager: manager)
+        manager.endUndoGrouping()
+        #expect(written == 2, "the photo already rated 2 is left alone")
+        #expect(assets.allSatisfy { source.asset(id: $0.id)?.rating == 2 })
+        #expect(manager.undoActionName == "Rating")
+
+        manager.undo()
+        await wait { assets.map { source.asset(id: $0.id)?.rating } == [0, 1, 2] }
+        #expect(assets.map { source.asset(id: $0.id)?.rating } == [0, 1, 2])
+
+        // Nothing to change: nothing to undo either.
+        let idle = UndoManager()
+        #expect(try await MetadataEditing.apply([(assets[2], .rating(2))], in: source, undoManager: idle) == 0)
+        #expect(!idle.canUndo)
+    }
+
     @Test func aSourceThatCannotStoreDatesReportsItAndLeavesNothingToUndo() async {
         let source = SampleLibrarySource(count: 1)
         source.capabilities = [.rating]

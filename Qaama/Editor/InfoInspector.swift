@@ -14,7 +14,7 @@ struct InfoInspector: View {
                     .listRowInsets(EdgeInsets())
             }
             Section("Info") {
-                InfoPanel(metadata: model.metadata, fileName: model.baseName)
+                InfoPanel(summary: InfoSummary(metadata: model.metadata), fileName: model.baseName)
             }
             if let location = model.metadata?.location {
                 Section("Location") {

@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Five clickable stars. Clicking the current rating again clears it.
+/// Five clickable stars. Clicking the current rating again clears it. The 0 to 5 keys are the
+/// Image › Rating menu's.
 struct RatingView: View {
     let rating: Int
     let onChange: (Int) -> Void

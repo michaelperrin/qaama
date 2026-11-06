@@ -5,6 +5,8 @@ import SwiftUI
 /// move the keyboard focus, so focus loss alone is not enough.
 struct KeywordsField: View {
     let keywords: [String]
+    /// Fixed width in a bar; nil fills the row it is placed in.
+    var width: CGFloat? = 220
     let onCommit: ([String]) -> Void
 
     @State private var text = ""
@@ -13,7 +15,8 @@ struct KeywordsField: View {
     var body: some View {
         TextField("Keywords", text: $text, prompt: Text("Keywords, comma separated"))
             .textFieldStyle(.roundedBorder)
-            .frame(width: 220)
+            .frame(width: width)
+            .frame(maxWidth: width == nil ? .infinity : nil)
             .focused($isFocused)
             .onSubmit(commit)
             .onChange(of: text) { _, new in

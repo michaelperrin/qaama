@@ -14,6 +14,8 @@ struct LibraryContentView: View {
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
     /// The Adjust Date & Time dialog, opened from the Image menu, the grid's context menu or the Info panel.
     @State private var dateEdit: CaptureDateEditModel?
+    /// What went wrong with a rating or a flag set from the Image menu.
+    @State private var decisionError: String?
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
@@ -21,6 +23,16 @@ struct LibraryContentView: View {
             // View › Show Inspector acts on this window, grid or editor.
             .focusedSceneValue(\.hasInspector, true)
             .focusedSceneValue(\.adjustDateAction, adjustDateAction)
+            .focusedSceneValue(\.decisionsAction, decisionsAction)
+            .alert("Couldn't Update the Photos", isPresented: Binding(get: { decisionError != nil }, set: {
+                if !$0 {
+                    decisionError = nil
+                }
+            })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(decisionError ?? "")
+            }
             // Above both the grid and the editor: the Image menu opens it from either.
             .sheet(item: $dateEdit) { model in
                 CaptureDateEditView(model: model, undoManager: undoManager) { dateEdit = nil }
@@ -80,6 +92,37 @@ struct LibraryContentView: View {
             }
             .searchable(text: searchText, placement: .toolbar, prompt: "Search names and keywords")
             .searchSuggestions {}
+        }
+    }
+
+    /// Image › Rating and Image › Flag: the photo open in the editor, else the grid's selection; nil
+    /// when there is neither. In the grid the current values are only read for a selection small
+    /// enough to resolve on every update; the photos to write are looked up when a command runs.
+    private var decisionsAction: DecisionsAction? {
+        let capabilities = source.capabilities
+        if let editorSession {
+            let model = editorSession.model
+            guard let asset = model.asset else { return nil }
+            return DecisionsAction(rating: asset.rating, flag: asset.flag,
+                                   setRating: capabilities.contains(.rating) ? { rating in Task { await model.setRating(rating) } } : nil,
+                                   setFlag: capabilities.contains(.flag) ? { flag in Task { await model.setFlag(flag) } } : nil)
+        }
+        guard !selection.isEmpty else { return nil }
+        let shown = selection.count <= AssetInfoModel.selectionLimit ? selection.compactMap { source.asset(id: $0) } : []
+        return DecisionsAction(rating: AssetInfoModel.shared(shown.map(\.rating)), flag: AssetInfoModel.shared(shown.map(\.flag)),
+                               setRating: capabilities.contains(.rating) ? { decide(.rating($0)) } : nil,
+                               setFlag: capabilities.contains(.flag) ? { decide(.flag($0)) } : nil)
+    }
+
+    /// Writes a decision to every selected photo, as one undoable step.
+    private func decide(_ decision: LibraryDecision) {
+        let assets = selection.compactMap { source.asset(id: $0) }
+        Task {
+            do {
+                try await MetadataEditing.apply(assets.map { ($0, decision) }, in: source, undoManager: undoManager)
+            } catch {
+                decisionError = error.localizedDescription
+            }
         }
     }
 

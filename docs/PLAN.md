@@ -374,6 +374,24 @@ Bibliothèque
       Original le fait télécharger à la demande, `allowingDownload`), `AssetInfoModel`
       dans EditorKit, histogramme calculé sur la vignette 512 px (donc l'aperçu du boîtier pour
       un RAW non retouché). Avec plusieurs photos sélectionnées, le panneau donne leur nombre.
+      Le même jour, à la demande de Michaël : note, drapeau et mots-clés dans ce panneau
+      (lecture et modification), menus Image › Rating et Image › Flag pour la sélection de la
+      mosaïque ou la photo ouverte dans l'éditeur (valeur de focus `decisionsAction`). Les
+      touches 0 à 5, P, X, U sont portées par ces seuls éléments de menu, plus par des boutons
+      cachés : deux porteurs du même raccourci se déclencheraient tous les deux. À vérifier à
+      l'écran : que ces touches sans modificateur n'agissent pas pendant une saisie (recherche,
+      mots-clés). Et
+      sélection multiple jusqu'à 50 photos : chaque ligne montre ce qui est commun, « Mixed »
+      sinon (`InfoSummary`), la date devient une plage ; une note ou un drapeau va à toutes les
+      photos, un mot-clé ajouté ou retiré l'est sur toutes, ceux que seules certaines ont ne
+      bougent pas. Écriture en une étape annulable par `MetadataEditing.apply`
+      (`LibraryDecision`, partagé avec l'éditeur). Borne de 50 : lire les détails d'une photo
+      de Photos coûte 15 à 120 ms (journal de Michaël), et résoudre des milliers de photos à
+      chaque mise à jour figerait la fenêtre ; au-delà le panneau ne donne que le nombre. Les
+      détails déjà lus sont gardés tant que la sélection ne change pas (une note ne relit pas
+      les fichiers). Journal « Compared N photos in … ms ». Non vérifié à l'écran : les
+      écritures sur la vraie photothèque. Piste si la borne gêne : pour les dossiers, lire le
+      catalogue au lieu des fichiers.
       Leçon : dans la colonne de détail, un `HStack` grille + colonne se cale sur la largeur
       idéale de la grille (une seule colonne de vignettes, le tout centré) tant que la grille
       n'a pas `frame(maxWidth: .infinity)` ; vu par une fenêtre sonde hors écran sur la source

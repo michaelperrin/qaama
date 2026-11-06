@@ -1,80 +1,70 @@
+import EditorKit
 import ImageIOKit
 import SwiftUI
 
-/// What the file says about itself: camera settings and dimensions, as read from its header. Rows
-/// the file has nothing to say for are left out. Shared by the editor's Info tab and the grid's
-/// Info panel.
+/// What the files say about themselves: camera settings, dimensions and date, as read from their
+/// headers, for one photo or for what several share. Lines nothing is known for are left out.
+/// Shared by the editor's Info tab and the grid's Info panel.
 struct InfoPanel: View {
-    let metadata: ImageMetadata?
+    let summary: InfoSummary
     let fileName: String?
-    /// Opens the date correction when the place showing the panel offers it; nil hides the button.
+    /// Opens the date correction when the place showing the panel offers it; nil leaves the date as text.
     var onAdjustDate: (() -> Void)?
 
     var body: some View {
-        if let metadata {
-            if let camera = camera(metadata) {
-                LabeledContent("Camera", value: camera)
-            }
-            if let lens = metadata.lens {
-                LabeledContent("Lens", value: lens)
-            }
-            if let exposure = exposure(metadata) {
-                LabeledContent("Exposure", value: exposure)
-            }
-            if metadata.pixelWidth > 0, metadata.pixelHeight > 0 {
-                LabeledContent("Size", value: "\(metadata.pixelWidth) × \(metadata.pixelHeight)")
-            }
-            if metadata.captureDate != nil || onAdjustDate != nil {
-                let date = metadata.captureDate?.formatted(date: .abbreviated, time: .shortened) ?? "No date"
-                if let onAdjustDate {
-                    // The date itself is the button: an icon next to it pushed the value onto a second line.
-                    LabeledContent("Captured") {
-                        Button(date, action: onAdjustDate)
-                            .buttonStyle(.link)
-                            .help("Adjust the date and time")
-                    }
-                } else {
-                    LabeledContent("Captured", value: date)
-                }
-            }
-        } else {
+        if summary.isEmpty, onAdjustDate == nil {
             Text("No metadata").foregroundStyle(.secondary)
+        }
+        row("Camera", summary.camera)
+        row("Lens", summary.lens)
+        row("Exposure", summary.exposure)
+        row("Size", summary.size)
+        if summary.captured != .none || onAdjustDate != nil {
+            if let onAdjustDate {
+                // The date itself is the button: an icon next to it pushed the value onto a second line.
+                LabeledContent("Captured") {
+                    Button(capturedText, action: onAdjustDate)
+                        .buttonStyle(.link)
+                        .help("Adjust the date and time")
+                }
+            } else {
+                LabeledContent("Captured", value: capturedText)
+            }
         }
         if let fileName {
             LabeledContent("File", value: fileName)
         }
     }
 
-    private func camera(_ metadata: ImageMetadata) -> String? {
-        let parts = [metadata.cameraMake, metadata.cameraModel].compactMap(\.self)
-        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    @ViewBuilder
+    private func row(_ title: LocalizedStringKey, _ row: InfoSummary.Row) -> some View {
+        switch row {
+        case .none:
+            EmptyView()
+        case let .value(text):
+            LabeledContent(title, value: text)
+        case .mixed:
+            LabeledContent(title) {
+                Text("Mixed").foregroundStyle(.tertiary)
+            }
+        }
     }
 
-    /// "1/250 s · f/2.8 · ISO 800 · 35 mm", skipping what the file doesn't say.
-    private func exposure(_ metadata: ImageMetadata) -> String? {
-        var parts: [String] = []
-        if let time = metadata.exposureTime {
-            parts.append(time >= 1 ? "\(time.formatted(.number.precision(.fractionLength(0 ... 1)))) s" : "1/\(Int((1 / time).rounded())) s")
+    private var capturedText: String {
+        switch summary.captured {
+        case .none: "No date"
+        case let .value(text): text
+        case .mixed: "Mixed"
         }
-        if let aperture = metadata.aperture {
-            parts.append("f/\(aperture.formatted(.number.precision(.fractionLength(0 ... 1))))")
-        }
-        if let iso = metadata.iso {
-            parts.append("ISO \(iso)")
-        }
-        if let focal = metadata.focalLength {
-            parts.append("\(focal.formatted(.number.precision(.fractionLength(0)))) mm")
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 
-#Preview {
+#Preview("One photo") {
     Form {
         Section("Info") {
-            InfoPanel(metadata: ImageMetadata(pixelWidth: 6240, pixelHeight: 4160, captureDate: .now, cameraMake: "FUJIFILM",
-                                              cameraModel: "X-T5", lens: "XF35mmF2 R WR", iso: 400, exposureTime: 0.004,
-                                              aperture: 2.8, focalLength: 35),
+            InfoPanel(summary: InfoSummary(metadata: ImageMetadata(pixelWidth: 6240, pixelHeight: 4160, captureDate: .now, cameraMake: "FUJIFILM",
+                                                                   cameraModel: "X-T5", lens: "XF35mmF2 R WR", iso: 400, exposureTime: 0.004,
+                                                                   aperture: 2.8, focalLength: 35)),
                       fileName: "DSCF1234.RAF")
         }
     }

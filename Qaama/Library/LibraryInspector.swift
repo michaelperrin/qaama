@@ -3,8 +3,9 @@ import ImageIOKit
 import LibraryKit
 import SwiftUI
 
-/// Right column of the grid: the Info panel of the photo selected there, the same histogram, file
-/// details and map as the editor's Info tab, without opening the photo.
+/// Right column of the grid, for the photos selected there, without opening them: their rating,
+/// flag and keywords, to read and to change, and the same histogram, file details and map as the
+/// editor's Info tab. With several photos, each line shows what they share.
 struct LibraryInspector: View {
     let source: any LibrarySource
     let selection: Set<LibraryAsset.ID>
@@ -12,13 +13,13 @@ struct LibraryInspector: View {
     var onAdjustDate: (([LibraryAsset]) -> Void)?
 
     @State private var model = AssetInfoModel()
+    @Environment(\.undoManager) private var undoManager
 
-    /// What the panel depends on: another photo, or the same one edited since (its histogram changed)
-    /// or given another date.
-    private struct ShownKey: Hashable {
-        let id: LibraryAsset.ID?
-        let modificationDate: Date?
-        let creationDate: Date?
+    /// The selected photos, in a stable order, when there are few enough to compare; nil beyond
+    /// that: resolving thousands of photos on every update would freeze the window.
+    private var assets: [LibraryAsset]? {
+        guard selection.count <= AssetInfoModel.selectionLimit else { return nil }
+        return selection.sorted().compactMap { source.asset(id: $0) }
     }
 
     /// The dialog is offered where the source can store a corrected date.
@@ -26,52 +27,152 @@ struct LibraryInspector: View {
         source.capabilities.contains(.captureDate) ? onAdjustDate : nil
     }
 
-    /// The panel describes one photo: the only one selected.
-    private var asset: LibraryAsset? {
-        guard selection.count == 1, let id = selection.first else { return nil }
-        return source.asset(id: id)
-    }
-
     var body: some View {
-        let asset = asset
+        let assets = assets
         Form {
-            if let asset {
-                let details = model.details(for: asset)
-                Section {
-                    HistogramView(histogram: model.histogram)
-                        .listRowInsets(EdgeInsets())
-                }
-                Section {
-                    InfoPanel(metadata: details.metadata, fileName: details.fileName,
-                              onAdjustDate: adjustDate.map { open in { open([asset]) } })
-                } header: {
-                    Text("Info")
-                } footer: {
-                    if details.isOriginalInCloud {
-                        originalInCloudNote
-                    }
-                }
-                if let location = details.metadata?.location {
-                    Section("Location") {
-                        LocationMap(location: location)
+            if let assets, !assets.isEmpty {
+                if assets.count == 1 {
+                    Section {
+                        HistogramView(histogram: model.histogram)
                             .listRowInsets(EdgeInsets())
                     }
+                }
+                decisions(assets)
+                if assets.count == 1 {
+                    info(of: assets[0])
+                } else {
+                    info(shared: assets)
                 }
             } else {
                 Section("Info") {
                     Text(selection.isEmpty ? "No photo selected" : "\(selection.count) photos selected")
                         .foregroundStyle(.secondary)
-                    if selection.count > 1, let adjustDate {
-                        Button("Adjust Date & Time…") { adjustDate(selection.compactMap { source.asset(id: $0) }) }
-                            .controlSize(.small)
+                    if !selection.isEmpty {
+                        Text("Details are shown for up to \(AssetInfoModel.selectionLimit) photos.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        if let adjustDate {
+                            Button("Adjust Date & Time…") { adjustDate(selection.compactMap { source.asset(id: $0) }) }
+                                .controlSize(.small)
+                        }
                     }
                 }
             }
         }
         .formStyle(.grouped)
-        // Another selection restarts the task, which abandons the load in flight.
-        .task(id: ShownKey(id: asset?.id, modificationDate: asset?.modificationDate, creationDate: asset?.creationDate)) {
-            await model.show(asset, in: source)
+        // Any change to the photos (another selection, a rating, an edit, a corrected date) restarts
+        // the task, which abandons the load in flight.
+        .task(id: assets ?? []) {
+            await model.show(assets ?? [], in: source)
+        }
+    }
+
+    // MARK: - Decisions
+
+    /// Rating, flag and keywords, for what the source can store. A change goes to every photo.
+    @ViewBuilder
+    private func decisions(_ assets: [LibraryAsset]) -> some View {
+        let capabilities = source.capabilities
+        if !capabilities.isDisjoint(with: [.rating, .flag, .keywords]) {
+            Section {
+                if capabilities.contains(.rating) {
+                    let rating = model.rating(of: assets)
+                    LabeledContent("Rating") {
+                        HStack(spacing: 6) {
+                            if rating == nil {
+                                mixed
+                            }
+                            RatingView(rating: rating ?? 0) { value in
+                                Task { await model.setRating(value, in: source, undoManager: undoManager) }
+                            }
+                        }
+                    }
+                }
+                if capabilities.contains(.flag) {
+                    let flag = model.flag(of: assets)
+                    LabeledContent("Flag") {
+                        HStack(spacing: 6) {
+                            if flag == nil {
+                                mixed
+                            }
+                            FlagView(flag: flag ?? .none) { value in
+                                Task { await model.setFlag(value, in: source, undoManager: undoManager) }
+                            }
+                        }
+                    }
+                }
+                if capabilities.contains(.keywords) {
+                    // Nothing to edit until the model has read the keywords of these very photos.
+                    let isReady = model.isShowing(assets) && model.hasLoadedKeywords
+                    KeywordsField(keywords: isReady ? model.keywords : [], width: nil) { edited in
+                        // A keyword half typed belongs to the photos it was typed for.
+                        guard model.isShowing(assets) else { return }
+                        Task { await model.setKeywords(edited, in: source, undoManager: undoManager) }
+                    }
+                    .disabled(!isReady)
+                    .id(assets.map(\.id))
+                    .help(assets.count == 1 ? "Keywords (comma separated). Return or a comma saves."
+                        : "Keywords every selected photo has. One added here is added to all; one removed is removed from all.")
+                }
+                if let error = model.errorMessage {
+                    Text(error).font(.callout).foregroundStyle(.red)
+                }
+            } header: {
+                if assets.count > 1 {
+                    Text("\(assets.count) Photos Selected")
+                }
+            }
+        }
+    }
+
+    private var mixed: some View {
+        Text("Mixed").font(.callout).foregroundStyle(.tertiary)
+    }
+
+    // MARK: - Info
+
+    @ViewBuilder
+    private func info(of asset: LibraryAsset) -> some View {
+        let details = model.details(for: asset)
+        Section {
+            InfoPanel(summary: InfoSummary([details]), fileName: details.fileName,
+                      onAdjustDate: adjustDate.map { open in { open([asset]) } })
+        } header: {
+            Text("Info")
+        } footer: {
+            if details.isOriginalInCloud {
+                originalInCloudNote
+            }
+        }
+        if let location = details.metadata?.location {
+            Section("Location") {
+                LocationMap(location: location)
+                    .listRowInsets(EdgeInsets())
+            }
+        }
+    }
+
+    /// What several photos share, once they have all been read.
+    @ViewBuilder
+    private func info(shared assets: [LibraryAsset]) -> some View {
+        let summary = model.isShowing(assets) ? model.summary : nil
+        Section {
+            if let summary {
+                InfoPanel(summary: summary, fileName: nil, onAdjustDate: adjustDate.map { open in { open(assets) } })
+            } else {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Reading \(assets.count) photos…").foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("Info")
+        } footer: {
+            if let summary, summary.unreadCount > 0 {
+                Text(summary.unreadCount == 1 ? "Camera details are missing for 1 photo whose original is in iCloud."
+                    : "Camera details are missing for \(summary.unreadCount) photos whose originals are in iCloud.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
@@ -98,17 +199,17 @@ struct LibraryInspector: View {
 
 #Preview("One photo") {
     LibraryInspector(source: SampleLibrarySource(), selection: ["sample-1"])
-        .frame(width: EditorInspector.width, height: 500)
+        .frame(width: EditorInspector.width, height: 600)
 }
 
 #Preview("Original in iCloud") {
     let source = SampleLibrarySource()
     source.cloudOnlyIDs = ["sample-1"]
     return LibraryInspector(source: source, selection: ["sample-1"])
-        .frame(width: EditorInspector.width, height: 500)
+        .frame(width: EditorInspector.width, height: 600)
 }
 
 #Preview("Several photos") {
-    LibraryInspector(source: SampleLibrarySource(), selection: ["sample-1", "sample-2"])
+    LibraryInspector(source: SampleLibrarySource(), selection: ["sample-0", "sample-2", "sample-4"])
         .frame(width: EditorInspector.width, height: 500)
 }
