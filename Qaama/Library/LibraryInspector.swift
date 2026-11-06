@@ -8,13 +8,22 @@ import SwiftUI
 struct LibraryInspector: View {
     let source: any LibrarySource
     let selection: Set<LibraryAsset.ID>
+    /// Opens the Adjust Date & Time dialog for these photos; nil when the place showing the panel has none.
+    var onAdjustDate: (([LibraryAsset]) -> Void)?
 
     @State private var model = AssetInfoModel()
 
-    /// What the panel depends on: another photo, or the same one edited since (its histogram changed).
+    /// What the panel depends on: another photo, or the same one edited since (its histogram changed)
+    /// or given another date.
     private struct ShownKey: Hashable {
         let id: LibraryAsset.ID?
         let modificationDate: Date?
+        let creationDate: Date?
+    }
+
+    /// The dialog is offered where the source can store a corrected date.
+    private var adjustDate: (([LibraryAsset]) -> Void)? {
+        source.capabilities.contains(.captureDate) ? onAdjustDate : nil
     }
 
     /// The panel describes one photo: the only one selected.
@@ -33,7 +42,8 @@ struct LibraryInspector: View {
                         .listRowInsets(EdgeInsets())
                 }
                 Section {
-                    InfoPanel(metadata: details.metadata, fileName: details.fileName)
+                    InfoPanel(metadata: details.metadata, fileName: details.fileName,
+                              onAdjustDate: adjustDate.map { open in { open([asset]) } })
                 } header: {
                     Text("Info")
                 } footer: {
@@ -51,12 +61,16 @@ struct LibraryInspector: View {
                 Section("Info") {
                     Text(selection.isEmpty ? "No photo selected" : "\(selection.count) photos selected")
                         .foregroundStyle(.secondary)
+                    if selection.count > 1, let adjustDate {
+                        Button("Adjust Date & Time…") { adjustDate(selection.compactMap { source.asset(id: $0) }) }
+                            .controlSize(.small)
+                    }
                 }
             }
         }
         .formStyle(.grouped)
         // Another selection restarts the task, which abandons the load in flight.
-        .task(id: ShownKey(id: asset?.id, modificationDate: asset?.modificationDate)) {
+        .task(id: ShownKey(id: asset?.id, modificationDate: asset?.modificationDate, creationDate: asset?.creationDate)) {
             await model.show(asset, in: source)
         }
     }

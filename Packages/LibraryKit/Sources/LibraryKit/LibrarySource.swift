@@ -35,6 +35,12 @@ public protocol LibrarySource: AnyObject, Observable {
     func setKeywords(_ keywords: [String], for asset: LibraryAsset) async throws
     /// Keywords of a photo, fetched on demand when the listing doesn't carry them.
     func keywords(for asset: LibraryAsset) async -> [String]
+    /// When the photo was taken as the source holds it now, corrections included; nil when nothing says.
+    /// Read from the source's current state, not from `asset`, which may be an older snapshot.
+    func captureDate(for asset: LibraryAsset) -> Date?
+    /// Corrects the capture date of a photo, without touching its file. Nil removes the correction
+    /// where the source keeps one apart from the file's own date (folders).
+    func setCaptureDate(_ date: Date?, for asset: LibraryAsset) async throws
 
     /// Original pixels and previously saved recipe, to open the photo in the editor.
     func editingInput(for asset: LibraryAsset) async throws -> EditingInput
@@ -122,6 +128,14 @@ public extension LibrarySource {
         asset.keywords
     }
 
+    func captureDate(for asset: LibraryAsset) -> Date? {
+        asset.creationDate
+    }
+
+    func setCaptureDate(_: Date?, for _: LibraryAsset) async throws {
+        throw LibrarySourceError.unsupported(.captureDate)
+    }
+
     func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo {
         AssetResourceInfo(asset)
     }
@@ -146,6 +160,8 @@ public nonisolated enum LibraryCapability: Sendable, Hashable {
     case rating
     case flag
     case keywords
+    /// Correcting when a photo was taken.
+    case captureDate
 }
 
 /// Errors shared by the library sources.
@@ -162,6 +178,7 @@ public nonisolated enum LibrarySourceError: Error, LocalizedError, Sendable {
             case .rating: "This library doesn't store ratings."
             case .flag: "This library doesn't store flags."
             case .keywords: "This library doesn't store keywords."
+            case .captureDate: "This library doesn't store corrected dates."
             }
         case let .folderUnreadable(url):
             "The folder “\(url.lastPathComponent)” can't be read."

@@ -65,10 +65,10 @@ struct ImageMetadataReaderTests {
     }
 
     @Test func parsesExifDatesWithoutOffsetInTheCurrentTimeZone() throws {
-        let date = ImageMetadataReader.exifDate("2026:10:29 14:03:12", offset: nil)
+        let date = ExifDate.date(from: "2026:10:29 14:03:12", offset: nil)
         let components = try Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: #require(date))
         #expect(components.year == 2026 && components.month == 10 && components.day == 29 && components.hour == 14 && components.minute == 3)
-        #expect(ImageMetadataReader.exifDate("garbage", offset: nil) == nil)
+        #expect(ExifDate.date(from: "garbage", offset: nil) == nil)
     }
 
     @Test func failsOnNonImages() throws {

@@ -34,6 +34,30 @@ struct CatalogMigrationTests {
         }
     }
 
+    @Test func captureDateOverrideMigrationKeepsItemsAndStartsWithoutCorrections() throws {
+        let queue = try DatabaseQueue()
+        try CatalogSchema.migrator.migrate(queue, upTo: "v4-folder-search")
+        let folderID = UUID(), itemID = UUID()
+        let shot = Date(timeIntervalSince1970: 1_700_000_000)
+        try queue.write { db in
+            try db.execute(sql: "INSERT INTO folder (id, bookmark, displayName) VALUES (?, ?, ?)", arguments: [folderID, Data([1]), "Trip"])
+            try db.execute(sql: """
+            INSERT INTO item (id, folderID, relativePath, fileName, fileType, fileSize, contentModified, captureDate)
+            VALUES (?, ?, 'DSCF1234.RAF', 'DSCF1234.RAF', 'com.fuji.raw-image', 1, ?, ?)
+            """, arguments: [itemID, folderID, Date(timeIntervalSince1970: 10), shot])
+        }
+        try CatalogSchema.migrator.migrate(queue)
+
+        try queue.write { db in
+            var item = try #require(try CatalogItem.fetchOne(db, key: itemID))
+            #expect(item.captureDate == shot && item.captureDateOverride == nil && item.effectiveCaptureDate == shot)
+            item.captureDateOverride = shot.addingTimeInterval(3600)
+            try item.save(db)
+            let reloaded = try #require(try CatalogItem.fetchOne(db, key: itemID))
+            #expect(reloaded.effectiveCaptureDate == shot.addingTimeInterval(3600) && reloaded.captureDate == shot)
+        }
+    }
+
     @Test func itemsStaySearchableAndWritableAfterTheMigration() throws {
         let (queue, itemID) = try catalogBeforeFolderSearch()
         try CatalogSchema.migrator.migrate(queue)

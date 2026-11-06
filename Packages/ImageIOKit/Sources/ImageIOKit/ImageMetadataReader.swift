@@ -26,7 +26,8 @@ public nonisolated enum ImageMetadataReader {
         return metadata(from: properties)
     }
 
-    static func metadata(from properties: [CFString: Any]) -> ImageMetadata {
+    /// The same reading from ImageIO properties already in hand.
+    public static func metadata(from properties: [CFString: Any]) -> ImageMetadata {
         var width = properties[kCGImagePropertyPixelWidth] as? Int ?? 0
         var height = properties[kCGImagePropertyPixelHeight] as? Int ?? 0
         let orientation = properties[kCGImagePropertyOrientation] as? Int ?? 1
@@ -45,7 +46,7 @@ public nonisolated enum ImageMetadataReader {
             pixelHeight: height,
             orientation: orientation,
             captureDate: (exif[kCGImagePropertyExifDateTimeOriginal] as? String).flatMap {
-                exifDate($0, offset: exif[kCGImagePropertyExifOffsetTimeOriginal] as? String)
+                ExifDate.date(from: $0, offset: exif[kCGImagePropertyExifOffsetTimeOriginal] as? String)
             },
             cameraMake: (tiff[kCGImagePropertyTIFFMake] as? String)?.trimmed,
             cameraModel: (tiff[kCGImagePropertyTIFFModel] as? String)?.trimmed,
@@ -67,25 +68,6 @@ public nonisolated enum ImageMetadataReader {
         let south = (gps[kCGImagePropertyGPSLatitudeRef] as? String)?.uppercased() == "S"
         let west = (gps[kCGImagePropertyGPSLongitudeRef] as? String)?.uppercased() == "W"
         return GeoCoordinate(latitude: south ? -latitude : latitude, longitude: west ? -longitude : longitude)
-    }
-
-    /// EXIF dates are local wall-clock times ("2026:10:29 14:03:12"); the optional offset ("+01:00")
-    /// pins them to an instant, otherwise the current time zone is assumed.
-    static func exifDate(_ text: String, offset: String?) -> Date? {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
-        if let offset, let zone = timeZone(fromOffset: offset) {
-            formatter.timeZone = zone
-        }
-        return formatter.date(from: text)
-    }
-
-    private static func timeZone(fromOffset offset: String) -> TimeZone? {
-        let parts = offset.dropFirst().split(separator: ":")
-        guard offset.count == 6, parts.count == 2, let hours = Int(parts[0]), let minutes = Int(parts[1]) else { return nil }
-        let sign = offset.hasPrefix("-") ? -1 : 1
-        return TimeZone(secondsFromGMT: sign * (hours * 3600 + minutes * 60))
     }
 }
 

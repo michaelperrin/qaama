@@ -69,6 +69,8 @@ public nonisolated struct CatalogItem: Codable, Hashable, Sendable, Identifiable
     }
 
     public var hasEdit: Bool
+    /// The capture date the user corrected; `captureDate` stays what the header says.
+    public var captureDateOverride: Date?
     public var sidecarModified: Date?
 
     public var pairedItemID: UUID?
@@ -99,6 +101,11 @@ public nonisolated struct CatalogItem: Codable, Hashable, Sendable, Identifiable
         flag = .none
         keywords = []
         hasEdit = false
+    }
+
+    /// When the photo was taken as far as the library is concerned: the user's correction, else the header's date.
+    public var effectiveCaptureDate: Date? {
+        captureDateOverride ?? captureDate
     }
 
     /// True when the header must be (re)read: never read, or the file changed since.

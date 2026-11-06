@@ -28,6 +28,20 @@ struct SidecarTests {
         #expect(recipeObject?["saturation"] as? Double == -0.2)
     }
 
+    @Test func aCorrectedCaptureDateIsKeptToTheSecondAsAUTCInstant() throws {
+        let corrected = try #require(ISO8601DateFormatter().date(from: "2026-10-29T13:03:12Z"))
+        var sidecar = Sidecar(captureDate: corrected.addingTimeInterval(0.7))
+        #expect(sidecar.captureDate == corrected, "sub-seconds are dropped")
+        #expect(!sidecar.isEmpty, "a correction alone is worth a file")
+        let data = try sidecar.jsonData()
+        #expect(String(decoding: data, as: UTF8.self).contains("\"captureDate\" : \"2026-10-29T13:03:12Z\""))
+        #expect(try Sidecar(data: data).captureDate == corrected)
+
+        sidecar.captureDate = nil
+        #expect(sidecar.isEmpty)
+        #expect(try !String(decoding: sidecar.jsonData(), as: UTF8.self).contains("captureDate"))
+    }
+
     @Test func rejectsNewerVersionsAndGarbage() {
         let newer = Data(#"{"version":99,"id":"6F0E6C5A-0000-4000-8000-000000000000"}"#.utf8)
         #expect(throws: Sidecar.ReadError.unsupportedVersion(99)) { try Sidecar(data: newer) }

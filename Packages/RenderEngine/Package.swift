@@ -9,11 +9,12 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../EditModel"),
+        .package(path: "../ImageIOKit"),
     ],
     targets: [
         .target(
             name: "RenderEngine",
-            dependencies: ["EditModel"],
+            dependencies: ["EditModel", "ImageIOKit"],
             swiftSettings: [
                 .defaultIsolation(MainActor.self),
                 .enableUpcomingFeature("MemberImportVisibility"),

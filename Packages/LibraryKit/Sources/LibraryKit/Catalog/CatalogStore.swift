@@ -247,10 +247,12 @@ public final nonisolated class CatalogStore: Sendable {
         sql += " WHERE " + clauses.joined(separator: " AND ")
 
         let direction = query.ascending ? "ASC" : "DESC"
+        // The date the user corrected counts before the header's.
+        let captureDate = "COALESCE(item.captureDateOverride, item.captureDate)"
         switch query.sort {
-        case .captureDate: sql += " ORDER BY item.captureDate \(direction) NULLS LAST, item.contentModified \(direction)"
+        case .captureDate: sql += " ORDER BY \(captureDate) \(direction) NULLS LAST, item.contentModified \(direction)"
         case .modificationDate: sql += " ORDER BY COALESCE(item.sidecarModified, item.contentModified) \(direction)"
-        case .rating: sql += " ORDER BY item.rating \(direction), item.captureDate DESC"
+        case .rating: sql += " ORDER BY item.rating \(direction), \(captureDate) DESC"
         case .fileName: sql += " ORDER BY item.fileName COLLATE NOCASE \(direction)"
         }
         return (sql, arguments)

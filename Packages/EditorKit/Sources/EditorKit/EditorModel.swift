@@ -41,7 +41,19 @@ public final class EditorModel {
     public private(set) var undoStack: [EditRecipe] = []
     public private(set) var redoStack: [EditRecipe] = []
     /// Header of the original (EXIF), read when the editor opens; nil when the source gives no file.
-    public private(set) var metadata: ImageMetadata?
+    private var header: ImageMetadata?
+    /// The read of that header, for the export, which may be asked for before it has finished.
+    @ObservationIgnored private var headerTask: Task<ImageMetadata?, Never>?
+    /// What the Info tab shows: the header, with the capture date as the library holds it now, since
+    /// the user may have corrected it.
+    public var metadata: ImageMetadata? {
+        guard var shown = header else { return nil }
+        if let asset, let date = source.captureDate(for: asset) {
+            shown.captureDate = date
+        }
+        return shown
+    }
+
     /// Histogram of the current edit, refreshed shortly after each change.
     public private(set) var histogram: Histogram?
     /// While true the canvas shows the original instead of the edit (press-and-hold comparison).
@@ -443,7 +455,8 @@ public final class EditorModel {
             renderPreview()
             logger.notice("Opened \(self.assetID, privacy: .public) in \((ContinuousClock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
             resolveModelMasksIfNeeded()
-            metadata = await photo.metadata?.value
+            headerTask = photo.metadata
+            header = await photo.metadata?.value
         } catch {
             statusMessage = error.localizedDescription
             // The canvas may still show the previous photo of the session: don't leave it there
@@ -629,7 +642,16 @@ public final class EditorModel {
         guard let sourceImage else { return nil }
         let input = ExportInput(image: sourceImage.image, recipe: recipe, masks: maskImages, metadataURL: imageURL)
         let name = baseName
-        return ExportItem(id: assetID, name: { name }, load: { input })
+        let headerTask = headerTask
+        let source = source
+        let asset = asset
+        return ExportItem(id: assetID, name: { name }, load: {
+            // A capture date corrected in the library replaces the original's in the exported file.
+            var input = input
+            let fileDate = await headerTask?.value?.captureDate
+            input.captureDate = ExportItem.captureDateToWrite(library: asset.flatMap { source.captureDate(for: $0) }, file: fileDate)
+            return input
+        })
     }
 
     // MARK: - Decisions

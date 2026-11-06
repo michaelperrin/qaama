@@ -88,6 +88,8 @@ item
   flag: Int                      0 aucun, 1 retenue, -1 rejetée
   keywords: [String]
   hasEdit: Bool
+  captureDateOverride: Date?     date de prise de vue corrigée (6/11/2026) ; captureDate reste
+                                 celle de l'en-tête, le tri par date prend la correction d'abord
   sidecarModified: Date?         date du sidecar lu, pour détecter un changement externe
 
   -- liens
@@ -118,9 +120,14 @@ une `DatabaseQueue` en mémoire.
   "rating": 3,
   "flag": "pick",
   "keywords": ["lapland", "winter"],
+  "captureDate": "2026-10-29T13:03:12Z",
   "recipe": { "version": 1, "exposure": 0.3, "contrast": 0, "saturation": 0.1 }
 }
 ```
+
+- `captureDate` (6/11/2026) : la date de prise de vue corrigée par l'utilisateur, à la seconde,
+  en instant UTC. Absente tant que rien n'est corrigé. L'image n'est jamais réécrite : la
+  correction est appliquée à l'EXIF des exports. Remettre la date de l'en-tête retire la clé.
 
 - Le sidecar v1 actuel (la recette seule) est lu et migré à la première écriture.
 - Écriture atomique ; relecture si sa date change (modification externe ou synchronisation).

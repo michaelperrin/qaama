@@ -1,7 +1,7 @@
 import Foundation
 
 /// The `<image>.qaama` file next to a photo: the portable truth about what the user decided
-/// (identity, rating, flag, keywords, edit recipe). See `docs/catalogue.md` §5.
+/// (identity, rating, flag, keywords, corrected capture date, edit recipe). See `docs/catalogue.md` §5.
 ///
 /// Serialized by hand with `JSONSerialization` so the recipe, owned by another package, is embedded
 /// as a JSON object rather than an opaque string. No backward compatibility while the app is young:
@@ -13,20 +13,34 @@ public nonisolated struct Sidecar: Hashable, Sendable {
     public var rating: Int
     public var flag: ItemFlag
     public var keywords: [String]
+    /// The capture date the user corrected, to the second; nil leaves the one in the image's header.
+    /// The image itself is never rewritten: exports carry the correction.
+    public var captureDate: Date? {
+        didSet { captureDate = captureDate.map(Self.wholeSeconds) }
+    }
+
     /// The edit recipe as JSON (an object), or nil when the photo has no edit.
     public var recipeData: Data?
 
-    public init(id: UUID = UUID(), rating: Int = 0, flag: ItemFlag = .none, keywords: [String] = [], recipeData: Data? = nil) {
+    public init(id: UUID = UUID(), rating: Int = 0, flag: ItemFlag = .none, keywords: [String] = [], captureDate: Date? = nil,
+                recipeData: Data? = nil)
+    {
         self.id = id
         self.rating = min(max(rating, 0), 5)
         self.flag = flag
         self.keywords = keywords
+        self.captureDate = captureDate.map(Self.wholeSeconds)
         self.recipeData = recipeData
     }
 
     /// True when nothing is worth keeping: the file should then be deleted, not written.
     public var isEmpty: Bool {
-        rating == 0 && flag == .none && keywords.isEmpty && recipeData == nil
+        rating == 0 && flag == .none && keywords.isEmpty && captureDate == nil && recipeData == nil
+    }
+
+    /// EXIF dates stop at the second, and so does the sidecar's spelling of them.
+    private static func wholeSeconds(_ date: Date) -> Date {
+        Date(timeIntervalSinceReferenceDate: date.timeIntervalSinceReferenceDate.rounded(.down))
     }
 
     public enum ReadError: Error, LocalizedError, Equatable {
@@ -81,6 +95,7 @@ public nonisolated struct Sidecar: Hashable, Sendable {
             rating: object["rating"] as? Int ?? 0,
             flag: ItemFlag(sidecarName: object["flag"] as? String),
             keywords: object["keywords"] as? [String] ?? [],
+            captureDate: (object["captureDate"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) },
             recipeData: recipe
         )
     }
@@ -98,6 +113,10 @@ public nonisolated struct Sidecar: Hashable, Sendable {
         }
         if !keywords.isEmpty {
             object["keywords"] = keywords
+        }
+        if let captureDate {
+            // An instant in UTC ("2026-10-29T13:03:12Z"), readable and free of time zone guesswork.
+            object["captureDate"] = ISO8601DateFormatter().string(from: captureDate)
         }
         if let recipeData {
             guard let recipe = try? JSONSerialization.jsonObject(with: recipeData) as? [String: Any] else {

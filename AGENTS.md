@@ -37,7 +37,7 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
 ```
 
 - Dependency direction: app → everything; EditorKit → LibraryKit + RenderEngine + EditModel;
-  RenderEngine → EditModel; LibraryKit → ImageIOKit and GRDB. LibraryKit never depends on RenderEngine: when it needs rendering (preview
+  RenderEngine → EditModel and ImageIOKit; LibraryKit → ImageIOKit and GRDB. LibraryKit never depends on RenderEngine: when it needs rendering (preview
   rebuilds), the app injects a closure (`PreviewRenderer`).
 - The catalog (`docs/catalogue.md`) is an index of the folders and sidecars, rebuildable at any
   time; the sidecar next to the image is the portable truth and wins on conflict. Scans run in

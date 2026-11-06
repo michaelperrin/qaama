@@ -1,6 +1,8 @@
 import CoreImage
 import EditModel
+import Foundation
 import ImageIO
+import ImageIOKit
 @testable import RenderEngine
 import Testing
 import UniformTypeIdentifiers
@@ -139,6 +141,41 @@ struct ExportTests {
         let noLocation = try #require(ExportRenderer.metadata(of: original, policy: .stripLocation))
         #expect(noLocation[kCGImagePropertyGPSDictionary] == nil && noLocation[kCGImagePropertyExifDictionary] != nil)
         #expect(ExportRenderer.metadata(of: original, policy: .strip) == nil)
+    }
+
+    @Test func aCorrectedCaptureDateReplacesTheOriginalsInTheExportedFile() async throws {
+        let image = CIImage(color: .gray).cropped(to: CGRect(x: 0, y: 0, width: 32, height: 16))
+        let original = FileManager.default.temporaryDirectory.appendingPathComponent("export-date-\(UUID().uuidString).jpg")
+        defer { try? FileManager.default.removeItem(at: original) }
+        try ExportRenderer.encode(image, settings: ExportSettings(format: .jpeg), metadata: [
+            kCGImagePropertyExifDictionary: [
+                kCGImagePropertyExifDateTimeOriginal: "2020:01:01 00:00:00",
+                kCGImagePropertyExifOffsetTimeOriginal: "+09:00",
+                kCGImagePropertyExifLensModel: "XF35mmF2 R WR",
+            ] as [CFString: Any],
+        ]).write(to: original)
+        let corrected = try #require(ISO8601DateFormatter().date(from: "2026-10-29T13:03:12Z"))
+        let input = ExportInput(image: image, recipe: EditRecipe(), metadataURL: original, captureDate: corrected)
+
+        // Read the exported bytes back, as another application would.
+        let exported = try await ExportRenderer.export(input, settings: ExportSettings(format: .jpeg))
+        let source = try #require(CGImageSourceCreateWithData(exported as CFData, nil))
+        let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        let exif = try #require(properties[kCGImagePropertyExifDictionary] as? [CFString: Any])
+        #expect(exif[kCGImagePropertyExifDateTimeOriginal] as? String == "2026:10:29 22:03:12", "spelled in the original's +09:00")
+        #expect(exif[kCGImagePropertyExifOffsetTimeOriginal] as? String == "+09:00")
+        #expect(exif[kCGImagePropertyExifLensModel] as? String == "XF35mmF2 R WR")
+        #expect(ImageMetadataReader.metadata(from: properties).captureDate == corrected)
+
+        // Without a correction the original's date goes through; stripping the metadata strips the correction too.
+        var untouched = input
+        untouched.captureDate = nil
+        let kept = try #require(ExportRenderer.metadata(for: untouched, policy: .keep)?[kCGImagePropertyExifDictionary] as? [CFString: Any])
+        #expect(kept[kCGImagePropertyExifDateTimeOriginal] as? String == "2020:01:01 00:00:00")
+        #expect(ExportRenderer.metadata(for: input, policy: .strip) == nil)
+        // No file to take metadata from: the correction is written on its own.
+        let alone = ExportInput(image: image, recipe: EditRecipe(), captureDate: corrected)
+        #expect(ImageMetadataReader.metadata(from: ExportRenderer.metadata(for: alone, policy: .keep) ?? [:]).captureDate == corrected)
     }
 
     @Test func settingsRoundTripThroughJSON() throws {

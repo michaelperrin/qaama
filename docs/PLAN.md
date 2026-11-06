@@ -399,6 +399,48 @@ Bibliothèque
       pas livrer de vrais gestes à MapKit ni capturer la carte interactive : glisser, zoom et
       recentrage restent à essayer à l'écran.
       Reste : nom du lieu (géocodage inverse).
+- [ ] Édition des métadonnées : date de prise de vue, localisation, etc. Cadrage discuté
+      avec Michaël le 6/11/2026.
+      Date de prise de vue, fait le 6/11/2026 : dialogue Adjust Date & Time (menu Image, en
+      mosaïque sur la sélection comme dans l'éditeur sur la photo ouverte, par une valeur de
+      focus `adjustDateAction` ; menu contextuel de la mosaïque, clic sur la date du panneau
+      Info, bouton quand plusieurs photos sont sélectionnées), deux modes : fixer une date pour toutes, ou décaler chacune d'années, mois, jours,
+      heures et minutes (années et mois ajoutés à la demande de Michaël, par le calendrier),
+      plus tard ou plus tôt, avec l'avant / après de chaque photo sélectionnée, une à la fois
+      à côté de sa vignette (flèches précédente / suivante, de la plus ancienne à la plus
+      récente ; demandé par Michaël). En mode décalage, la ligne « After » est un sélecteur de
+      date : y saisir la vraie date de la photo affichée en déduit le décalage pour toutes
+      (`DateShift(from:to:)`, épelé en années, mois et jours quand le calendrier retombe juste,
+      sinon en jours, sinon en heures et minutes écoulées). `LibrarySource.setCaptureDate` / `captureDate(for:)` : sidecar
+      (`captureDate`, instant UTC) plus colonne `captureDateOverride` du catalogue (migration
+      v5, le tri par date prend la correction d'abord) pour les dossiers, `creationDate` de la
+      base de Photos pour Photos. `MetadataEditing` écrit le lot en une étape annulable ; le
+      jumeau JPEG d'une paire suit son RAW. Export : `ExportInput.captureDate`, renseigné quand
+      la date de la bibliothèque diffère de celle du fichier, réécrit `DateTimeOriginal` dans
+      le fuseau du décalage d'origine (sinon celui du Mac, avec le décalage écrit) via
+      `ImageMetadataWriter` ; RenderEngine dépend maintenant d'ImageIOKit pour cela. Vérifié
+      par tests de bout en bout sur un dossier (correction, export relu, original intact) et
+      par fenêtre sonde pour le dialogue. Non vérifié à l'écran : l'écriture dans Photos, et
+      le dialogue en feuille dans la vraie fenêtre. Limites : le sélecteur de date de SwiftUI
+      n'a pas les secondes sur macOS (le mode « fixer » garde celles de la photo) ; dans
+      l'éditeur la correction passe par le menu Image, pas par l'onglet Info ; pas de « revenir à la date d'origine » autrement que par
+      l'annulation ; Reste : la localisation.
+      Cadrage d'origine :
+      - Photos : écriture dans la base de Photos (date, position), sans toucher à l'original,
+        donc aussi pour les photos dans iCloud.
+      - Dossiers : la correction va dans le sidecar `.qaama`, est reflétée dans le catalogue
+        et n'est appliquée à l'EXIF qu'à l'export ; l'original n'est jamais réécrit (comme
+        Lightroom, Capture One, darktable pour les RAW).
+      - Dates : modification en lot depuis la mosaïque, en absolu et en relatif (ajouter ou
+        retirer une heure, un jour, etc.), pour les horloges de boîtier mal réglées.
+      - Position : poser le repère sur la carte, recherche de lieu, copie d'une photo vers
+        d'autres. Le catalogue doit alors stocker la position (tri, futur filtre par lieu).
+      - Tout passe par l'`UndoManager`, lots compris.
+      - Plus tard : écrire un `.xmp` standard en miroir (date, position, note, mots-clés)
+        pour que les autres logiciels voient les corrections ; `.qaama` reste la vérité. En
+        lecture, pas de synchronisation : si un `.xmp` est détecté, proposer dans une boîte
+        de dialogue de l'importer vers `.qaama` (dates, etc.). Outils de passerelle entre
+        logiciels : à voir ensuite.
 
 Éditeur
 

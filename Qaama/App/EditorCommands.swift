@@ -47,11 +47,34 @@ extension FocusedValues {
     }
 }
 
-/// File › Export…, View › Show Inspector, and Image › Adjustments: copy, paste, create a preset.
-/// Act on the key window: its inspector column, its export, its focused editor.
+/// What Image › Adjust Date & Time… does in the key window: open the dialog for the grid's selection,
+/// or for the photo open in the editor.
+struct AdjustDateAction {
+    let run: () -> Void
+
+    init(_ run: @escaping () -> Void) {
+        self.run = run
+    }
+}
+
+struct FocusedAdjustDateKey: FocusedValueKey {
+    typealias Value = AdjustDateAction
+}
+
+extension FocusedValues {
+    var adjustDateAction: AdjustDateAction? {
+        get { self[FocusedAdjustDateKey.self] }
+        set { self[FocusedAdjustDateKey.self] = newValue }
+    }
+}
+
+/// File › Export…, View › Show Inspector, and the Image menu: Adjust Date & Time, and Adjustments
+/// (copy, paste, create a preset). Act on the key window: its inspector column, its export, its
+/// selection or open photo, its focused editor.
 struct EditorCommands: Commands {
     @FocusedValue(\.editor) private var editor
     @FocusedValue(\.hasInspector) private var hasInspector
+    @FocusedValue(\.adjustDateAction) private var adjustDateAction
     @FocusedValue(\.exportAction) private var exportAction
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
 
@@ -68,6 +91,9 @@ struct EditorCommands: Commands {
                 .disabled(exportAction == nil)
         }
         CommandMenu("Image") {
+            Button("Adjust Date & Time…") { adjustDateAction?.run() }
+                .disabled(adjustDateAction == nil)
+            Divider()
             Menu("Adjustments") {
                 Button("Copy Adjustments") { editor?.copyAdjustments() }
                     .keyboardShortcut("c", modifiers: [.command, .shift])

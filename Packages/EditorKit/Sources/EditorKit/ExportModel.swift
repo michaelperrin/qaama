@@ -2,6 +2,7 @@ import CoreGraphics
 import CoreImage
 import EditModel
 import Foundation
+import ImageIOKit
 import LibraryKit
 import OSLog
 import RenderEngine
@@ -47,8 +48,20 @@ public struct ExportItem: Identifiable {
                 throw LibrarySourceError.editingFailed("no image data")
             }
             let loaded = try await Task.detached(priority: .userInitiated) { try SourceImageLoader.load(renderSource) }.value
-            return ExportInput(image: loaded.image, recipe: recipe, metadataURL: input.imageURL)
+            let fileDate = await Task.detached { input.imageURL.flatMap { try? ImageMetadataReader.read($0) }?.captureDate }.value
+            return ExportInput(image: loaded.image, recipe: recipe, metadataURL: input.imageURL,
+                               captureDate: captureDateToWrite(library: source.captureDate(for: asset), file: fileDate))
         }
+    }
+
+    /// The capture date an export must write over the original's: the library's date when it says
+    /// something else than the file (the user corrected it), nil when they agree or the library has none.
+    nonisolated static func captureDateToWrite(library: Date?, file: Date?) -> Date? {
+        guard let library else { return nil }
+        if let file, abs(library.timeIntervalSince(file)) < 1 {
+            return nil
+        }
+        return library
     }
 }
 

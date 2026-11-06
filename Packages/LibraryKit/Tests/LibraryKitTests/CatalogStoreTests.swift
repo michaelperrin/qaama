@@ -33,6 +33,25 @@ struct CatalogStoreTests {
         #expect(items.allSatisfy { $0.needsMetadata })
     }
 
+    @Test func sortingByCaptureDateFollowsTheUsersCorrections() async throws {
+        let (store, folder) = try makeStore()
+        try await store.save(folder)
+        var corrected = item(in: folder, path: "clock-was-wrong.jpg", captureDate: Date(timeIntervalSince1970: 100))
+        corrected.captureDateOverride = Date(timeIntervalSince1970: 300)
+        try await store.save([
+            corrected,
+            item(in: folder, path: "middle.jpg", captureDate: Date(timeIntervalSince1970: 200)),
+            item(in: folder, path: "undated.jpg"),
+        ])
+
+        var query = LibraryQuery()
+        query.sort = .captureDate
+        query.ascending = false
+        #expect(try await store.items(inFolder: folder.id, query: query).map(\.relativePath) == ["clock-was-wrong.jpg", "middle.jpg", "undated.jpg"])
+        query.ascending = true
+        #expect(try await store.items(inFolder: folder.id, query: query).map(\.relativePath) == ["middle.jpg", "clock-was-wrong.jpg", "undated.jpg"])
+    }
+
     @Test func findsItemsByPathIdentifierAndFingerprint() async throws {
         let (store, folder) = try makeStore()
         try await store.save(folder)

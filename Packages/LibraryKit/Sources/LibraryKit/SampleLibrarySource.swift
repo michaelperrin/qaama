@@ -10,7 +10,7 @@ public final class SampleLibrarySource: LibrarySource {
     public let displayName: String
     public private(set) var assets: AssetCollection = .empty
     public private(set) var lastLoadDuration: Duration?
-    public var capabilities: Set<LibraryCapability> = [.rating, .flag, .keywords]
+    public var capabilities: Set<LibraryCapability> = [.rating, .flag, .keywords, .captureDate]
     public var queryCapabilities: Set<QueryCapability> {
         [.sortByRating, .sortByFileName, .rating, .flag, .edited, .favorite, .search]
     }
@@ -22,8 +22,11 @@ public final class SampleLibrarySource: LibrarySource {
     private var byID: [String: LibraryAsset] = [:]
     private var images: [String: CGImage] = [:]
     private var recipes: [String: Data] = [:]
+    /// The dates the photos were "shot" at, to go back to when a correction is removed.
+    private var ownDates: [String: Date] = [:]
 
-    public init(displayName: String = "Sample", count: Int = 12) {
+    /// `pairsFirstTwo` makes the first two photos a RAW + JPEG pair stored as two photos.
+    public init(displayName: String = "Sample", count: Int = 12, pairsFirstTwo: Bool = false) {
         self.displayName = displayName
         var list: [LibraryAsset] = []
         for index in 0 ..< count {
@@ -36,11 +39,13 @@ public final class SampleLibrarySource: LibrarySource {
                 isFavorite: index % 5 == 0, rating: index % 6,
                 flag: index % 7 == 0 ? .picked : (index % 7 == 1 ? .rejected : .none),
                 keywords: index % 2 == 0 ? ["sample", "even"] : [],
-                modificationDate: .now, hasEdit: index % 4 == 0
+                modificationDate: .now, hasEdit: index % 4 == 0, isRAW: pairsFirstTwo && index == 0,
+                pairedAssetID: pairsFirstTwo && index < 2 && count >= 2 ? "sample-\(1 - index)" : nil
             )
             asset.rating = index % 6
             list.append(asset)
             byID[id] = asset
+            ownDates[id] = asset.creationDate
             images[id] = Self.makeImage(width: size.width, height: size.height, hue: Double(index) / Double(max(count, 1)))
         }
         refresh()
@@ -73,6 +78,16 @@ public final class SampleLibrarySource: LibrarySource {
         update(asset.id) { $0.keywords = keywords }
     }
 
+    public func captureDate(for asset: LibraryAsset) -> Date? {
+        byID[asset.id]?.creationDate
+    }
+
+    public func setCaptureDate(_ date: Date?, for asset: LibraryAsset) async throws {
+        guard capabilities.contains(.captureDate) else { throw LibrarySourceError.unsupported(.captureDate) }
+        let own = ownDates[asset.id]
+        update(asset.id) { $0.creationDate = date ?? own }
+    }
+
     /// Photos whose original plays at being in iCloud: their details come without the camera until
     /// a download is allowed, which brings the original "back" for good.
     public var cloudOnlyIDs: Set<LibraryAsset.ID> = []
@@ -89,7 +104,7 @@ public final class SampleLibrarySource: LibrarySource {
             cloudOnlyIDs.remove(asset.id)
         }
         return AssetDetails(fileName: "\(asset.id).jpg", metadata: ImageMetadata(
-            pixelWidth: asset.pixelWidth, pixelHeight: asset.pixelHeight, captureDate: asset.creationDate,
+            pixelWidth: asset.pixelWidth, pixelHeight: asset.pixelHeight, captureDate: captureDate(for: asset),
             cameraMake: "Qaama", cameraModel: "Sample", lens: "35mm F2", iso: 200, exposureTime: 1 / 250, aperture: 2.8, focalLength: 35,
             // Every other photo was "taken" in Paris, so previews show the panel with and without a map.
             location: (Int(asset.id.dropFirst("sample-".count)) ?? 0).isMultiple(of: 2) ? GeoCoordinate(latitude: 48.8584, longitude: 2.2945) : nil

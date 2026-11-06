@@ -9,6 +9,8 @@ struct AssetGridView: View {
     let source: any LibrarySource
     @Binding var selection: Set<LibraryAsset.ID>
     let onOpen: (LibraryAsset.ID) -> Void
+    /// Opens the Adjust Date & Time dialog for these photos; nil leaves the command out.
+    var onAdjustDate: (([LibraryAsset]) -> Void)?
 
     private let thumbnailSide: CGFloat = 160
     /// Index of the last plain click, where a ⇧-click range starts.
@@ -125,6 +127,12 @@ struct AssetGridView: View {
             run { try await BatchEditing.pasteAdjustments(to: targets(for: asset), in: source, undoManager: undoManager) }
         }
         .disabled(AdjustmentsClipboard.shared.adjustments == nil)
+        if let onAdjustDate, source.capabilities.contains(.captureDate) {
+            Divider()
+            Button(actsOnSelection(asset) ? "Adjust Date & Time of \(selection.count) Photos…" : "Adjust Date & Time…") {
+                onAdjustDate(targets(for: asset))
+            }
+        }
         Divider()
         Button(actsOnSelection(asset) ? "Export \(selection.count) Photos…" : "Export…") { export(targets(for: asset)) }
     }

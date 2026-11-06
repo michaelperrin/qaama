@@ -26,7 +26,7 @@ public final class PhotosLibrarySource: LibrarySource {
     }
 
     public var capabilities: Set<LibraryCapability> {
-        [.rating, .keywords]
+        [.rating, .keywords, .captureDate]
     }
 
     /// Date and favorite are native; rating filter and sort are too on macOS 27, confirmed by a probe at
@@ -142,6 +142,24 @@ public final class PhotosLibrarySource: LibrarySource {
         logger.notice("Rated \(asset.id, privacy: .public) with \(rating) stars")
     }
 
+    public func captureDate(for asset: LibraryAsset) -> Date? {
+        phAsset(for: asset.id)?.creationDate
+    }
+
+    /// Photos keeps the date in its database, apart from the original, as its own Adjust Date & Time
+    /// does; the list is refreshed through the change observer. Photos has no "back to the file's date":
+    /// a nil date is refused.
+    public func setCaptureDate(_ date: Date?, for asset: LibraryAsset) async throws {
+        guard let phAsset = phAsset(for: asset.id) else { throw LibrarySourceError.assetUnavailable }
+        guard let date else { throw LibrarySourceError.editingFailed("Photos needs a date") }
+        try await PHPhotoLibrary.shared().performChanges { @Sendable in
+            PHAssetChangeRequest(for: phAsset).creationDate = date
+        }
+        // The change observer drops it too, but only once Photos has told: a batch reads it before.
+        materialized[asset.id] = nil
+        logger.notice("Capture date of \(asset.id, privacy: .public) corrected")
+    }
+
     /// Photos stores a RAW + JPEG pair as one asset with two resources. Listing them costs one request per
     /// asset, so it happens for the tiles on screen only and the answer is cached.
     public func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo {
@@ -157,7 +175,7 @@ public final class PhotosLibrarySource: LibrarySource {
     }
 
     /// Photos' database knows the file name, the dimensions, the date and the place (as the user may
-    /// have corrected it in Photos, so it wins over the header's). The camera settings are in the
+    /// have corrected them in Photos, so they win over the header's). The camera settings are in the
     /// original's header, which is read only when the original is on this Mac: most are in iCloud, and
     /// selecting a photo in the grid must not download one. With `allowingDownload`, Photos fetches the
     /// whole original first, and keeps it on disk for as long as it sees fit.
@@ -176,6 +194,10 @@ public final class PhotosLibrarySource: LibrarySource {
             details.metadata = header
         } else {
             details.isOriginalInCloud = original.isMissing
+        }
+        // The date in Photos' database is the one the user sees and corrects; the header keeps the camera's.
+        if let date = self.phAsset(for: asset.id)?.creationDate {
+            details.metadata?.captureDate = date
         }
         if let place = phAsset.location?.coordinate, CLLocationCoordinate2DIsValid(place) {
             details.metadata?.location = GeoCoordinate(latitude: place.latitude, longitude: place.longitude)

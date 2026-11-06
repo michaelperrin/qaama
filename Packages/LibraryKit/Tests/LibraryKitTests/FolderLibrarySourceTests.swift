@@ -100,6 +100,58 @@ struct FolderLibrarySourceTests {
         #expect(abs(location.latitude - 48.8584) < 0.0001 && abs(location.longitude - 2.2945) < 0.0001)
     }
 
+    @Test func correctingTheCaptureDateWritesTheSidecarAndLeavesTheImageAlone() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("FolderLibrarySourceTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let image = root.appendingPathComponent("clock.jpg")
+        let context = try #require(CGContext(data: nil, width: 12, height: 6, bitsPerComponent: 8, bytesPerRow: 0,
+                                             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        context.fill(CGRect(x: 0, y: 0, width: 12, height: 6))
+        let exif: [CFString: Any] = [kCGImagePropertyExifDictionary: [
+            kCGImagePropertyExifDateTimeOriginal: "2026:10:29 14:03:12", kCGImagePropertyExifOffsetTimeOriginal: "+01:00",
+        ]]
+        let destination = try #require(CGImageDestinationCreateWithURL(image as CFURL, UTType.jpeg.identifier as CFString, 1, nil))
+        try CGImageDestinationAddImage(destination, #require(context.makeImage()), exif as CFDictionary)
+        #expect(CGImageDestinationFinalize(destination))
+        let imageBytes = try Data(contentsOf: image)
+        let shot = try #require(ISO8601DateFormatter().date(from: "2026-10-29T13:03:12Z"))
+
+        let source = try makeSource(root: root)
+        #expect(source.capabilities.contains(.captureDate))
+        await source.load()
+        await wait { source.assets.count == 1 && source.assets[0].creationDate == shot && !source.isScanning }
+        let asset = try #require(source.assets.first)
+        #expect(source.captureDate(for: asset) == shot)
+
+        // The camera's clock was an hour late.
+        let corrected = shot.addingTimeInterval(3600)
+        try await source.setCaptureDate(corrected, for: asset)
+        await wait { source.assets.first?.creationDate == corrected }
+        #expect(source.assets.first?.creationDate == corrected)
+        #expect(source.captureDate(for: asset) == corrected)
+        #expect(try Sidecar.read(forImageAt: image)?.captureDate == corrected)
+        #expect(try Data(contentsOf: image) == imageBytes, "the original is never rewritten")
+        let details = await source.details(for: asset, allowingDownload: false)
+        #expect(details.metadata?.captureDate == corrected)
+
+        // A rescan reads the correction back from the sidecar, as after a catalog rebuild.
+        source.rescan()
+        await wait { !source.isScanning }
+        #expect(source.captureDate(for: asset) == corrected)
+
+        // Setting the file's own date again, as an undo does, removes the correction and the sidecar with it.
+        try await source.setCaptureDate(shot, for: asset)
+        await wait { source.assets.first?.creationDate == shot }
+        #expect(source.captureDate(for: asset) == shot)
+        #expect(try Sidecar.read(forImageAt: image) == nil)
+
+        try await source.setCaptureDate(corrected, for: asset)
+        try await source.setCaptureDate(nil, for: asset)
+        #expect(source.captureDate(for: asset) == shot)
+        #expect(try Sidecar.read(forImageAt: image) == nil)
+    }
+
     @Test func detailsOfAnUnknownPhotoFallBackToTheListing() async throws {
         let root = try makeFolder()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -142,7 +194,7 @@ struct FolderLibrarySourceTests {
         await source.load()
         await wait { source.assets.count == 2 && !source.isScanning }
         let asset = try #require(source.assets.first)
-        #expect(source.capabilities == [.rating, .flag, .keywords])
+        #expect(source.capabilities == [.rating, .flag, .keywords, .captureDate])
 
         try await source.setFlag(.rejected, for: asset)
         try await source.setKeywords([" lapland", "", "winter "], for: asset)

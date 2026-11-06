@@ -200,6 +200,7 @@ nonisolated extension CatalogItem {
         flag = sidecar?.flag ?? .none
         keywords = sidecar?.keywords ?? []
         hasEdit = sidecar?.recipeData != nil
+        captureDateOverride = sidecar?.captureDate
         sidecarModified = modified
     }
 }

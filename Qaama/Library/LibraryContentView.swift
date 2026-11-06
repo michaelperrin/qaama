@@ -12,11 +12,31 @@ struct LibraryContentView: View {
     @State private var selection: Set<LibraryAsset.ID> = []
     /// One setting for the grid and the editor, so the column stays put when a photo is opened.
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
+    /// The Adjust Date & Time dialog, opened from the Image menu, the grid's context menu or the Info panel.
+    @State private var dateEdit: CaptureDateEditModel?
+    @Environment(\.undoManager) private var undoManager
 
     var body: some View {
         content
             // View › Show Inspector acts on this window, grid or editor.
             .focusedSceneValue(\.hasInspector, true)
+            .focusedSceneValue(\.adjustDateAction, adjustDateAction)
+            // Above both the grid and the editor: the Image menu opens it from either.
+            .sheet(item: $dateEdit) { model in
+                CaptureDateEditView(model: model, undoManager: undoManager) { dateEdit = nil }
+            }
+    }
+
+    /// Image › Adjust Date & Time…: the photo open in the editor, else the grid's selection; nil
+    /// (the command is disabled) when there is neither, or the source can't store a corrected date.
+    /// The photos are looked up when the command runs, not on every update of the view.
+    private var adjustDateAction: AdjustDateAction? {
+        guard source.capabilities.contains(.captureDate) else { return nil }
+        if let editorSession {
+            return AdjustDateAction { adjustDate(of: [editorSession.model.asset].compactMap(\.self)) }
+        }
+        guard !selection.isEmpty else { return nil }
+        return AdjustDateAction { adjustDate(of: selection.compactMap { source.asset(id: $0) }) }
     }
 
     @ViewBuilder
@@ -34,7 +54,8 @@ struct LibraryContentView: View {
                 }
         } else {
             HStack(spacing: 0) {
-                AssetGridView(source: source, selection: $selection) { editorSession = EditorSession(assetID: $0, source: source) }
+                AssetGridView(source: source, selection: $selection, onOpen: { editorSession = EditorSession(assetID: $0, source: source) },
+                              onAdjustDate: adjustDate)
                     .safeAreaInset(edge: .top, spacing: 0) {
                         if let notice = source.indexingNotice {
                             IndexingNoticeView(notice: notice, progress: source.indexingProgress)
@@ -45,7 +66,7 @@ struct LibraryContentView: View {
                 // The Info form is light: unlike the editor's, it is simply rebuilt when shown again.
                 if isInspectorVisible {
                     Divider()
-                    LibraryInspector(source: source, selection: selection)
+                    LibraryInspector(source: source, selection: selection, onAdjustDate: adjustDate)
                         .frame(width: EditorInspector.width)
                 }
             }
@@ -60,6 +81,11 @@ struct LibraryContentView: View {
             .searchable(text: searchText, placement: .toolbar, prompt: "Search names and keywords")
             .searchSuggestions {}
         }
+    }
+
+    private func adjustDate(of assets: [LibraryAsset]) {
+        guard !assets.isEmpty else { return }
+        dateEdit = CaptureDateEditModel(assets: assets, source: source)
     }
 
     /// Returns to the grid, from the editor's Close button or the toolbar's Back button.

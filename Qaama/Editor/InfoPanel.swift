@@ -7,6 +7,8 @@ import SwiftUI
 struct InfoPanel: View {
     let metadata: ImageMetadata?
     let fileName: String?
+    /// Opens the date correction when the place showing the panel offers it; nil hides the button.
+    var onAdjustDate: (() -> Void)?
 
     var body: some View {
         if let metadata {
@@ -22,8 +24,18 @@ struct InfoPanel: View {
             if metadata.pixelWidth > 0, metadata.pixelHeight > 0 {
                 LabeledContent("Size", value: "\(metadata.pixelWidth) × \(metadata.pixelHeight)")
             }
-            if let date = metadata.captureDate {
-                LabeledContent("Captured", value: date.formatted(date: .abbreviated, time: .shortened))
+            if metadata.captureDate != nil || onAdjustDate != nil {
+                let date = metadata.captureDate?.formatted(date: .abbreviated, time: .shortened) ?? "No date"
+                if let onAdjustDate {
+                    // The date itself is the button: an icon next to it pushed the value onto a second line.
+                    LabeledContent("Captured") {
+                        Button(date, action: onAdjustDate)
+                            .buttonStyle(.link)
+                            .help("Adjust the date and time")
+                    }
+                } else {
+                    LabeledContent("Captured", value: date)
+                }
             }
         } else {
             Text("No metadata").foregroundStyle(.secondary)

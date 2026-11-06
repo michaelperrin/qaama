@@ -52,6 +52,16 @@ can feed a website one day. Dates are when the feature landed.
 - Star ratings 0–5, stored natively in Photos and in a sidecar file for folders (2026-10-29/30).
 - Pick / reject flags for folder photos, with P, X and U shortcuts (2026-10-30).
 - Keywords, native in Photos and in the sidecar for folders (2026-10-30).
+- Adjust Date & Time: correct when photos were taken, for one photo or a whole selection, from
+  the Image menu (for the grid's selection or the photo open in the editor), the thumbnails'
+  context menu or by clicking the date in the Info panel. Either give a date, or
+  shift each photo from its own date by years, months, days, hours and minutes, later or
+  earlier (a camera clock that was wrong or reset, another time zone). The dialog shows the
+  before and after of each selected photo, one at a time, next to its thumbnail; entering the
+  real date of one photo there derives the shift for all of them. Originals are never
+  rewritten: the correction is stored in Photos' database or in the sidecar for folders, the
+  library sorts by it, and exports carry it in their EXIF. The JPEG twin of a RAW follows.
+  Undoable (2026-11-06).
 
 ### Data
 - Non-destructive: originals are never modified. Edits live in Photos adjustment data or in a

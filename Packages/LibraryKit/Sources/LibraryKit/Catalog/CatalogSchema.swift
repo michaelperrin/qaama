@@ -127,6 +127,14 @@ nonisolated enum CatalogSchema {
                                arguments: [SearchText.fold(fileName), SearchText.foldedList(keywords), id])
             }
         }
+
+        migrator.registerMigration("v5-capture-date-override") { db in
+            // The capture date the user corrected, mirrored from the sidecar like the other decisions;
+            // `captureDate` stays what the header says, so removing the correction needs no re-read.
+            try db.alter(table: "item") { t in
+                t.add(column: "captureDateOverride", .datetime)
+            }
+        }
         return migrator
     }
 }

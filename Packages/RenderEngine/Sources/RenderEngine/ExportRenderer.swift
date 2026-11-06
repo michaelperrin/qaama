@@ -4,6 +4,7 @@ import CoreImage.CIFilterBuiltins
 import EditModel
 import Foundation
 import ImageIO
+import ImageIOKit
 import UniformTypeIdentifiers
 
 /// A photo to export: its decoded pixels, the recipe to render, the model masks already resolved
@@ -14,12 +15,16 @@ public nonisolated struct ExportInput: Sendable {
     public var recipe: EditRecipe
     public var masks: [UUID: CIImage]
     public var metadataURL: URL?
+    /// The capture date the user corrected in the library, written in place of the original's; nil
+    /// keeps what the original says.
+    public var captureDate: Date?
 
-    public init(image: CIImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:], metadataURL: URL? = nil) {
+    public init(image: CIImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:], metadataURL: URL? = nil, captureDate: Date? = nil) {
         self.image = image
         self.recipe = recipe
         self.masks = masks
         self.metadataURL = metadataURL
+        self.captureDate = captureDate
     }
 }
 
@@ -66,7 +71,15 @@ public nonisolated enum ExportRenderer {
     /// Full export to encoded bytes.
     public static func export(_ input: ExportInput, settings: ExportSettings, watermarkPicture: CIImage? = nil) async throws -> Data {
         let image = await render(input, settings: settings, watermarkPicture: watermarkPicture)
-        return try encode(image, settings: settings, metadata: input.metadataURL.flatMap { metadata(of: $0, policy: settings.metadata) })
+        return try encode(image, settings: settings, metadata: metadata(for: input, policy: settings.metadata))
+    }
+
+    /// What the exported file says about itself: the original's metadata filtered by the policy, with
+    /// the user's corrections on top. Stripping everything strips the corrections too.
+    public static func metadata(for input: ExportInput, policy: ExportMetadataPolicy) -> [CFString: Any]? {
+        let kept = input.metadataURL.flatMap { metadata(of: $0, policy: policy) }
+        guard let captureDate = input.captureDate, policy != .strip else { return kept }
+        return ImageMetadataWriter.settingCaptureDate(captureDate, in: kept ?? [:])
     }
 
     /// The original's metadata filtered by the policy; nil strips everything.

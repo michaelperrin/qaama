@@ -26,7 +26,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     public private(set) var loadError: String?
 
     public var capabilities: Set<LibraryCapability> {
-        [.rating, .flag, .keywords]
+        [.rating, .flag, .keywords, .captureDate]
     }
 
     public var queryCapabilities: Set<QueryCapability> {
@@ -221,6 +221,25 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         }
     }
 
+    public func captureDate(for asset: LibraryAsset) -> Date? {
+        guard let uuid = UUID(uuidString: asset.id) else { return nil }
+        return itemsByID[uuid]?.effectiveCaptureDate
+    }
+
+    /// The correction goes into the sidecar; the image keeps its header. A date equal to the header's
+    /// is no correction at all, so undoing one leaves no trace of it.
+    public func setCaptureDate(_ date: Date?, for asset: LibraryAsset) async throws {
+        try await updateSidecar(for: asset) { sidecar, item in
+            var correction = date
+            if let date, let own = item.captureDate, abs(date.timeIntervalSince(own)) < 1 {
+                correction = nil
+            }
+            sidecar.captureDate = correction
+            item.captureDateOverride = sidecar.captureDate
+        }
+        logger.notice("Capture date of \(asset.id, privacy: .public) \(date == nil ? "back to the file's" : "corrected", privacy: .public)")
+    }
+
     public func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo {
         AssetResourceInfo(isRAW: asset.isRAW, hasJPEGTwin: asset.pairedAssetID != nil, originalFileName: fileURL(for: asset)?.lastPathComponent)
     }
@@ -231,7 +250,12 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         guard let uuid = UUID(uuidString: asset.id), let item = itemsByID[uuid] else { return AssetDetails(asset) }
         let url = folderURL.appendingPathComponent(item.relativePath)
         let header = await Task.detached(priority: .userInitiated) { try? ImageMetadataReader.read(url) }.value
-        return AssetDetails(fileName: item.fileName, metadata: header ?? ImageMetadata(item))
+        var metadata = header ?? ImageMetadata(item)
+        // Read again after the wait: the correction may have changed meanwhile.
+        if let corrected = itemsByID[uuid]?.captureDateOverride {
+            metadata?.captureDate = corrected
+        }
+        return AssetDetails(fileName: item.fileName, metadata: metadata)
     }
 
     public func editingInput(for asset: LibraryAsset) async throws -> EditingInput {
@@ -316,7 +340,7 @@ nonisolated extension LibraryAsset {
             id: item.id.uuidString,
             pixelWidth: item.pixelWidth ?? 0,
             pixelHeight: item.pixelHeight ?? 0,
-            creationDate: item.captureDate ?? item.contentModified,
+            creationDate: item.effectiveCaptureDate ?? item.contentModified,
             isFavorite: false,
             rating: item.rating,
             flag: item.flag,
