@@ -66,7 +66,7 @@ struct LibraryQueryToolbar: ToolbarContent {
                 if supports.contains(.favorite) {
                     Toggle("Favorites Only", isOn: query.favoritesOnly)
                 }
-                if supports.contains(.raw) {
+                if supports.contains(.pairedJPEGs) {
                     Divider()
                     Toggle("Show JPEG Twins of RAW Files", isOn: query.includesPairedJPEGs)
                 }

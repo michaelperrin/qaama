@@ -8,7 +8,8 @@ import OSLog
 /// The catalog is a cache of what the folders and sidecars say (`docs/catalogue.md`): it can be
 /// deleted and rebuilt. Thread-safe; calls can come from any actor.
 public final nonisolated class CatalogStore: Sendable {
-    private let writer: any DatabaseWriter
+    /// Shared with the other stores of the catalog file (`PhotosIndexStore`).
+    let writer: any DatabaseWriter
     private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "CatalogStore")
 
     /// Opens (or creates) the catalog at `url`, applying pending migrations.
@@ -173,23 +174,29 @@ public final nonisolated class CatalogStore: Sendable {
 
     // MARK: - Search
 
-    /// Full-text search on file names and keywords, within one folder or across all.
+    /// Items whose file name or keywords hold every word of `text` (see `SearchText`), within one folder
+    /// or across all. Empty when `text` has no word.
     public func search(_ text: String, inFolder folderID: UUID? = nil) async throws -> [CatalogItem] {
-        guard let pattern = FTS5Pattern(matchingAllPrefixesIn: text) else { return [] }
-        return try await writer.read { db in
-            // The FTS table mirrors `item` row by row (synchronized at creation), so rowids match.
-            var sql = """
-            SELECT item.* FROM item
-            JOIN item_fts ON item_fts.rowid = item.rowid
-            WHERE item_fts MATCH ?
-            """
-            var arguments: StatementArguments = [pattern]
-            if let folderID {
-                sql += " AND item.folderID = ?"
-                arguments += [folderID]
-            }
-            return try CatalogItem.fetchAll(db, sql: sql, arguments: arguments)
+        var (clauses, arguments) = Self.searchClauses(for: text)
+        guard !clauses.isEmpty else { return [] }
+        if let folderID {
+            clauses.append("item.folderID = ?")
+            arguments += [folderID]
         }
+        let sql = "SELECT item.* FROM item WHERE " + clauses.joined(separator: " AND ")
+        return try await writer.read { [arguments] db in try CatalogItem.fetchAll(db, sql: sql, arguments: arguments) }
+    }
+
+    /// One condition per word typed: it must be in the folded file name or in the folded keywords.
+    private static func searchClauses(for text: String) -> (clauses: [String], arguments: StatementArguments) {
+        var clauses: [String] = []
+        var arguments = StatementArguments()
+        for word in SearchText.words(in: text) {
+            let pattern = SearchText.likePattern(containing: word)
+            clauses.append("(item.foldedName LIKE ? ESCAPE '\\' OR item.foldedKeywords LIKE ? ESCAPE '\\')")
+            arguments += [pattern, pattern]
+        }
+        return (clauses, arguments)
     }
 
     /// Relative paths of every file in the folder, for building the directory tree.
@@ -201,19 +208,16 @@ public final nonisolated class CatalogStore: Sendable {
 
     // MARK: - Queries
 
-    /// Builds the SQL of a `LibraryQuery` on a folder. Hand-written so the full-text join and the
-    /// typed filters share one path.
+    /// Builds the SQL of a `LibraryQuery` on a folder. Hand-written so the search and the typed filters
+    /// share one path.
     static func statement(folderID: UUID, query: LibraryQuery) -> (sql: String, arguments: StatementArguments) {
         var sql = "SELECT item.* FROM item"
         var clauses = ["item.folderID = ?", "item.isMissing = 0"]
         var arguments: StatementArguments = [folderID]
 
-        let needle = query.searchText.trimmingCharacters(in: .whitespaces)
-        if !needle.isEmpty, let pattern = FTS5Pattern(matchingAllPrefixesIn: needle) {
-            sql += " JOIN item_fts ON item_fts.rowid = item.rowid"
-            clauses.append("item_fts MATCH ?")
-            arguments += [pattern]
-        }
+        let search = searchClauses(for: query.searchText)
+        clauses += search.clauses
+        arguments += search.arguments
         if let folderPath = query.folderPath, !folderPath.isEmpty {
             clauses.append("item.relativePath LIKE ? ESCAPE '\\'")
             let escaped = folderPath.replacingOccurrences(of: "\\", with: "\\\\")

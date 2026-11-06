@@ -292,13 +292,73 @@ Bibliothèque
       visible (requête de ressources à la demande), puis index local des assets Photos (RAW,
       jumeau) construit en arrière-plan pour filtrer, et option « éditer le RAW » via la
       ressource alternative.
-      Demandé par Michaël le 5/11/2026 comme prochaine étape (ses RAW sont dans Photos, où le
-      filtre RAW Only manque) : à démarrer dans une session neuve. Points à cadrer : où stocker
-      l'index (catalogue GRDB existant, table par identifiant local PhotoKit), construction en
-      arrière-plan par lots avec `PHAssetResource`, mise à jour par `PHPhotoLibraryChangeObserver`,
-      ce qu'on y met (RAW, jumeau JPEG, nom de fichier d'origine, donc aussi tri par nom et
-      recherche), et comment `PhotosLibrarySource` filtre ensuite (liste d'identifiants ou
-      collection en mémoire plutôt que prédicat PhotoKit).
+      Fait le 5/11/2026 : filtre RAW Only et option des jumeaux JPEG dans la photothèque Photos
+      et ses albums, navigation aux flèches comprise (elle suit la requête), index local tenu à
+      jour en arrière-plan. Conception dans `catalogue.md` §10. Mesures par une sonde temporaire
+      dans l'app, sur la photothèque de Michaël (74 065 images, originaux surtout dans iCloud,
+      build Debug) :
+      - **Le RAW ne demande pas d'index.** Photos tient un album intelligent RAW
+        (`smartAlbumRAW`) : 1 546 photos listées en 32 ms, identifiants énumérés en 34 ms.
+        Comparé aux ressources de 2 000 assets et aux noms des 74 065 : aucun écart, paires
+        RAW + JPEG comprises (79 paires en un seul asset dont le JPEG est l'original). Le filtre
+        et le badge RAW sont donc complets sans attendre l'index.
+      - **`PHAssetResource.assetResources(for:)` est trop lent pour un index** : 2,7 ms par
+        asset en séquentiel (1,4 ms à chaud), 2,0 ms à quatre en parallèle, pareil en
+        `userInitiated` et en `utility`, soit 200 s pour la photothèque. Pas d'API par lots.
+      - **`PHAssetExtendedMetadata`** (macOS 27) chargé avec les assets
+        (`prefetchAssetExtendedMetadata`) donne le nom d'origine et les mots-clés à 0,4 ms par
+        asset (0,8 ms à la demande), quels que soient la taille des lots (200, 1 000, 5 000),
+        leur dispersion et la priorité (0,41 ms en `utility`, 0,44 en `userInitiated`) : la
+        priorité basse ne coûte rien ici, contrairement au décodage RAW. Mêmes noms que par les
+        ressources sur 500 assets. Énumérer les 74 065 identifiants : 1,6 s.
+      - **Filtrage par prédicat** `localIdentifier IN` la liste des RAW : 47 ms (59 ms sans
+        filtre), `NOT IN` 80 ms, `index(of:)` correct, exact dans les 787 albums (84 contiennent
+        des RAW). `fetchAssets(withLocalIdentifiers:options:)` fait aussi bien mais sans portée
+        d'album. On garde donc un `PHFetchResult` (listage paresseux, tri natif, albums).
+      - **Index** : table `photosAsset` du catalogue (nom, seconde de prise de vue, RAW),
+        construite par lots de 1 000 en priorité `utility` : 37 s pour 74 065 photos, grille
+        utilisable pendant ce temps. Il sert à reconnaître les paires RAW + JPEG stockées en deux
+        assets (37 RAW et 38 JPEG chez Michaël, des Canon `IMG_…`), masquées par défaut comme
+        dans les dossiers ; l'option n'apparaît que s'il en existe. Tant que la passe tourne,
+        le sous-titre donne l'avancement et un bandeau prévient que des jumeaux peuvent encore
+        apparaître.
+      - **Reprise et mise à jour** par l'historique persistant de PhotoKit
+        (`PHPersistentChangeToken`, 608 octets archivés, et l'observateur de macOS 27) : un seul
+        chemin au lancement et en direct. Le jeton n'est enregistré qu'en fin de passe, une passe
+        interrompue reprend donc sur les assets absents de l'index. Relancement vérifié : rien
+        à relire, puis 3 assets relus en 59 ms après un changement.
+      - **Lancement** : l'ensemble RAW de la session précédente est lu dans le catalogue (34 ms)
+        puis corrigé par l'album intelligent en tâche de fond ; le lire d'abord dans PhotoKit
+        retardait le premier listage (350 à 370 ms de l'accès au listage, contre 160 ms).
+      - Leçons : l'accès dispersé à un `PHFetchResult` (`objects(at:)` sur des index épars)
+        coûte 2,8 ms par asset contre 0,02 ms en continu ; GRDB refuse d'écrire dans une tâche
+        annulée (`CancellationError`) ; les durées du lancement qui suit une recompilation
+        (demande d'accès Photos) ne sont pas représentatives, mesurer au lancement suivant.
+      Recherche par nom de fichier et par mot-clé dans Photos et ses albums, le 6/11/2026 :
+      - Les mots-clés sont lus dans la même passe que les noms (`PHAssetExtendedMetadata`) et
+        rangés dans leur table (`photosAssetKeyword`, une ligne par photo et mot-clé). La
+        migration vide l'index, reconstruit en 43 s avec les mots-clés (37 s sans).
+      - Recherche par sous-chaîne, sans casse ni accents (texte « plié » à l'indexation, simple
+        `LIKE` ensuite), chaque mot devant se trouver dans le nom ou dans un mot-clé : 6 à 19 ms
+        sur 74 065 photos, quel que soit le nombre de résultats. Choisie plutôt que FTS5, qui ne
+        cherche que par début de mot : « 1234 » ne trouverait pas `DSCF1234.RAF`. Les dossiers
+        ont été alignés le même jour à la demande de Michaël : même règle partagée
+        (`SearchText`), colonnes pliées dans `item`, table FTS5 `item_fts` retirée par migration.
+      - Le listage PhotoKit ralentit avec la taille de la liste d'identifiants : 39 ms pour
+        22 résultats, 50 ms pour 2 000, 100 ms pour 15 600, 200 ms pour 52 000 (« img »), sans
+        exception ni erreur, et pareil dans un album. `NOT IN` coûte autant à taille égale :
+        passer par le complément ne gagnerait que la moitié dans le pire cas, non retenu. Le
+        listage d'une recherche se fait donc hors du fil principal, 150 ms après la dernière
+        frappe ; RAW Only, jumeaux et recherche sont réunis en une seule liste avant PhotoKit.
+      - La recherche suit l'index : un mot-clé modifié dans Photos ou dans Qaama est relu par la
+        passe incrémentale puis la recherche en cours est relancée ; pendant une construction,
+        le bandeau dit que la recherche ne couvre que les photos déjà indexées.
+      Reste : tri par nom (demande un second chemin de listage, PhotoKit ne
+      triant pas ainsi). Filtres EXIF (objectif,
+      focale) : PhotoKit ne les expose pas et lire l'en-tête exige l'original sur le disque, or
+      ceux de Michaël sont surtout dans iCloud ; pistes à essayer : l'EXIF de l'aperçu local
+      s'il le porte, sinon une indexation au fil des ouvertures dans l'éditeur, avec une
+      couverture partielle affichée comme telle.
 - [ ] Inspecteur : métadonnées EXIF, histogramme, localisation (MapKit).
       Fait le 30/10/2026 : EXIF lu sur l'original (boîtier, objectif, exposition, dimensions,
       date) et histogramme RGB (`CIAreaHistogram` sur un échantillon 512 px, comptage en sRGB,

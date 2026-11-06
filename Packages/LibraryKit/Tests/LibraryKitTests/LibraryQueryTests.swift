@@ -31,6 +31,9 @@ struct LibraryQueryTests {
         query.searchText = "LAPL"
         #expect(query.matches(asset("a", keywords: ["Lapland"])) && !query.matches(asset("b", keywords: ["sea"])))
         #expect(!query.isUnfiltered)
+        // Same rule as the catalog: every word, anywhere, without accents.
+        query.searchText = "ete land"
+        #expect(query.matches(asset("a", keywords: ["Lapland", "Été"])) && !query.matches(asset("b", keywords: ["Lapland"])))
     }
 
     @Test func catalogStatementReflectsTheQuery() async throws {
@@ -60,6 +63,11 @@ struct LibraryQueryTests {
         query = LibraryQuery(); query.searchText = "sea"
         #expect(try await store.items(inFolder: folder.id, query: query).map(\.fileName) == ["a-sea.jpg"])
         query = LibraryQuery(); query.searchText = "sk"
+        #expect(try await store.items(inFolder: folder.id, query: query).map(\.fileName) == ["b-sky.jpg"])
+        // Any part of the name, and a search combined with a filter.
+        query = LibraryQuery(); query.searchText = "-s jpg"
+        #expect(try await store.items(inFolder: folder.id, query: query).count == 2)
+        query.minimumRating = 2
         #expect(try await store.items(inFolder: folder.id, query: query).map(\.fileName) == ["b-sky.jpg"])
     }
 }

@@ -23,6 +23,11 @@ struct LibraryContentView: View {
                 }
         } else {
             AssetGridView(source: source, selection: $selection) { editorSession = EditorSession(assetID: $0, source: source) }
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if let notice = source.indexingNotice {
+                        IndexingNoticeView(notice: notice, progress: source.indexingProgress)
+                    }
+                }
                 .navigationTitle(source.displayName)
                 .navigationSubtitle(subtitle)
                 .toolbar { LibraryQueryToolbar(source: source) }
@@ -50,6 +55,9 @@ struct LibraryContentView: View {
         }
         if let duration = source.lastLoadDuration {
             text += " · listed in \(duration.formatted(.units(allowed: [.seconds, .milliseconds], width: .narrow)))"
+        }
+        if let progress = source.indexingProgress {
+            text += " · indexing \(progress.fraction.formatted(.percent.precision(.fractionLength(0))))"
         }
         return text
     }

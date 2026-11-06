@@ -6,7 +6,7 @@ import OSLog
 /// the latter persisted in the catalog store.
 @Observable
 public final class LibraryCatalog {
-    public let photos = PhotosLibrarySource()
+    public let photos: PhotosLibrarySource
     public let photosAlbums = PhotosAlbumList()
     public private(set) var folders: [FolderLibrarySource] = []
     private var albumSources: [String: PhotosLibrarySource] = [:]
@@ -18,12 +18,16 @@ public final class LibraryCatalog {
     }
 
     private let store: CatalogStore
+    /// One index for the Photos library, shared by the library source and every album source.
+    private let photosIndex: PhotosIndex
     private let previewCache: PreviewCache
     private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "LibraryCatalog")
 
     public init(store: CatalogStore, previewCache: PreviewCache = PreviewCache()) {
         self.store = store
         self.previewCache = previewCache
+        photosIndex = PhotosIndex(store: PhotosIndexStore(catalog: store), library: PhotoKitIndexLibrary())
+        photos = PhotosLibrarySource(index: photosIndex)
     }
 
     /// Restores the folders saved in the catalog. Unresolvable bookmarks are dropped.
@@ -82,7 +86,7 @@ public final class LibraryCatalog {
         if let existing = albumSources[album.id] {
             return existing
         }
-        let source = PhotosLibrarySource(album: album)
+        let source = PhotosLibrarySource(album: album, index: photosIndex)
         albumSources[album.id] = source
         return source
     }

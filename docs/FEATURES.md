@@ -18,10 +18,21 @@ can feed a website one day. Dates are when the feature landed.
   second, rows built only when shown) (2026-10-29).
 - Sorting by capture date, modification date, rating or file name, ascending or descending
   (2026-10-30).
-- Filters: minimum rating, flag, edited only, RAW only, favorites only; search on file names and
-  keywords for folders (2026-10-30).
+- Filters: minimum rating, flag, edited only, RAW only, favorites only (2026-10-30).
+- Search on file names and keywords, in folders (2026-10-30) and in the Apple Photos library and
+  its albums (2026-11-06): any part of a name ("1234" finds DSCF1234.RAF), several words at
+  once, whatever the case and accents; combines with every filter and follows keywords as they
+  are edited.
+- RAW only in the Apple Photos library and in its albums too, complete from the first second
+  and combinable with the favorites and rating filters; stepping through photos in the editor
+  follows it (2026-11-05).
 - RAW + JPEG pairs shot together show as one photo with a RAW+JPG badge; the JPEG twin can be
-  shown on demand (2026-10-30).
+  shown on demand (2026-10-30). In Photos this also covers pairs imported as two separate
+  photos (2026-11-05).
+- Local index of the Photos library for what Photos itself can't filter on, built in the
+  background without slowing the grid, resumed where it stopped, and kept current with every
+  change made in Photos, even while Qaama was closed; the grid says so while the index is
+  still being built (2026-11-05).
 - Badges on thumbnails: rating, picked or rejected flag, edited, RAW (2026-10-29/30).
 - Thumbnails of edited photos show the real edit, from a cached preview (2026-10-29).
 - Multiple selection in the grid: click, ⌘-click, ⇧-click, ⌘A, Escape; double-click opens the

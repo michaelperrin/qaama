@@ -20,8 +20,9 @@ Rédigé le 29/10/2026. Répond aux points 1, 2, 4 et 5 de la dette d'architectu
    Il accélère le listage, le tri et les filtres, et retrouve les fichiers déplacés. Il peut
    être supprimé et reconstruit depuis les dossiers et les sidecars.
 3. **Photos reste maître chez lui.** Pour la photothèque Apple, PhotoKit fournit déjà identité
-   stable, métadonnées, notes et vignettes. Qaama n'indexe pas les photos Apple dans le
-   catalogue au MVP ; il rend le listage paresseux (voir §6).
+   stable, métadonnées, notes et vignettes. Le listage reste paresseux (voir §6) et le catalogue
+   ne garde des photos Apple que ce que PhotoKit ne sait pas interroger (voir §10), jamais une
+   décision de l'utilisateur.
 4. **Pas d'AppKit, pas de PhotoKit dans le catalogue** : Foundation, SQLite via GRDB, ImageIO.
 5. **Stockage : SQLite via GRDB** (MIT, v7.11, Swift 6 strict, macOS et iOS), derrière une
    abstraction `CatalogStore` pour ne pas lier le reste du code à la bibliothèque. Choisi
@@ -50,7 +51,7 @@ pas supprimé : s'il réapparaît, il est réassocié par les règles ci-dessus.
 
 ## 4. Modèle de données (SQLite via GRDB, dans `LibraryKit`)
 
-Tables `folder` et `item` (plus `item_fts` pour la recherche), migrations numérotées.
+Tables `folder` et `item`, migrations numérotées.
 
 ```
 folder
@@ -91,10 +92,19 @@ item
 
   -- liens
   pairedItemID: UUID?            RAW + JPEG de même racine de nom
+
+  -- recherche (6/11/2026)
+  foldedName: String             fileName sans casse ni accents
+  foldedKeywords: String         mots-clés sans casse ni accents, un par ligne
 ```
 
 Index : `(folderID, relativePath)` unique, `fileIdentifier`, `captureDate`, `rating`, `flag`.
-Table virtuelle FTS5 `item_fts` sur `fileName` et `keywords`.
+
+Recherche : la table FTS5 `item_fts` du départ a été retirée le 6/11/2026. Le plein texte ne
+trouve que des débuts de mots (« 1234 » ne trouvait pas `DSCF1234.RAF`) ; les noms de fichiers
+se cherchent par n'importe quelle partie. Dossiers et Photos partagent donc la même règle
+(`SearchText`) : textes « pliés » à l'écriture, `LIKE` à la lecture, chaque mot tapé devant se
+trouver dans le nom ou dans un mot-clé (voir §10 pour les mesures).
 
 Emplacement : `Application Support/fr.michaelperrin.qaama/catalog.sqlite` (WAL). Tests sur
 une `DatabaseQueue` en mémoire.
@@ -131,10 +141,11 @@ grille se met à jour par lots, sans attendre la fin. Priorité aux items visibl
 **Phase C, surveillance** (après le MVP) : FSEvents sur chaque dossier pour relancer A sur les
 sous-dossiers modifiés.
 
-Côté Photos, pas de catalogue : `PhotosLibrarySource` expose une collection paresseuse adossée
-au `PHFetchResult` (nombre et accès par index) au lieu d'enumérer 74 000 `PHAsset` au
-lancement. Les métadonnées de tri et de filtre viennent de `PHFetchOptions` (prédicats et
-tris natifs), ce qui évite de les dupliquer.
+Côté Photos, le listage ne passe pas par le catalogue : `PhotosLibrarySource` expose une
+collection paresseuse adossée au `PHFetchResult` (nombre et accès par index) au lieu d'enumérer
+74 000 `PHAsset` au lancement. Les métadonnées de tri et de filtre viennent de `PHFetchOptions`
+(prédicats et tris natifs), ce qui évite de les dupliquer. Ce que PhotoKit ne sait pas
+interroger vient de l'index du §10, sous forme de listes d'identifiants ajoutées au prédicat.
 
 ## 7. Ce qui change dans le code existant
 
@@ -171,3 +182,74 @@ tris natifs), ce qui évite de les dupliquer.
    `FolderBookmarkStore` et `FolderScanner`.
 6. Notes, drapeaux, mots-clés dans l'interface (grille et éditeur).
 7. Listage paresseux côté Photos.
+
+## 10. Index de la photothèque Photos (5/11/2026)
+
+Pour filtrer sur ce que PhotoKit ne sait pas interroger. Mesures détaillées dans `PLAN.md`
+(phase 2, Bibliothèque).
+
+**Ce qui n'a pas besoin d'index : le RAW.** Photos tient un album intelligent RAW
+(`PHAssetCollectionSubtype.smartAlbumRAW`), exact sur la photothèque de Michaël, paires RAW + JPEG
+comprises. Ses identifiants se lisent en quelques dizaines de millisecondes à chaque lancement et
+à chaque changement : le filtre RAW Only et le badge RAW sont complets tout de suite.
+
+**Ce qui en a besoin : le nom de fichier d'origine et les mots-clés.** Le nom sert à reconnaître
+les paires RAW + JPEG importées en deux assets (même nom à l'extension près, même seconde de prise
+de vue) ; nom et mots-clés servent à la recherche (6/11/2026), et le nom servira au tri.
+
+```
+photosAsset
+  id: String                     identifiant local PhotoKit
+  fileName: String?              nom d'origine, extension comprise
+  nameStem: String               nom sans extension, en minuscules ("" si inconnu), pour les paires
+  foldedName: String             nom sans casse ni accents, pour la recherche
+  captureSecond: Int?            date de prise de vue, en secondes entières
+  isRAW: Bool                    copie de l'album intelligent RAW, pour la jointure des paires
+
+photosAssetKeyword               une ligne par photo et mot-clé, supprimée avec la photo
+  assetID: String
+  keyword: String
+  folded: String                 mot-clé sans casse ni accents, pour la recherche
+
+photosIndexState                 une seule ligne
+  changeToken: Data?             PHPersistentChangeToken archivé ; nul tant qu'aucune passe n'a fini
+```
+
+Index : `(nameStem, captureSecond)` et `isRAW`. Même fichier SQLite que le reste du catalogue,
+derrière `PhotosIndexStore` : tout y est dérivé de PhotoKit, donc reconstructible, et supprimer
+le catalogue ne coûte qu'une demi-minute de réindexation en arrière-plan.
+
+**Pour la suite : une table par source de données, pas une table qui s'élargit.** `photosAsset`
+garde ce qui est lu ensemble dans la même passe et périmé ensemble. Ce qui a plusieurs valeurs
+par photo (mots-clés) ou vient d'une autre lecture, avec sa propre couverture et sa propre
+péremption (EXIF lu sur l'original), aura sa table, liée par l'identifiant de l'asset et
+supprimée en cascade : l'absence de ligne voudra dire « pas encore lu ».
+
+**Construction** (`PhotosIndexer`, par lots de 1 000, priorité `utility`) : les noms viennent de
+`PHAssetExtendedMetadata` chargé en bloc avec les assets (`prefetchAssetExtendedMetadata`,
+macOS 27), jamais des fichiers d'origine, qui sont pour la plupart dans iCloud. Deux chemins :
+
+- **avec un jeton** : `fetchPersistentChanges(since:)` donne les assets ajoutés, modifiés et
+  supprimés depuis la dernière passe, y compris pendant que Qaama était fermé ; seuls ceux-là
+  sont relus. L'observateur de changements persistants (macOS 27) déclenche la même passe en
+  direct, une seconde après le dernier changement.
+- **sans jeton** (premier lancement, ou passe interrompue) : la liste des identifiants de la
+  photothèque est comparée à l'index, les absents sont lus, les disparus retirés. Le jeton, pris
+  avant le listage, n'est enregistré qu'en fin de passe : c'est ce qui fait la reprise.
+
+Un jeton que Photos ne reconnaît plus (historique trop ancien) vide l'index, qui se reconstruit.
+
+**Recherche** (`PhotosIndexStore.search`) : chaque mot tapé doit se trouver, comme sous-chaîne
+et sans casse ni accents, dans le nom ou dans un mot-clé. Les textes sont « pliés » à
+l'indexation (`SearchFolding`), la requête est un simple `LIKE` : 6 à 19 ms sur 74 000 photos.
+Les identifiants trouvés rejoignent le prédicat ; comme PhotoKit ralentit avec la longueur de la
+liste (200 ms pour 52 000), ce listage-là se fait hors du fil principal (`PhotosListing`).
+
+**Filtrage** (`PhotosFetchPredicate`) : `localIdentifier IN` la liste des RAW pour RAW Only,
+`NOT (localIdentifier IN …)` la liste des jumeaux JPEG pour les masquer. Le résultat reste un
+`PHFetchResult` : listage paresseux, tri natif, cumul avec favoris et note, albums, suivi des
+changements et `index(of:)` pour la navigation dans l'éditeur.
+
+**PhotoKit reste derrière un protocole** (`PhotosIndexLibrary`, implémenté par
+`PhotoKitIndexLibrary`) : l'indexeur, le store et `PhotosIndex` se testent avec une fausse
+photothèque en mémoire.

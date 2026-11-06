@@ -30,7 +30,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     }
 
     public var queryCapabilities: Set<QueryCapability> {
-        [.sortByRating, .sortByFileName, .rating, .flag, .edited, .raw, .search]
+        [.sortByRating, .sortByFileName, .rating, .flag, .edited, .raw, .pairedJPEGs, .search]
     }
 
     /// Sorting and filtering, answered by the catalog; changing it restarts the observation.

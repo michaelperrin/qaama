@@ -32,7 +32,8 @@ let package = Package(
         ),
         .testTarget(
             name: "LibraryKitTests",
-            dependencies: ["LibraryKit"]
+            // GRDB directly too: migration tests build a catalog as an earlier version left it.
+            dependencies: ["LibraryKit", .product(name: "GRDB", package: "GRDB.swift")]
         ),
     ]
 )

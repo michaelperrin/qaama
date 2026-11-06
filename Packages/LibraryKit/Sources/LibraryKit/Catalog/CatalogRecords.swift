@@ -31,7 +31,10 @@ public nonisolated struct CatalogItem: Codable, Hashable, Sendable, Identifiable
     public var folderID: UUID
     /// Path from the folder root, e.g. `Trip/DSCF0001.RAF`.
     public var relativePath: String
-    public var fileName: String
+    public var fileName: String {
+        didSet { foldedName = SearchText.fold(fileName) }
+    }
+
     /// Uniform type identifier, e.g. `com.fuji.raw-image`.
     public var fileType: String
     public var fileSize: Int64
@@ -61,11 +64,19 @@ public nonisolated struct CatalogItem: Codable, Hashable, Sendable, Identifiable
     // User decisions, mirrored from the sidecar.
     public var rating: Int
     public var flag: ItemFlag
-    public var keywords: [String]
+    public var keywords: [String] {
+        didSet { foldedKeywords = SearchText.foldedList(keywords) }
+    }
+
     public var hasEdit: Bool
     public var sidecarModified: Date?
 
     public var pairedItemID: UUID?
+
+    /// `fileName` and `keywords` as search compares them (`SearchText`), stored so the catalog only has
+    /// to look for a substring. Kept in step by the observers above.
+    public private(set) var foldedName: String
+    public private(set) var foldedKeywords: String
 
     public init(id: UUID = UUID(), folderID: UUID, relativePath: String, fileType: String, fileSize: Int64,
                 contentModified: Date, fileIdentifier: Data? = nil, isRAW: Bool = false)
@@ -74,6 +85,8 @@ public nonisolated struct CatalogItem: Codable, Hashable, Sendable, Identifiable
         self.folderID = folderID
         self.relativePath = relativePath
         fileName = (relativePath as NSString).lastPathComponent
+        foldedName = SearchText.fold(fileName)
+        foldedKeywords = ""
         self.fileType = fileType
         self.fileSize = fileSize
         self.contentModified = contentModified

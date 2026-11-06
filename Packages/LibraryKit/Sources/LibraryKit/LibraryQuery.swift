@@ -69,14 +69,8 @@ public nonisolated struct LibraryQuery: Hashable, Sendable {
         if favoritesOnly, !asset.isFavorite {
             return false
         }
-        let needle = searchText.trimmingCharacters(in: .whitespaces)
-        if !needle.isEmpty {
-            let haystack = (asset.keywords + [asset.id]).joined(separator: " ")
-            if haystack.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) == nil {
-                return false
-            }
-        }
-        return true
+        // These sources have no file name: the identifier stands in for it.
+        return SearchText.matches(searchText, in: asset.keywords + [asset.id])
     }
 
     /// In-memory ordering, for the same sources.
@@ -99,6 +93,8 @@ public nonisolated enum QueryCapability: Sendable, Hashable {
     case flag
     case edited
     case raw
+    /// RAW + JPEG pairs exist as two photos here, so the JPEG twins can be hidden or shown.
+    case pairedJPEGs
     case favorite
     case search
 }

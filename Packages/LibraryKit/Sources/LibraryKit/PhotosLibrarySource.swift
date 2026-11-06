@@ -27,14 +27,42 @@ public final class PhotosLibrarySource: LibrarySource {
     }
 
     /// Date and favorite are native; rating filter and sort are too on macOS 27, confirmed by a probe at
-    /// load time since PhotoKit doesn't document them. Flags don't exist in Photos; keywords can't be
-    /// queried natively.
-    public private(set) var queryCapabilities: Set<QueryCapability> = [.favorite]
+    /// load time since PhotoKit doesn't document them. RAW and the search on names and keywords come
+    /// from the local index, and so do the JPEG twins once it has found pairs stored as two photos.
+    /// Flags don't exist in Photos.
+    public var queryCapabilities: Set<QueryCapability> {
+        var supported = nativeCapabilities
+        if let index {
+            supported.formUnion([.raw, .search])
+            if !index.snapshot.twinIDs.isEmpty {
+                supported.insert(.pairedJPEGs)
+            }
+        }
+        return supported
+    }
+
+    private var nativeCapabilities: Set<QueryCapability> = [.favorite]
+
+    public var indexingProgress: IndexingProgress? {
+        index?.progress
+    }
+
+    /// Search and the hiding of JPEG twins wait for the index; the RAW set is complete from the start.
+    public var indexingNotice: String? {
+        guard indexingProgress != nil else { return nil }
+        if !searchText.isEmpty {
+            return "Still indexing the Photos library: the search only covers the photos indexed so far."
+        }
+        if !query.rawOnly, !query.includesPairedJPEGs {
+            return "Still indexing the Photos library: some JPEG twins of RAW photos may show until it finishes."
+        }
+        return nil
+    }
 
     public var query = LibraryQuery.default {
         didSet {
             guard query != oldValue, fetchResult != nil else { return }
-            refetch()
+            queryChanged()
         }
     }
 
@@ -52,9 +80,19 @@ public final class PhotosLibrarySource: LibrarySource {
 
     /// The album this source shows, or nil for the whole library.
     public let album: PhotosAlbum?
+    /// What PhotoKit can't filter on; shared by every Photos source. Nil leaves those filters out.
+    private let index: PhotosIndex?
+    /// The index answers the current listing was built with; a newer snapshot triggers a refetch.
+    @ObservationIgnored private var listedSnapshot = PhotosIndexSnapshot()
+    /// The text last searched in the index and the assets found for it; nil when nothing is searched.
+    @ObservationIgnored private var search: (text: String, matches: [String])?
+    @ObservationIgnored private var searchTask: Task<Void, Never>?
+    /// A listing costs tens of ms: one per pause in typing, not one per keystroke.
+    private static let typingDelay = Duration.milliseconds(150)
 
-    public init(album: PhotosAlbum? = nil) {
+    public init(album: PhotosAlbum? = nil, index: PhotosIndex? = nil) {
         self.album = album
+        self.index = index
     }
 
     /// Requests access if needed, then loads the photos, newest first, and starts tracking changes.
@@ -68,9 +106,16 @@ public final class PhotosLibrarySource: LibrarySource {
         }
 
         probeNativeQueries()
+        // The RAW set and the pairs already known take a few tens of ms; the rest runs in the background.
+        await index?.start()
+        followIndex()
+        if let index, !searchText.isEmpty {
+            search = await (searchText, (try? index.search(searchText)) ?? [])
+        }
         let clock = ContinuousClock()
         let start = clock.now
-        apply(fetchResult: fetchAssets())
+        let listing = listing(searchMatches: search?.matches)
+        apply(listing.fetch(), for: listing)
         lastLoadDuration = clock.now - start
         logger.notice("Fetched \(self.assets.count) photos in \(self.lastLoadDuration!.formatted(.units(allowed: [.milliseconds])), privacy: .public)")
 
@@ -98,18 +143,14 @@ public final class PhotosLibrarySource: LibrarySource {
     /// asset, so it happens for the tiles on screen only and the answer is cached.
     public func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo {
         if let cached = resourceInfos[asset.id] {
-            return cached
+            return cached.pairing(with: asset)
         }
         guard let phAsset = phAsset(for: asset.id) else { return AssetResourceInfo(asset) }
         let info = await Task.detached {
-            let photos = PHAssetResource.assetResources(for: phAsset).filter { $0.type == .photo || $0.type == .alternatePhoto }
-            let raw = photos.contains { UTType($0.uniformTypeIdentifier)?.conforms(to: .rawImage) == true }
-            let other = photos.contains { UTType($0.uniformTypeIdentifier)?.conforms(to: .rawImage) == false }
-            let name = (photos.first { $0.type == .photo } ?? photos.first)?.originalFilename
-            return AssetResourceInfo(isRAW: raw, hasJPEGTwin: raw && other, originalFileName: name)
+            AssetResourceInfo(resources: PHAssetResource.assetResources(for: phAsset))
         }.value
         resourceInfos[asset.id] = info
-        return info
+        return info.pairing(with: asset)
     }
 
     /// Keywords live in Photos' extended metadata, fetched per asset rather than for the whole listing.
@@ -276,49 +317,105 @@ public final class PhotosLibrarySource: LibrarySource {
         if accepts({ $0.sortDescriptors = [NSSortDescriptor(key: "rating", ascending: false)] }) {
             supported.insert(.sortByRating)
         }
-        queryCapabilities = supported
+        nativeCapabilities = supported
         logger.notice("PhotoKit native queries: rating filter \(supported.contains(.rating)), rating sort \(supported.contains(.sortByRating))")
     }
 
-    /// All photos, or those of the album when this source is scoped to one.
-    private func fetchAssets() -> PHFetchResult<PHAsset> {
-        if let album, let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [album.id], options: nil).firstObject {
-            return PHAsset.fetchAssets(in: collection, options: fetchOptions())
-        }
-        return PHAsset.fetchAssets(with: fetchOptions())
+    // MARK: - Search and index changes
+
+    /// The words to look for in the index; empty without an index, which leaves search unsupported.
+    private var searchText: String {
+        index == nil ? "" : query.searchText.trimmingCharacters(in: .whitespaces)
     }
 
-    /// Translates the query into PhotoKit's own sorting and predicates.
-    private func fetchOptions() -> PHFetchOptions {
-        let options = PHFetchOptions()
-        switch query.sort {
-        case .rating where queryCapabilities.contains(.sortByRating):
-            options.sortDescriptors = [
-                NSSortDescriptor(key: "rating", ascending: query.ascending),
-                NSSortDescriptor(key: "creationDate", ascending: false),
-            ]
-        case .modificationDate:
-            options.sortDescriptors = [NSSortDescriptor(key: "modificationDate", ascending: query.ascending)]
-        default:
-            options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: query.ascending)]
+    private func queryChanged() {
+        let text = searchText
+        if text == search?.text ?? "" {
+            searchTask?.cancel()
+            refetch()
+        } else if text.isEmpty {
+            searchTask?.cancel()
+            search = nil
+            refetch()
+        } else {
+            runSearch(after: Self.typingDelay)
         }
-        var predicates = [NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)]
-        if query.favoritesOnly {
-            predicates.append(NSPredicate(format: "isFavorite == YES"))
+    }
+
+    /// Asks the index for the assets matching the search text, then lists them, both off the main actor
+    /// so typing stays fluid. The listing in place stays until the answer is there.
+    private func runSearch(after delay: Duration = .zero) {
+        searchTask?.cancel()
+        let text = searchText
+        guard let index, !text.isEmpty else { return }
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled else { return }
+            do {
+                let clock = ContinuousClock()
+                let start = clock.now
+                let matches = try await index.search(text) ?? []
+                guard let self, !Task.isCancelled else { return }
+                // An index pass that changed nothing for this search isn't worth a new listing.
+                if search?.text == text, search?.matches == matches, index.snapshot == listedSnapshot {
+                    return
+                }
+                let found = clock.now
+                let listing = listing(searchMatches: matches)
+                let result = await Task.detached(priority: .userInitiated) { listing.fetch() }.value
+                // The query moved on while PhotoKit was listing: a newer search or refetch takes over.
+                guard !Task.isCancelled else { return }
+                search = (text, matches)
+                apply(result, for: listing)
+                logger.notice("Search: \(matches.count) matches in \((found - start).formatted(.units(allowed: [.milliseconds])), privacy: .public), \(self.assets.count) photos listed in \((clock.now - found).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
+            } catch {
+                self?.logger.error("Search failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
-        if query.minimumRating > 0, queryCapabilities.contains(.rating) {
-            predicates.append(NSPredicate(format: "rating >= %d", query.minimumRating))
+    }
+
+    /// Refetches when the index learns something the current listing was built without: the RAW set
+    /// changed, a pass found RAW + JPEG pairs, or names and keywords being searched were read.
+    private func followIndex() {
+        guard let index else { return }
+        withObservationTracking {
+            _ = index.snapshot
+            _ = index.contentVersion
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.indexChanged() }
         }
-        options.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
-        return options
+    }
+
+    private func indexChanged() {
+        if let index, fetchResult != nil {
+            if search != nil {
+                runSearch()
+            } else if index.snapshot != listedSnapshot {
+                refetch()
+            }
+        }
+        followIndex()
+    }
+
+    // MARK: - Listing
+
+    /// The current query, index answers and search results, frozen for one fetch.
+    private func listing(searchMatches: [String]?) -> PhotosListing {
+        PhotosListing(query: query, native: nativeCapabilities, index: index?.snapshot, searchMatches: searchMatches, albumID: album?.id)
     }
 
     private func refetch() {
         probeNativeQueries()
         let clock = ContinuousClock()
         let start = clock.now
-        apply(fetchResult: fetchAssets())
+        let listing = listing(searchMatches: search?.matches)
+        apply(listing.fetch(), for: listing)
         logger.notice("Refetched \(self.assets.count) photos in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
+    }
+
+    private func apply(_ result: PHFetchResult<PHAsset>, for listing: PhotosListing) {
+        listedSnapshot = listing.index ?? PhotosIndexSnapshot()
+        apply(fetchResult: result)
     }
 
     /// Exposes the fetch result as a lazy collection: a row is built only when the grid asks for it.
@@ -329,15 +426,16 @@ public final class PhotosLibrarySource: LibrarySource {
         imageManager.stopCachingImagesForAllAssets()
         prefetched = 0 ..< 0
         // The row closure must stay free of side effects: SwiftUI may walk the whole collection.
+        let snapshot = listedSnapshot
         assets = AssetCollection(count: result.count) { index in
-            Self.makeAsset(result.object(at: index))
+            Self.makeAsset(result.object(at: index), snapshot)
         }
     }
 
     public func asset(id: LibraryAsset.ID) -> LibraryAsset? {
         // Register the caller's dependency on the library: the cache below is not observed.
         _ = libraryVersion
-        return phAsset(for: id).map(Self.makeAsset)
+        return phAsset(for: id).map { Self.makeAsset($0, listedSnapshot) }
     }
 
     /// Asks the fetch result itself: no need to materialize every row of a large library.
@@ -357,7 +455,7 @@ public final class PhotosLibrarySource: LibrarySource {
         return fetched
     }
 
-    private static func makeAsset(_ asset: PHAsset) -> LibraryAsset {
+    private static func makeAsset(_ asset: PHAsset, _ snapshot: PhotosIndexSnapshot) -> LibraryAsset {
         LibraryAsset(
             id: asset.localIdentifier,
             pixelWidth: asset.pixelWidth,
@@ -366,7 +464,9 @@ public final class PhotosLibrarySource: LibrarySource {
             isFavorite: asset.isFavorite,
             rating: asset.rating.rawValue,
             modificationDate: asset.modificationDate,
-            hasEdit: asset.hasAdjustments
+            hasEdit: asset.hasAdjustments,
+            isRAW: snapshot.rawIDs.contains(asset.localIdentifier),
+            pairedAssetID: snapshot.pairedIDs[asset.localIdentifier]
         )
     }
 
@@ -392,5 +492,26 @@ public final class PhotosLibrarySource: LibrarySource {
         options.isNetworkAccessAllowed = true
         options.resizeMode = .fast
         return options
+    }
+}
+
+nonisolated extension AssetResourceInfo {
+    /// Reads what stands behind a Photos asset from its resources: the original and its alternate (the
+    /// other half of a RAW + JPEG pair); renders and adjustment data don't count.
+    init(resources: [PHAssetResource]) {
+        let photos = resources.filter { $0.type == .photo || $0.type == .alternatePhoto }
+        let raw = photos.contains { UTType($0.uniformTypeIdentifier)?.conforms(to: .rawImage) == true }
+        let other = photos.contains { UTType($0.uniformTypeIdentifier)?.conforms(to: .rawImage) == false }
+        let name = (photos.first { $0.type == .photo } ?? photos.first)?.filename
+        self.init(isRAW: raw, hasJPEGTwin: raw && other, originalFileName: name)
+    }
+
+    /// A RAW whose JPEG twin is a separate photo has no alternate resource, but it is still a pair.
+    func pairing(with asset: LibraryAsset) -> AssetResourceInfo {
+        var info = self
+        if isRAW, asset.pairedAssetID != nil {
+            info.hasJPEGTwin = true
+        }
+        return info
     }
 }

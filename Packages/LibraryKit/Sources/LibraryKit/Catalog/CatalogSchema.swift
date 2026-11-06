@@ -69,6 +69,64 @@ nonisolated enum CatalogSchema {
                 t.column("keywords")
             }
         }
+
+        migrator.registerMigration("v2-photos-index") { db in
+            // Index of the Apple Photos library (docs/catalogue.md §10): what PhotoKit can't query, one row
+            // per asset under its local identifier. Derived data only, rebuilt from the library at any time.
+            try db.create(table: "photosAsset") { t in
+                t.primaryKey("id", .text)
+                t.column("fileName", .text)
+                t.column("nameStem", .text).notNull()
+                t.column("captureSecond", .integer)
+                t.column("isRAW", .boolean).notNull().defaults(to: false)
+            }
+            // Pairing a RAW with its JPEG twin joins on name and capture time, starting from the RAW rows.
+            try db.create(index: "photosAsset_pair", on: "photosAsset", columns: ["nameStem", "captureSecond"])
+            try db.create(index: "photosAsset_isRAW", on: "photosAsset", columns: ["isRAW"])
+
+            try db.create(table: "photosIndexState") { t in
+                t.primaryKey("id", .integer).check { $0 == 1 }
+                t.column("changeToken", .blob)
+            }
+        }
+
+        migrator.registerMigration("v3-photos-search") { db in
+            // Search needs the keywords and a folded name of every asset, read in the same pass as the
+            // rest: the index starts over and is rebuilt in the background (half a minute for 74,000 photos).
+            try db.execute(sql: "DELETE FROM photosAsset")
+            try db.execute(sql: "DELETE FROM photosIndexState")
+            try db.alter(table: "photosAsset") { t in
+                t.add(column: "foldedName", .text).notNull().defaults(to: "")
+            }
+            // One row per asset and keyword rather than a list in a column of `photosAsset`: several
+            // values per photo, their own table (docs/catalogue.md §10).
+            try db.create(table: "photosAssetKeyword", options: .withoutRowID) { t in
+                t.column("assetID", .text).notNull().references("photosAsset", onDelete: .cascade)
+                t.column("keyword", .text).notNull()
+                t.column("folded", .text).notNull()
+                t.primaryKey(["assetID", "keyword"])
+            }
+        }
+
+        migrator.registerMigration("v4-folder-search") { db in
+            // Folders are searched like Photos (`SearchText`): by any part of a name, without case or
+            // accents. Folded copies and LIKE replace the full-text index, which only matched the start
+            // of words ("1234" didn't find DSCF1234.RAF).
+            try db.dropFTS5SynchronizationTriggers(forTable: "item_fts")
+            try db.drop(table: "item_fts")
+            try db.alter(table: "item") { t in
+                t.add(column: "foldedName", .text).notNull().defaults(to: "")
+                t.add(column: "foldedKeywords", .text).notNull().defaults(to: "")
+            }
+            for row in try Row.fetchAll(db, sql: "SELECT id, fileName, keywords FROM item") {
+                let id: DatabaseValue = row["id"]
+                let fileName: String = row["fileName"]
+                let keywordsJSON: String = row["keywords"]
+                let keywords = (try? JSONDecoder().decode([String].self, from: Data(keywordsJSON.utf8))) ?? []
+                try db.execute(sql: "UPDATE item SET foldedName = ?, foldedKeywords = ? WHERE id = ?",
+                               arguments: [SearchText.fold(fileName), SearchText.foldedList(keywords), id])
+            }
+        }
         return migrator
     }
 }

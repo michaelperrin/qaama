@@ -112,9 +112,51 @@ struct CatalogStoreTests {
         #expect(try await store.search("road").map(\.id) == [road.id])
         #expect(try await store.search("DSCF").map(\.id) == [aurora.id])
         #expect(try await store.search("zzz").isEmpty)
+        #expect(try await store.search("  ").isEmpty)
         road.keywords = ["aurora"]
         try await store.save(road)
         #expect(try await store.search("aurora").count == 2)
+    }
+
+    @Test func searchesByAnyPartWithoutCaseOrAccents() async throws {
+        let (store, folder) = try makeStore()
+        try await store.save(folder)
+        var fuji = item(in: folder, path: "Trip/DSCF1234.RAF")
+        fuji.keywords = ["Été", "Écosse"]
+        var canon = item(in: folder, path: "IMG_1299.CR2")
+        canon.keywords = ["Hiver"]
+        let named = item(in: folder, path: "Été 2024/100% crop.jpg")
+        try await store.save([fuji, canon, named])
+
+        // Any part of a name, not only the start of a word.
+        #expect(try await store.search("1234").map(\.id) == [fuji.id])
+        #expect(try await Set(store.search("12").map(\.id)) == [fuji.id, canon.id])
+        #expect(try await store.search(".cr2").map(\.id) == [canon.id])
+        // Accents and case don't count, in keywords as in names.
+        #expect(try await store.search("ete").map(\.id) == [fuji.id])
+        #expect(try await store.search("ECOSSE").map(\.id) == [fuji.id])
+        // Every word must be found, in the name or in a keyword.
+        #expect(try await store.search("hiver img").map(\.id) == [canon.id])
+        #expect(try await store.search("hiver dscf").isEmpty)
+        // The folder a file is in isn't part of its name; wildcards are plain characters.
+        #expect(try await store.search("2024").isEmpty)
+        #expect(try await store.search("0%").map(\.id) == [named.id])
+        #expect(try await store.search("img_").map(\.id) == [canon.id])
+    }
+
+    @Test func searchFollowsRenamesAndKeywordEdits() async throws {
+        let (store, folder) = try makeStore()
+        try await store.save(folder)
+        var photo = item(in: folder, path: "DSCF0001.RAF")
+        photo.keywords = ["aurora"]
+        try await store.save(photo)
+
+        photo.fileName = "Northern lights.RAF"
+        photo.keywords = ["night"]
+        try await store.save(photo)
+        #expect(try await store.search("dscf").isEmpty)
+        #expect(try await store.search("aurora").isEmpty)
+        #expect(try await store.search("lights night").map(\.id) == [photo.id])
     }
 
     @Test func observesChanges() async throws {

@@ -48,6 +48,27 @@ public protocol LibrarySource: AnyObject, Observable {
     func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo
     /// The grid shows the row at `index`: sources may warm the thumbnails around it.
     func prefetchThumbnails(around index: Int, pixelSize: CGSize)
+    /// How far a background index this source's listing relies on is, or nil when none is being built.
+    var indexingProgress: IndexingProgress? { get }
+    /// A sentence to show with the photos while indexing makes the current listing provisional, or nil
+    /// when what is shown is final.
+    var indexingNotice: String? { get }
+}
+
+/// Progress of a background indexing pass.
+public nonisolated struct IndexingProgress: Hashable, Sendable {
+    public var done: Int
+    public var total: Int
+
+    public init(done: Int, total: Int) {
+        self.done = done
+        self.total = total
+    }
+
+    /// From 0 to 1; 1 when there is nothing to index.
+    public var fraction: Double {
+        total > 0 ? min(Double(done) / Double(total), 1) : 1
+    }
 }
 
 /// Which kind of files stand behind a photo.
@@ -102,6 +123,14 @@ public extension LibrarySource {
     }
 
     func prefetchThumbnails(around _: Int, pixelSize _: CGSize) {}
+
+    var indexingProgress: IndexingProgress? {
+        nil
+    }
+
+    var indexingNotice: String? {
+        nil
+    }
 }
 
 /// Decisions a source can persist about a photo.
