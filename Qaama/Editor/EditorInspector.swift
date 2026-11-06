@@ -58,6 +58,7 @@ struct EditorInspector: View {
 /// it applies the crop. The model stays the source of truth for that mode, the tab follows it.
 struct InspectorControls: ViewModifier {
     static let restingTabKey = "editorInspectorTab"
+    /// Whether the window's right column is shown; the grid's Info panel follows the same setting.
     static let visibilityKey = "editorInspectorVisible"
 
     let model: EditorModel
@@ -77,10 +78,7 @@ struct InspectorControls: ViewModifier {
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button { isVisible.toggle() } label: {
-                        Label(isVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")
-                    }
-                    .help(isVisible ? "Hide the inspector" : "Show the inspector")
+                    InspectorVisibilityButton(isVisible: $isVisible)
                 }
             }
             .onAppear { tab = restingTab == .crop ? .adjustments : restingTab }
@@ -109,6 +107,18 @@ struct InspectorControls: ViewModifier {
             .disabled(!model.isOpen)
             .hidden()
             .frame(width: 0, height: 0)
+    }
+}
+
+/// The toolbar button that shows or hides the window's right column, in the editor and in the grid.
+struct InspectorVisibilityButton: View {
+    @Binding var isVisible: Bool
+
+    var body: some View {
+        Button { isVisible.toggle() } label: {
+            Label(isVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")
+        }
+        .help(isVisible ? "Hide the inspector" : "Show the inspector")
     }
 }
 

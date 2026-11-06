@@ -46,6 +46,10 @@ public protocol LibrarySource: AnyObject, Observable {
     func prioritize(_ asset: LibraryAsset)
     /// What files back the asset (RAW, RAW + JPEG), fetched on demand when the listing doesn't know.
     func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo
+    /// File name and header of a photo, for the Info panel of the grid. Unless `allowingDownload` is
+    /// true (the user asked for it), nothing is downloaded: a source whose original is elsewhere
+    /// answers with what it knows and sets `isOriginalInCloud`.
+    func details(for asset: LibraryAsset, allowingDownload: Bool) async -> AssetDetails
     /// The grid shows the row at `index`: sources may warm the thumbnails around it.
     func prefetchThumbnails(around index: Int, pixelSize: CGSize)
     /// How far a background index this source's listing relies on is, or nil when none is being built.
@@ -120,6 +124,10 @@ public extension LibrarySource {
 
     func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo {
         AssetResourceInfo(asset)
+    }
+
+    func details(for asset: LibraryAsset, allowingDownload _: Bool) async -> AssetDetails {
+        AssetDetails(asset)
     }
 
     func prefetchThumbnails(around _: Int, pixelSize _: CGSize) {}

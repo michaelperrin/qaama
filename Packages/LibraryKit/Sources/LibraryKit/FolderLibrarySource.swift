@@ -225,6 +225,15 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         AssetResourceInfo(isRAW: asset.isRAW, hasJPEGTwin: asset.pairedAssetID != nil, originalFileName: fileURL(for: asset)?.lastPathComponent)
     }
 
+    /// The header is read on the spot (a few milliseconds): it holds the location, which the catalog
+    /// doesn't keep. The catalog answers when the file can't be reached (its volume is away).
+    public func details(for asset: LibraryAsset, allowingDownload _: Bool) async -> AssetDetails {
+        guard let uuid = UUID(uuidString: asset.id), let item = itemsByID[uuid] else { return AssetDetails(asset) }
+        let url = folderURL.appendingPathComponent(item.relativePath)
+        let header = await Task.detached(priority: .userInitiated) { try? ImageMetadataReader.read(url) }.value
+        return AssetDetails(fileName: item.fileName, metadata: header ?? ImageMetadata(item))
+    }
+
     public func editingInput(for asset: LibraryAsset) async throws -> EditingInput {
         guard let url = fileURL(for: asset) else { throw LibrarySourceError.assetUnavailable }
         let recipeData = await Task.detached { try? Sidecar.read(forImageAt: url)?.recipeData }.value

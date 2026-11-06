@@ -14,6 +14,19 @@ extension FocusedValues {
     }
 }
 
+/// True in a window that has the inspector column, next to the grid or in the editor, for
+/// View › Show Inspector.
+struct FocusedInspectorKey: FocusedValueKey {
+    typealias Value = Bool
+}
+
+extension FocusedValues {
+    var hasInspector: Bool? {
+        get { self[FocusedInspectorKey.self] }
+        set { self[FocusedInspectorKey.self] = newValue }
+    }
+}
+
 /// What File › Export… does in the key window: export the open photo, or the grid's selection.
 struct ExportAction {
     let run: () -> Void
@@ -35,9 +48,10 @@ extension FocusedValues {
 }
 
 /// File › Export…, View › Show Inspector, and Image › Adjustments: copy, paste, create a preset.
-/// Act on the focused editor.
+/// Act on the key window: its inspector column, its export, its focused editor.
 struct EditorCommands: Commands {
     @FocusedValue(\.editor) private var editor
+    @FocusedValue(\.hasInspector) private var hasInspector
     @FocusedValue(\.exportAction) private var exportAction
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
 
@@ -45,7 +59,7 @@ struct EditorCommands: Commands {
         CommandGroup(after: .sidebar) {
             Button(isInspectorVisible ? "Hide Inspector" : "Show Inspector") { isInspectorVisible.toggle() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
-                .disabled(editor == nil)
+                .disabled(hasInspector != true)
         }
         CommandGroup(after: .saveItem) {
             Divider()

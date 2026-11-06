@@ -54,6 +54,62 @@ struct FolderLibrarySourceTests {
         #expect(names.allSatisfy { $0?.hasSuffix(".jpg") == true || $0?.hasSuffix(".png") == true || $0?.hasSuffix(".JPG") == true })
     }
 
+    @Test func detailsNameTheFileAndGiveItsHeaderWhetherIndexedOrNot() async throws {
+        let root = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try makeSource(root: root)
+        await source.load()
+        await wait { source.assets.count == 2 }
+
+        // Asked as soon as the files are listed: the metadata phase may not have read them yet.
+        for asset in source.assets {
+            let early = await source.details(for: asset, allowingDownload: false)
+            #expect(early.fileName == "a.png" || early.fileName == "b.png")
+            #expect(early.metadata?.pixelWidth == 12 && early.metadata?.pixelHeight == 6)
+            #expect(!early.isOriginalInCloud)
+        }
+
+        await wait { source.assets.allSatisfy { $0.pixelWidth == 12 } && !source.isScanning }
+        let names = await Set(source.assets.asyncMap { await source.details(for: $0, allowingDownload: false).fileName })
+        #expect(names == ["a.png", "b.png"])
+        let indexed = try await source.details(for: #require(source.assets.first), allowingDownload: false)
+        #expect(indexed.metadata?.pixelWidth == 12 && indexed.metadata?.pixelHeight == 6)
+    }
+
+    @Test func detailsCarryTheLocationWrittenInTheFile() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("FolderLibrarySourceTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let context = try #require(CGContext(data: nil, width: 12, height: 6, bitsPerComponent: 8, bytesPerRow: 0,
+                                             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        context.fill(CGRect(x: 0, y: 0, width: 12, height: 6))
+        let gps: [CFString: Any] = [kCGImagePropertyGPSDictionary: [
+            kCGImagePropertyGPSLatitude: 48.8584, kCGImagePropertyGPSLatitudeRef: "N",
+            kCGImagePropertyGPSLongitude: 2.2945, kCGImagePropertyGPSLongitudeRef: "E",
+        ]]
+        let destination = try #require(CGImageDestinationCreateWithURL(root.appendingPathComponent("tower.jpg") as CFURL, UTType.jpeg.identifier as CFString, 1, nil))
+        try CGImageDestinationAddImage(destination, #require(context.makeImage()), gps as CFDictionary)
+        #expect(CGImageDestinationFinalize(destination))
+
+        let source = try makeSource(root: root)
+        await source.load()
+        await wait { source.assets.count == 1 && source.assets.allSatisfy { $0.pixelWidth == 12 } && !source.isScanning }
+        // Indexed by now: the location still comes, from the file, since the catalog doesn't keep it.
+        let details = try await source.details(for: #require(source.assets.first), allowingDownload: false)
+        let location = try #require(details.metadata?.location)
+        #expect(abs(location.latitude - 48.8584) < 0.0001 && abs(location.longitude - 2.2945) < 0.0001)
+    }
+
+    @Test func detailsOfAnUnknownPhotoFallBackToTheListing() async throws {
+        let root = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try makeSource(root: root)
+        let stranger = LibraryAsset(id: UUID().uuidString, pixelWidth: 30, pixelHeight: 20, creationDate: nil, isFavorite: false)
+        let details = await source.details(for: stranger, allowingDownload: false)
+        #expect(details == AssetDetails(stranger))
+        #expect(details.fileName == nil && details.metadata?.pixelWidth == 30)
+    }
+
     @Test func ratingWritesTheSidecarAndTheCatalog() async throws {
         let root = try makeFolder()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -120,6 +176,18 @@ struct FolderLibrarySourceTests {
         await wait { source.assets.first { $0.id == asset.id }?.hasEdit == false }
         let reset = try #require(source.assets.first { $0.id == asset.id })
         #expect(!reset.hasEdit && reset.rating == 3)
+    }
+}
+
+@MainActor
+private extension AssetCollection {
+    /// `map` with an asynchronous transform, in order.
+    func asyncMap<T>(_ transform: (LibraryAsset) async -> T) async -> [T] {
+        var results: [T] = []
+        for asset in self {
+            await results.append(transform(asset))
+        }
+        return results
     }
 }
 

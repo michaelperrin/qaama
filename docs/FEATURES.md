@@ -37,6 +37,16 @@ can feed a website one day. Dates are when the feature landed.
 - Thumbnails of edited photos show the real edit, from a cached preview (2026-10-29).
 - Multiple selection in the grid: click, ⌘-click, ⇧-click, ⌘A, Escape; double-click opens the
   editor; the context menu acts on the whole selection (2026-10-30).
+- Info panel next to the grid: selecting a photo shows its histogram, camera, lens, exposure,
+  size, capture date and file name in the right column, without opening it; the same panel as
+  the editor's Info tab, shown or hidden with the same toolbar button and View › Hide Inspector
+  (⌥⌘I), and it stays in place when a photo is opened. For Photos originals kept in iCloud it
+  shows what Photos knows (name, size, date) and offers a Download Original button to get the
+  camera details: selecting a photo never downloads anything by itself (2026-11-06).
+- Map of where a geotagged photo was taken, under the Info panel, next to the grid and in the
+  editor's Info tab: drag to move, pinch, scroll or use the zoom buttons, and a button brings
+  the map back onto the photo. In Photos it uses the location Photos stores, so it shows even
+  when the original is in iCloud (2026-11-06).
 
 ### Organizing
 - Star ratings 0–5, stored natively in Photos and in a sidecar file for folders (2026-10-29/30).

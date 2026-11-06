@@ -24,6 +24,11 @@ struct ImageMetadataReaderTests {
                 kCGImagePropertyExifFNumber: 2.8,
                 kCGImagePropertyExifFocalLength: 35.0,
             ],
+            // Rio de Janeiro: south and west, so both hemisphere letters matter.
+            kCGImagePropertyGPSDictionary: [
+                kCGImagePropertyGPSLatitude: 22.9068, kCGImagePropertyGPSLatitudeRef: "S",
+                kCGImagePropertyGPSLongitude: 43.1729, kCGImagePropertyGPSLongitudeRef: "W",
+            ],
         ]
         let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)!
         CGImageDestinationAddImage(destination, context.makeImage()!, properties as CFDictionary)
@@ -44,6 +49,19 @@ struct ImageMetadataReaderTests {
         #expect(metadata.exposureTime == 0.004 && metadata.aperture == 2.8 && metadata.focalLength == 35)
         // 14:03:12 at +01:00 is 13:03:12 UTC.
         #expect(metadata.captureDate == ISO8601DateFormatter().date(from: "2026-10-29T13:03:12Z"))
+        let location = try #require(metadata.location)
+        #expect(abs(location.latitude + 22.9068) < 0.0001 && abs(location.longitude + 43.1729) < 0.0001)
+    }
+
+    @Test func readsGPSPositionsAndRejectsMissingOnes() {
+        let paris: [CFString: Any] = [kCGImagePropertyGPSLatitude: 48.8566, kCGImagePropertyGPSLatitudeRef: "N",
+                                      kCGImagePropertyGPSLongitude: 2.3522, kCGImagePropertyGPSLongitudeRef: "E"]
+        #expect(ImageMetadataReader.location(from: paris) == GeoCoordinate(latitude: 48.8566, longitude: 2.3522))
+        #expect(ImageMetadataReader.location(from: [:]) == nil)
+        #expect(ImageMetadataReader.location(from: [kCGImagePropertyGPSLatitude: 48.8566]) == nil)
+        // No fix: some cameras still write a position, at 0° / 0°.
+        #expect(ImageMetadataReader.location(from: [kCGImagePropertyGPSLatitude: 0.0, kCGImagePropertyGPSLongitude: 0.0]) == nil)
+        #expect(ImageMetadataReader.location(from: [kCGImagePropertyGPSLatitude: 120.0, kCGImagePropertyGPSLongitude: 2.0]) == nil)
     }
 
     @Test func parsesExifDatesWithoutOffsetInTheCurrentTimeZone() throws {

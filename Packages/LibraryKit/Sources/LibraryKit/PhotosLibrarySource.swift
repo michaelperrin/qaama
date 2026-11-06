@@ -1,7 +1,10 @@
 import CoreGraphics
+import CoreLocation
 import Foundation
+import ImageIOKit
 import ObjCSupport
 import Observation
+import os
 import OSLog
 import Photos
 import UniformTypeIdentifiers
@@ -151,6 +154,79 @@ public final class PhotosLibrarySource: LibrarySource {
         }.value
         resourceInfos[asset.id] = info
         return info.pairing(with: asset)
+    }
+
+    /// Photos' database knows the file name, the dimensions, the date and the place (as the user may
+    /// have corrected it in Photos, so it wins over the header's). The camera settings are in the
+    /// original's header, which is read only when the original is on this Mac: most are in iCloud, and
+    /// selecting a photo in the grid must not download one. With `allowingDownload`, Photos fetches the
+    /// whole original first, and keeps it on disk for as long as it sees fit.
+    public func details(for asset: LibraryAsset, allowingDownload: Bool) async -> AssetDetails {
+        guard let phAsset = phAsset(for: asset.id) else { return AssetDetails(asset) }
+        let clock = ContinuousClock()
+        let start = clock.now
+        var details = AssetDetails(asset)
+        if let known = resourceInfos[asset.id]?.originalFileName {
+            details.fileName = known
+        } else {
+            details.fileName = await Task.detached { phAsset.extendedMetadata.originalFilename }.value
+        }
+        let original = await Self.originalHeader(of: phAsset, allowingDownload: allowingDownload)
+        if let header = original.header {
+            details.metadata = header
+        } else {
+            details.isOriginalInCloud = original.isMissing
+        }
+        if let place = phAsset.location?.coordinate, CLLocationCoordinate2DIsValid(place) {
+            details.metadata?.location = GeoCoordinate(latitude: place.latitude, longitude: place.longitude)
+        }
+        let outcome = original.header != nil ? "header read" : (original.isMissing ? "original not on disk" : "no header")
+        logger.notice("Details of \(asset.id, privacy: .public)\(allowingDownload ? " with download" : "", privacy: .public): \(outcome, privacy: .public) in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
+        if let failure = original.failure {
+            logger.error("Original of \(asset.id, privacy: .public) unavailable: \(failure, privacy: .public)")
+        }
+        return details
+    }
+
+    /// The header of the original: from the disk when Photos has it there, from iCloud only when
+    /// `allowingDownload` is true. `isMissing` tells that Photos handed no original over (it is in
+    /// iCloud, or its download failed, with the reason in `failure`).
+    /// Cancelling the task cancels the request: selections can move faster than Photos answers.
+    private nonisolated static func originalHeader(of phAsset: PHAsset, allowingDownload: Bool) async
+        -> (header: ImageMetadata?, isMissing: Bool, failure: String?)
+    {
+        let options = PHContentEditingInputRequestOptions()
+        options.isNetworkAccessAllowed = allowingDownload
+        // Same choice as for editing: the original when the last edit is Qaama's, so both show the same header.
+        options.canHandleAdjustmentData = { @Sendable data in data.formatIdentifier == EditingFormat.identifier }
+
+        let requestID = OSAllocatedUnfairLock<PHContentEditingInputRequestID?>(initialState: nil)
+        // PHContentEditingInput isn't Sendable; PhotoKit hands it over once and only the header read below touches it.
+        let answer = await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<(input: UncheckedSendable<PHContentEditingInput>?, isMissing: Bool, failure: String?), Never>) in
+                let id = phAsset.requestContentEditingInput(with: options) { @Sendable input, info in
+                    // No input, and not because the selection moved on: the original isn't here.
+                    let wasCancelled = (info[PHContentEditingInputCancelledKey] as? Bool) ?? false
+                    let failure = (info[PHContentEditingInputErrorKey] as? NSError)?.localizedDescription
+                    continuation.resume(returning: (input.map { UncheckedSendable($0) }, input == nil && !wasCancelled, failure))
+                }
+                requestID.withLock { $0 = id }
+                // Cancelled before the request had an identifier to cancel.
+                if Task.isCancelled {
+                    phAsset.cancelContentEditingInputRequest(id)
+                }
+            }
+        } onCancel: {
+            if let id = requestID.withLock({ $0 }) {
+                phAsset.cancelContentEditingInputRequest(id)
+            }
+        }
+        guard let input = answer.input else { return (nil, answer.isMissing, answer.failure) }
+        // The input holds the access to the file: it must live until the header is read.
+        let header = await Task.detached(priority: .userInitiated) {
+            input.value.fullSizeImageURL.flatMap { try? ImageMetadataReader.read($0) }
+        }.value
+        return (header, false, nil)
     }
 
     /// Keywords live in Photos' extended metadata, fetched per asset rather than for the whole listing.

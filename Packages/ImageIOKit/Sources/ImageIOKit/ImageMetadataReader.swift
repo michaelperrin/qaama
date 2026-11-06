@@ -38,6 +38,7 @@ public nonisolated enum ImageMetadataReader {
         let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
         let tiff = properties[kCGImagePropertyTIFFDictionary] as? [CFString: Any] ?? [:]
         let aux = properties[kCGImagePropertyExifAuxDictionary] as? [CFString: Any] ?? [:]
+        let gps = properties[kCGImagePropertyGPSDictionary] as? [CFString: Any] ?? [:]
 
         return ImageMetadata(
             pixelWidth: width,
@@ -52,8 +53,20 @@ public nonisolated enum ImageMetadataReader {
             iso: (exif[kCGImagePropertyExifISOSpeedRatings] as? [Int])?.first,
             exposureTime: exif[kCGImagePropertyExifExposureTime] as? Double,
             aperture: exif[kCGImagePropertyExifFNumber] as? Double,
-            focalLength: exif[kCGImagePropertyExifFocalLength] as? Double
+            focalLength: exif[kCGImagePropertyExifFocalLength] as? Double,
+            location: location(from: gps)
         )
+    }
+
+    /// GPS tags hold unsigned degrees and a hemisphere letter ("S", "W" for the negative sides). A
+    /// position out of range, or exactly 0° / 0° (what some cameras write without a fix), is no position.
+    static func location(from gps: [CFString: Any]) -> GeoCoordinate? {
+        guard let latitude = gps[kCGImagePropertyGPSLatitude] as? Double, let longitude = gps[kCGImagePropertyGPSLongitude] as? Double,
+              (0 ... 90).contains(latitude), (0 ... 180).contains(longitude), latitude != 0 || longitude != 0
+        else { return nil }
+        let south = (gps[kCGImagePropertyGPSLatitudeRef] as? String)?.uppercased() == "S"
+        let west = (gps[kCGImagePropertyGPSLongitudeRef] as? String)?.uppercased() == "W"
+        return GeoCoordinate(latitude: south ? -latitude : latitude, longitude: west ? -longitude : longitude)
     }
 
     /// EXIF dates are local wall-clock times ("2026:10:29 14:03:12"); the optional offset ("+01:00")

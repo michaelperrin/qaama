@@ -1,5 +1,16 @@
 import Foundation
 
+/// A place on Earth in degrees (WGS 84), positive towards north and east.
+public nonisolated struct GeoCoordinate: Hashable, Sendable {
+    public var latitude: Double
+    public var longitude: Double
+
+    public init(latitude: Double, longitude: Double) {
+        self.latitude = latitude
+        self.longitude = longitude
+    }
+}
+
 /// What the header of an image file says, without decoding any pixel.
 public nonisolated struct ImageMetadata: Hashable, Sendable {
     /// Dimensions as displayed, i.e. after the EXIF orientation is applied.
@@ -18,10 +29,12 @@ public nonisolated struct ImageMetadata: Hashable, Sendable {
     public var aperture: Double?
     /// Millimetres.
     public var focalLength: Double?
+    /// Where the photo was taken, when the camera or phone recorded it.
+    public var location: GeoCoordinate?
 
     public init(pixelWidth: Int, pixelHeight: Int, orientation: Int = 1, captureDate: Date? = nil, cameraMake: String? = nil,
                 cameraModel: String? = nil, lens: String? = nil, iso: Int? = nil, exposureTime: Double? = nil,
-                aperture: Double? = nil, focalLength: Double? = nil)
+                aperture: Double? = nil, focalLength: Double? = nil, location: GeoCoordinate? = nil)
     {
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
@@ -34,5 +47,6 @@ public nonisolated struct ImageMetadata: Hashable, Sendable {
         self.exposureTime = exposureTime
         self.aperture = aperture
         self.focalLength = focalLength
+        self.location = location
     }
 }

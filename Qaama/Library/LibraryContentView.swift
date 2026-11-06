@@ -3,13 +3,24 @@ import LibraryKit
 import SwiftUI
 
 /// Detail column of a library: the thumbnail grid, replaced by the editor while a photo is open.
+/// Both keep the window's inspector column on their right: the selected photo's Info panel next to
+/// the grid, the editor's tabs next to the canvas.
 struct LibraryContentView: View {
     let source: any LibrarySource
     /// The stay in the editor, from opening a photo to closing; it moves from photo to photo by itself.
     @State private var editorSession: EditorSession?
     @State private var selection: Set<LibraryAsset.ID> = []
+    /// One setting for the grid and the editor, so the column stays put when a photo is opened.
+    @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
 
     var body: some View {
+        content
+            // View › Show Inspector acts on this window, grid or editor.
+            .focusedSceneValue(\.hasInspector, true)
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if let editorSession {
             EditorView(session: editorSession) { closeEditor(editorSession) }
                 .navigationTitle(source.displayName)
@@ -22,17 +33,32 @@ struct LibraryContentView: View {
                     }
                 }
         } else {
-            AssetGridView(source: source, selection: $selection) { editorSession = EditorSession(assetID: $0, source: source) }
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    if let notice = source.indexingNotice {
-                        IndexingNoticeView(notice: notice, progress: source.indexingProgress)
+            HStack(spacing: 0) {
+                AssetGridView(source: source, selection: $selection) { editorSession = EditorSession(assetID: $0, source: source) }
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        if let notice = source.indexingNotice {
+                            IndexingNoticeView(notice: notice, progress: source.indexingProgress)
+                        }
                     }
+                    // Without it the row settles at the grid's ideal width, one column of thumbnails.
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // The Info form is light: unlike the editor's, it is simply rebuilt when shown again.
+                if isInspectorVisible {
+                    Divider()
+                    LibraryInspector(source: source, selection: selection)
+                        .frame(width: EditorInspector.width)
                 }
-                .navigationTitle(source.displayName)
-                .navigationSubtitle(subtitle)
-                .toolbar { LibraryQueryToolbar(source: source) }
-                .searchable(text: searchText, placement: .toolbar, prompt: "Search names and keywords")
-                .searchSuggestions {}
+            }
+            .navigationTitle(source.displayName)
+            .navigationSubtitle(subtitle)
+            .toolbar {
+                LibraryQueryToolbar(source: source)
+                ToolbarItem(placement: .primaryAction) {
+                    InspectorVisibilityButton(isVisible: $isInspectorVisible)
+                }
+            }
+            .searchable(text: searchText, placement: .toolbar, prompt: "Search names and keywords")
+            .searchSuggestions {}
         }
     }
 

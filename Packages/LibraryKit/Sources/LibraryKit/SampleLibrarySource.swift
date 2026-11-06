@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ImageIOKit
 import Observation
 
 /// An in-memory source with generated images, for SwiftUI previews and tests. Stores decisions and
@@ -70,6 +71,29 @@ public final class SampleLibrarySource: LibrarySource {
 
     public func setKeywords(_ keywords: [String], for asset: LibraryAsset) async throws {
         update(asset.id) { $0.keywords = keywords }
+    }
+
+    /// Photos whose original plays at being in iCloud: their details come without the camera until
+    /// a download is allowed, which brings the original "back" for good.
+    public var cloudOnlyIDs: Set<LibraryAsset.ID> = []
+
+    /// A made-up camera, so previews show every row of the Info panel.
+    public func details(for asset: LibraryAsset, allowingDownload: Bool) async -> AssetDetails {
+        if cloudOnlyIDs.contains(asset.id) {
+            guard allowingDownload else {
+                var partial = AssetDetails(asset)
+                partial.fileName = "\(asset.id).jpg"
+                partial.isOriginalInCloud = true
+                return partial
+            }
+            cloudOnlyIDs.remove(asset.id)
+        }
+        return AssetDetails(fileName: "\(asset.id).jpg", metadata: ImageMetadata(
+            pixelWidth: asset.pixelWidth, pixelHeight: asset.pixelHeight, captureDate: asset.creationDate,
+            cameraMake: "Qaama", cameraModel: "Sample", lens: "35mm F2", iso: 200, exposureTime: 1 / 250, aperture: 2.8, focalLength: 35,
+            // Every other photo was "taken" in Paris, so previews show the panel with and without a map.
+            location: (Int(asset.id.dropFirst("sample-".count)) ?? 0).isMultiple(of: 2) ? GeoCoordinate(latitude: 48.8584, longitude: 2.2945) : nil
+        ))
     }
 
     public func editingInput(for asset: LibraryAsset) async throws -> EditingInput {

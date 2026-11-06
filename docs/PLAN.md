@@ -365,6 +365,40 @@ Bibliothèque
       bins de bord en murs d'écrêtage). Reste : localisation, et revoir le design de
       l'histogramme (Michaël le trouve inhabituel par rapport aux autres logiciels : prévoir
       luminance, échelle, lissage, indicateurs d'écrêtage à la Lightroom).
+      Fait le 6/11/2026 : le panneau Info existe aussi en mosaïque, dans la colonne de droite
+      (même réglage d'affichage que l'inspecteur de l'éditeur, même bouton et ⌥⌘I). Un clic sur
+      une vignette y montre l'histogramme et les informations de la photo sans l'ouvrir :
+      `LibrarySource.details(for:)` (dossiers : catalogue, sinon en-tête lu sur place ; Photos :
+      nom, dimensions et date depuis la base, EXIF seulement si l'original est sur le disque,
+      demandé sans accès réseau, sinon une note dit qu'il est dans iCloud et un bouton Download
+      Original le fait télécharger à la demande, `allowingDownload`), `AssetInfoModel`
+      dans EditorKit, histogramme calculé sur la vignette 512 px (donc l'aperçu du boîtier pour
+      un RAW non retouché). Avec plusieurs photos sélectionnées, le panneau donne leur nombre.
+      Leçon : dans la colonne de détail, un `HStack` grille + colonne se cale sur la largeur
+      idéale de la grille (une seule colonne de vignettes, le tout centré) tant que la grille
+      n'a pas `frame(maxWidth: .infinity)` ; vu par une fenêtre sonde hors écran sur la source
+      d'exemple, clic simulé compris. Non vérifié à l'écran : le chemin Photos (journal
+      « Details of … : header read / original in iCloud … in … ms »). Reste : garder dans le
+      catalogue l'EXIF lu à l'ouverture dans l'éditeur, pour l'afficher ensuite même quand
+      l'original est reparti dans iCloud (et nourrir les filtres EXIF de Photos).
+      Localisation, fait le 6/11/2026 : carte MapKit (`LocationMap`) sous le bloc Info, en
+      mosaïque et dans l'onglet Info de l'éditeur. D'abord figée avec un clic ouvrant Plans,
+      puis, à la demande de Michaël le même jour : plus de clic vers Plans, déplacement et zoom
+      (`interactionModes: [.pan, .zoom]`, nord toujours en haut), boutons de zoom
+      (`MapZoomStepper`) et bouton de recentrage, actif une fois la carte déplacée
+      (`MapCameraPosition.positionedByUser`). Position lue dans l'en-tête
+      (`ImageMetadata.location`, dictionnaire GPS, 0°/0° écarté) pour les dossiers, et dans la
+      base de Photos (`PHAsset.location`) pour Photos, donc sans original local. Le catalogue ne
+      garde pas la position : `details(for:)` des dossiers relit l'en-tête à chaque clic
+      (quelques ms) ; à y mettre le jour où l'on veut une carte de toute la photothèque ou un
+      filtre par lieu. Première permission réseau de l'appli :
+      `com.apple.security.network.client`, nécessaire aux tuiles de carte dans le bac à sable.
+      Vérifié par fenêtre sonde hors écran sur la source d'exemple : carte de Paris rendue
+      (version figée), puis configuration de la `MKMapView` sous-jacente (centre, zoom et
+      déplacement actifs, rotation et inclinaison coupées, boutons de zoom). La sonde ne sait
+      pas livrer de vrais gestes à MapKit ni capturer la carte interactive : glisser, zoom et
+      recentrage restent à essayer à l'écran.
+      Reste : nom du lieu (géocodage inverse).
 
 Éditeur
 
