@@ -93,9 +93,46 @@ extension FocusedValues {
     }
 }
 
-/// File › Export…, View › Show Inspector, and the Image menu: Adjust Date & Time, Rating, Flag, and
-/// Adjustments (copy, paste, create a preset). Act on the key window: its inspector column, its
-/// export, its selection or open photo, its focused editor.
+/// What Image › Add to Album and its neighbors act on in the key window: the photo open in the
+/// editor, or the grid's selection, looked up when an item is chosen.
+struct AlbumsCommand {
+    let action: AlbumsAction
+    let targets: () -> [LibraryAsset.ID]
+}
+
+struct FocusedAlbumsKey: FocusedValueKey {
+    typealias Value = AlbumsCommand
+}
+
+extension FocusedValues {
+    var albumsCommand: AlbumsCommand? {
+        get { self[FocusedAlbumsKey.self] }
+        set { self[FocusedAlbumsKey.self] = newValue }
+    }
+}
+
+/// What File › New Album… and File › New Album Folder… do in the key window: ask for a name, then
+/// create it at the top level of the Photos library's albums.
+struct NewAlbumAction {
+    let newAlbum: () -> Void
+    let newFolder: () -> Void
+}
+
+struct FocusedNewAlbumKey: FocusedValueKey {
+    typealias Value = NewAlbumAction
+}
+
+extension FocusedValues {
+    var newAlbumAction: NewAlbumAction? {
+        get { self[FocusedNewAlbumKey.self] }
+        set { self[FocusedNewAlbumKey.self] = newValue }
+    }
+}
+
+/// File › New Album…, New Album Folder… and Export…, View › Show Inspector, and the Image menu:
+/// Adjust Date & Time, Rating, Flag, the albums (Add to Album, Add to the last album, Remove from
+/// Album) and Adjustments (copy, paste, create a preset). Act on the key window: its inspector
+/// column, its export, its selection or open photo, its focused editor.
 ///
 /// The 0 to 5, P, X and U keys belong to the Rating and Flag items, so they work in the grid and in
 /// the editor alike, and nowhere else: a second holder of the same key would fire too. A key without
@@ -106,6 +143,8 @@ struct EditorCommands: Commands {
     @FocusedValue(\.adjustDateAction) private var adjustDateAction
     @FocusedValue(\.decisionsAction) private var decisions
     @FocusedValue(\.exportAction) private var exportAction
+    @FocusedValue(\.albumsCommand) private var albumsCommand
+    @FocusedValue(\.newAlbumAction) private var newAlbumAction
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
 
     var body: some Commands {
@@ -113,6 +152,13 @@ struct EditorCommands: Commands {
             Button(isInspectorVisible ? "Hide Inspector" : "Show Inspector") { isInspectorVisible.toggle() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
                 .disabled(hasInspector != true)
+        }
+        CommandGroup(after: .newItem) {
+            // "Album Folder": a plain "Folder" here would read as a folder of photos on disk.
+            Button("New Album…") { newAlbumAction?.newAlbum() }
+                .disabled(newAlbumAction == nil)
+            Button("New Album Folder…") { newAlbumAction?.newFolder() }
+                .disabled(newAlbumAction == nil)
         }
         CommandGroup(after: .saveItem) {
             Divider()
@@ -145,6 +191,8 @@ struct EditorCommands: Commands {
                     .keyboardShortcut("u", modifiers: [])
             }
             .disabled(decisions?.setFlag == nil)
+            Divider()
+            AlbumMenuItems(albums: albumsCommand?.action, placement: .menuBar, targets: albumsCommand?.targets ?? { [] })
             Divider()
             Menu("Adjustments") {
                 Button("Copy Adjustments") { editor?.copyAdjustments() }

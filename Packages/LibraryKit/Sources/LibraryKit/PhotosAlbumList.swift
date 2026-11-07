@@ -75,6 +75,18 @@ public final class PhotosAlbumList {
         }
     }
 
+    /// Lists again right away, after a change Qaama made itself: Photos' own notification only comes
+    /// a moment later, and what was just created must be there to be selected.
+    public func reload() {
+        guard isLoaded else { return }
+        rebuild()
+    }
+
+    /// One album by identifier, Favorites included.
+    public func album(id: PhotosAlbum.ID) -> PhotosAlbum? {
+        albums.first { $0.id == id }
+    }
+
     private func handle(_ change: PHChange) {
         var changed = false
         if let smartAlbums, let details = change.changeDetails(for: smartAlbums) {

@@ -4,8 +4,9 @@ import SwiftUI
 /// Apple Photos library: handles the access request, then shows the grid.
 struct PhotosLibraryView: View {
     let source: PhotosLibrarySource
-    /// Album list to load once access is granted; the sidebar shows it.
-    var albums: PhotosAlbumList?
+    /// Album list, loaded once access is granted; the sidebar shows it, the grid files photos in it.
+    let albums: PhotosAlbumList
+    let albumEditor: PhotosAlbumEditor
 
     var body: some View {
         Group {
@@ -15,13 +16,15 @@ struct PhotosLibraryView: View {
             case .notDetermined:
                 ProgressView("Requesting access to your photo library…")
             case .authorized, .limited:
-                LibraryContentView(source: source)
+                // Photos can only be taken out of an album of the user's: Favorites is a smart album.
+                LibraryContentView(source: source, albums: AlbumFiling(list: albums, editor: albumEditor,
+                                                                       current: source.album?.kind == .user ? source.album : nil))
             }
         }
         .task {
             await source.load()
             if source.access == .authorized || source.access == .limited {
-                albums?.load()
+                albums.load()
             }
         }
     }

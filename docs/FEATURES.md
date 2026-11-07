@@ -72,6 +72,20 @@ can feed a website one day. Dates are when the feature landed.
   library sorts by it, and exports carry it in their EXIF. The JPEG twin of a RAW follows.
   Undoable (2026-11-06).
 
+- Albums of the Apple Photos library, managed without leaving Qaama (2026-11-06):
+  - New albums and album folders, at the top level (File › New Album…, New Album Folder…, or
+    the context menu of the sidebar's Albums row) or inside a folder (its context menu); a new
+    album opens right away.
+  - Delete Album… in an album's context menu, after confirmation; the photos stay in the library.
+  - Add photos to an album by dragging them from the grid onto the album in the sidebar, or with
+    Add to Album in the thumbnails' context menu and in the Image menu, which lists the albums
+    in their folders and starts with New Album… to make one from the selection.
+  - Add to “<album>” (⌃⌘A) sends photos to the album last used, remembered between sessions.
+  - Remove from Album, in an album, for the selected photos; they stay in the library.
+  - The Image menu items act on the grid's selection or on the photo open in the editor.
+  - Every one of these is undoable, deleting an album included: it comes back with its name,
+    its folder and its photos.
+
 ### Data
 - Non-destructive: originals are never modified. Edits live in Photos adjustment data or in a
   `.qaama` sidecar next to the file, in readable JSON (2026-10-29).

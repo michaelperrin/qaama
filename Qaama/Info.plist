@@ -28,5 +28,18 @@
 	<string>© 2026 Michaël Perrin</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Qaama needs access to your photo library to browse and edit your photos.</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Qaama photos</string>
+			<key>UTTypeIdentifier</key>
+			<string>fr.michaelperrin.qaama.photos</string>
+		</dict>
+	</array>
 </dict>
 </plist>

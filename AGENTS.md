@@ -72,6 +72,13 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   column (segmented pickers with long labels, wide buttons): the List renegotiates its insets on
   every frame while a slider is dragged and the whole column wobbles. Keep segmented labels
   short and `.controlSize(.small)`; prefer menus for long choices.
+- SwiftUI skips a view's `body` by itself when its inputs are plain values; it can't when they
+  include closures or existentials (`any LibrarySource`). A view that is repeated (grid cells,
+  list rows) or that holds a context menu with a submenu (SwiftUI replaces an open menu's items
+  on every update of the view holding it, which closes the submenu) gets `Equatable` with
+  `.equatable()`, its closures moved to one stable object (see `AssetGridCell` and
+  `AssetGridActions`). Everything the view shows must then be one of its inputs or an observed
+  value, or the display goes stale. Elsewhere, measure before adding it.
 
 ## Code quality
 

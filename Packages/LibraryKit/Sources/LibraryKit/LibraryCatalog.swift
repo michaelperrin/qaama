@@ -8,6 +8,8 @@ import OSLog
 public final class LibraryCatalog {
     public let photos: PhotosLibrarySource
     public let photosAlbums = PhotosAlbumList()
+    /// Creates and deletes the albums of the Photos library and files photos in them.
+    public let photosAlbumEditor: PhotosAlbumEditor
     public private(set) var folders: [FolderLibrarySource] = []
     private var albumSources: [String: PhotosLibrarySource] = [:]
     public private(set) var isLoaded = false
@@ -28,6 +30,7 @@ public final class LibraryCatalog {
         self.previewCache = previewCache
         photosIndex = PhotosIndex(store: PhotosIndexStore(catalog: store), library: PhotoKitIndexLibrary())
         photos = PhotosLibrarySource(index: photosIndex)
+        photosAlbumEditor = PhotosAlbumEditor(library: PhotoKitAlbumLibrary(), list: photosAlbums)
     }
 
     /// Restores the folders saved in the catalog. Unresolvable bookmarks are dropped.

@@ -7,6 +7,8 @@ import SwiftUI
 /// the grid, the editor's tabs next to the canvas.
 struct LibraryContentView: View {
     let source: any LibrarySource
+    /// The albums the photos can be filed in; nil for libraries without albums (folders).
+    var albums: AlbumFiling?
     /// The stay in the editor, from opening a photo to closing; it moves from photo to photo by itself.
     @State private var editorSession: EditorSession?
     @State private var selection: Set<LibraryAsset.ID> = []
@@ -14,8 +16,10 @@ struct LibraryContentView: View {
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
     /// The Adjust Date & Time dialog, opened from the Image menu, the grid's context menu or the Info panel.
     @State private var dateEdit: CaptureDateEditModel?
-    /// What went wrong with a rating or a flag set from the Image menu.
+    /// What went wrong with a rating or a flag set from the Image menu, or with an album change.
     @State private var decisionError: String?
+    /// The name being asked for a new album made from photos.
+    @State private var albumDialog: AlbumDialog?
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
@@ -24,6 +28,8 @@ struct LibraryContentView: View {
             .focusedSceneValue(\.hasInspector, true)
             .focusedSceneValue(\.adjustDateAction, adjustDateAction)
             .focusedSceneValue(\.decisionsAction, decisionsAction)
+            .focusedSceneValue(\.albumsCommand, albumsCommand)
+            .albumDialogs($albumDialog, editor: albums?.editor, error: $decisionError)
             .alert("Couldn't Update the Photos", isPresented: Binding(get: { decisionError != nil }, set: {
                 if !$0 {
                     decisionError = nil
@@ -67,7 +73,7 @@ struct LibraryContentView: View {
         } else {
             HStack(spacing: 0) {
                 AssetGridView(source: source, selection: $selection, onOpen: { editorSession = EditorSession(assetID: $0, source: source) },
-                              onAdjustDate: adjustDate)
+                              onAdjustDate: adjustDate, albums: albumsAction)
                     .safeAreaInset(edge: .top, spacing: 0) {
                         if let notice = source.indexingNotice {
                             IndexingNoticeView(notice: notice, progress: source.indexingProgress)
@@ -126,6 +132,55 @@ struct LibraryContentView: View {
         }
     }
 
+    /// Filing in albums, for the grid's context menu and the Image menu; nil without albums.
+    private var albumsAction: AlbumsAction? {
+        guard let albums else { return nil }
+        let last = albums.editor.lastAlbumID.flatMap { albums.list.album(id: $0) }
+        return AlbumsAction(list: albums.list, currentAlbumID: albums.current?.id,
+                            lastAlbum: last?.id == albums.current?.id ? nil : last,
+                            add: { album, ids in add(ids, to: album) },
+                            create: { ids in albumDialog = .newAlbum(folderID: nil, assetIDs: ids) },
+                            remove: albums.current.map { album in { ids in remove(ids, from: album) } })
+    }
+
+    /// Image › Add to Album and its neighbors: the photo open in the editor, else the grid's
+    /// selection; nil when there is neither. The open photo isn't taken out of the album it is being
+    /// stepped through in: removing is for the grid.
+    private var albumsCommand: AlbumsCommand? {
+        guard var action = albumsAction else { return nil }
+        if let editorSession {
+            action.remove = nil
+            let id = editorSession.model.assetID
+            return AlbumsCommand(action: action) { [id] }
+        }
+        guard !selection.isEmpty else { return nil }
+        return AlbumsCommand(action: action) { Array(selection) }
+    }
+
+    private func add(_ assetIDs: [LibraryAsset.ID], to album: PhotosAlbum) {
+        guard let albums, !assetIDs.isEmpty else { return }
+        Task {
+            do {
+                try await albums.editor.add(assetIDs, toAlbum: album.id, undoManager: undoManager)
+            } catch {
+                decisionError = error.localizedDescription
+            }
+        }
+    }
+
+    private func remove(_ assetIDs: [LibraryAsset.ID], from album: PhotosAlbum) {
+        guard let albums, !assetIDs.isEmpty else { return }
+        Task {
+            do {
+                try await albums.editor.remove(assetIDs, fromAlbum: album.id, undoManager: undoManager)
+                // They leave the grid: a selection of photos no longer shown would still be acted on.
+                selection.subtract(assetIDs)
+            } catch {
+                decisionError = error.localizedDescription
+            }
+        }
+    }
+
     private func adjustDate(of assets: [LibraryAsset]) {
         guard !assets.isEmpty else { return }
         dateEdit = CaptureDateEditModel(assets: assets, source: source)
@@ -156,6 +211,14 @@ struct LibraryContentView: View {
         }
         return text
     }
+}
+
+/// What a Photos library gives its grid to file photos in albums.
+struct AlbumFiling {
+    let list: PhotosAlbumList
+    let editor: PhotosAlbumEditor
+    /// The album on screen when photos can be removed from it; nil in the whole library and in Favorites.
+    let current: PhotosAlbum?
 }
 
 #Preview("Grid then editor") {

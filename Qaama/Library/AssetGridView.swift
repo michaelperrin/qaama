@@ -5,41 +5,55 @@ import SwiftUI
 
 /// Thumbnail grid shared by every library source, with multiple selection: click selects, ⌘-click
 /// toggles, ⇧-click extends from the last click, double-click opens the editor.
+///
+/// Each cell is an `AssetGridCell` with inputs that only change when the photo or the selection does,
+/// and its actions on one object that stays the same (`actions`): the grid is rebuilt on every change
+/// of the library (every second or two while Photos is analyzing or syncing), and a context menu that
+/// is open must not notice. See `AssetGridCell`.
 struct AssetGridView: View {
     let source: any LibrarySource
     @Binding var selection: Set<LibraryAsset.ID>
     let onOpen: (LibraryAsset.ID) -> Void
     /// Opens the Adjust Date & Time dialog for these photos; nil leaves the command out.
     var onAdjustDate: (([LibraryAsset]) -> Void)?
+    /// Filing in albums: its items in the context menu, and thumbnails that can be dragged to an
+    /// album of the sidebar. Nil for libraries without albums.
+    var albums: AlbumsAction?
 
     private let thumbnailSide: CGFloat = 160
     /// Index of the last plain click, where a ⇧-click range starts.
     @State private var anchorIndex: Int?
     @State private var batchError: String?
     @State private var exportModel: ExportModel?
+    @State private var actions = AssetGridActions()
+    /// Bumped when a menu opens, so the one rebuild SwiftUI makes of an open menu's items at the first
+    /// update of the window happens right then, before a submenu could be open. See `AssetGridCell`.
+    @State private var menuNudge = 0
     @Environment(\.undoManager) private var undoManager
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
+        let _ = menuNudge
+        let _ = updateActions()
+        let canPaste = AdjustmentsClipboard.shared.adjustments != nil
+        let canAdjustDate = onAdjustDate != nil && source.capabilities.contains(.captureDate)
+        let albumState = albums.map(AssetGridCell.AlbumState.init)
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: thumbnailSide), spacing: 8)], spacing: 8) {
                 // Iterate indices, not elements: ForEach over elements walks the whole collection to compute
                 // identities, which is far too slow for a lazily computed library of tens of thousands of rows.
                 ForEach(source.assets.indices, id: \.self) { index in
                     let asset = source.assets[index]
-                    AssetThumbnailView(asset: asset, source: source, side: thumbnailSide, isSelected: selection.contains(asset.id))
-                        .gesture(TapGesture(count: 2).onEnded { onOpen(asset.id) })
-                        // One tap gesture, dispatched on the modifiers held at the time: a plain TapGesture
-                        // also fires on modified clicks, so stacking modified variants would double up.
-                        .simultaneousGesture(TapGesture().onEnded { click(asset.id, at: index, modifiers: NSEvent.modifierFlags) })
-                        .contextMenu { contextMenu(for: asset) }
-                        .onAppear {
-                            source.prefetchThumbnails(around: index, pixelSize: CGSize(width: thumbnailSide * displayScale, height: thumbnailSide * displayScale))
-                        }
+                    AssetGridCell(asset: asset, index: index, side: thumbnailSide, isSelected: selection.contains(asset.id),
+                                  menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canPaste: canPaste,
+                                                                canAdjustDate: canAdjustDate, albums: albumState),
+                                  source: source, actions: actions)
+                        .equatable()
                 }
             }
             .padding(12)
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in menuNudge += 1 }
         .focusedSceneValue(\.exportAction, selection.isEmpty ? nil : ExportAction { export(selection.compactMap { source.asset(id: $0) }) })
         .sheet(isPresented: Binding(get: { exportModel != nil }, set: {
             if !$0 {
@@ -70,6 +84,23 @@ struct AssetGridView: View {
                                        description: Text("This library doesn't contain any images."))
             }
         }
+    }
+
+    /// Points the cells' actions at this version of the grid. Not a state change: a plain object.
+    private func updateActions() {
+        actions.open = onOpen
+        actions.click = { id, index in click(id, at: index, modifiers: NSEvent.modifierFlags) }
+        actions.appear = { index in
+            source.prefetchThumbnails(around: index, pixelSize: CGSize(width: thumbnailSide * displayScale, height: thumbnailSide * displayScale))
+        }
+        actions.copyAdjustments = { asset in run { try await BatchEditing.copyAdjustments(of: asset, from: source) } }
+        actions.pasteAdjustments = { asset in
+            run { try await BatchEditing.pasteAdjustments(to: targets(for: asset), in: source, undoManager: undoManager) }
+        }
+        actions.adjustDate = { asset in onAdjustDate?(targets(for: asset)) }
+        actions.export = { asset in export(targets(for: asset)) }
+        actions.targetIDs = targetIDs(for:)
+        actions.albums = albums
     }
 
     // MARK: - Selection
@@ -113,28 +144,13 @@ struct AssetGridView: View {
         return selection.compactMap { source.asset(id: $0) }
     }
 
-    private func actsOnSelection(_ asset: LibraryAsset) -> Bool {
-        selection.contains(asset.id) && selection.count > 1
+    /// The same photos by identifier, for what needs nothing else: no lookup, whatever the selection's size.
+    private func targetIDs(for asset: LibraryAsset) -> [LibraryAsset.ID] {
+        selection.contains(asset.id) ? Array(selection) : [asset.id]
     }
 
-    @ViewBuilder
-    private func contextMenu(for asset: LibraryAsset) -> some View {
-        Button("Open in Editor") { onOpen(asset.id) }
-        Divider()
-        Button("Copy Adjustments") { run { try await BatchEditing.copyAdjustments(of: asset, from: source) } }
-            .disabled(!asset.hasEdit)
-        Button(actsOnSelection(asset) ? "Paste Adjustments to \(selection.count) Photos" : "Paste Adjustments") {
-            run { try await BatchEditing.pasteAdjustments(to: targets(for: asset), in: source, undoManager: undoManager) }
-        }
-        .disabled(AdjustmentsClipboard.shared.adjustments == nil)
-        if let onAdjustDate, source.capabilities.contains(.captureDate) {
-            Divider()
-            Button(actsOnSelection(asset) ? "Adjust Date & Time of \(selection.count) Photos…" : "Adjust Date & Time…") {
-                onAdjustDate(targets(for: asset))
-            }
-        }
-        Divider()
-        Button(actsOnSelection(asset) ? "Export \(selection.count) Photos…" : "Export…") { export(targets(for: asset)) }
+    private func actsOnSelection(_ asset: LibraryAsset) -> Bool {
+        selection.contains(asset.id) && selection.count > 1
     }
 
     private func export(_ assets: [LibraryAsset]) {
@@ -153,6 +169,111 @@ private extension AssetGridView {
                 batchError = error.localizedDescription
             }
         }
+    }
+}
+
+/// What a cell asks of its grid. One object, the same from one update to the next, where closures
+/// passed to the cell would be new ones each time and make every cell look changed.
+@MainActor
+final class AssetGridActions {
+    var open: (LibraryAsset.ID) -> Void = { _ in }
+    var click: (LibraryAsset.ID, Int) -> Void = { _, _ in }
+    var appear: (Int) -> Void = { _ in }
+    var copyAdjustments: (LibraryAsset) -> Void = { _ in }
+    var pasteAdjustments: (LibraryAsset) -> Void = { _ in }
+    var adjustDate: (LibraryAsset) -> Void = { _ in }
+    var export: (LibraryAsset) -> Void = { _ in }
+    /// The photos a context menu acts on, by identifier: the selection when the photo is part of it.
+    var targetIDs: (LibraryAsset) -> [LibraryAsset.ID] = { [$0.id] }
+    var albums: AlbumsAction?
+}
+
+/// One thumbnail of the grid with its gestures, its context menu and its drag source.
+///
+/// Equatable, with inputs that only change when the photo, the selection or what the menu offers
+/// does: an update of the view holding a context menu makes SwiftUI replace every item of the open
+/// menu, which closes the submenu the pointer is in (Add to Album), while the menu itself stays.
+/// Measured with a probe: the items are replaced on every update of that view, whatever the content;
+/// with the content unchanged, only once, at the first update of the window after the menu opened,
+/// which the grid triggers itself as soon as a menu opens (`menuNudge`).
+struct AssetGridCell: View, Equatable {
+    /// What the context menu shows, beyond the photo itself.
+    nonisolated struct MenuState: Equatable {
+        /// The photos the menu acts on: the selection when the photo is part of it, else 1.
+        var count: Int
+        var canPaste: Bool
+        var canAdjustDate: Bool
+        var albums: AlbumState?
+    }
+
+    /// The album items depend on these; the closures of `AlbumsAction` are read from `actions`.
+    nonisolated struct AlbumState: Equatable {
+        var currentAlbumID: PhotosAlbum.ID?
+        var lastAlbum: PhotosAlbum?
+        var canRemove: Bool
+
+        @MainActor init(_ albums: AlbumsAction) {
+            currentAlbumID = albums.currentAlbumID
+            lastAlbum = albums.lastAlbum
+            canRemove = albums.remove != nil
+        }
+    }
+
+    let asset: LibraryAsset
+    let index: Int
+    let side: CGFloat
+    let isSelected: Bool
+    let menu: MenuState
+    let source: any LibrarySource
+    let actions: AssetGridActions
+    /// The source and the actions count by identity, which can be compared off the main actor.
+    private nonisolated let identities: [ObjectIdentifier]
+
+    init(asset: LibraryAsset, index: Int, side: CGFloat, isSelected: Bool, menu: MenuState, source: any LibrarySource, actions: AssetGridActions) {
+        self.asset = asset
+        self.index = index
+        self.side = side
+        self.isSelected = isSelected
+        self.menu = menu
+        self.source = source
+        self.actions = actions
+        identities = [ObjectIdentifier(source), ObjectIdentifier(actions)]
+    }
+
+    var body: some View {
+        AssetThumbnailView(asset: asset, source: source, side: side, isSelected: isSelected)
+            .gesture(TapGesture(count: 2).onEnded { actions.open(asset.id) })
+            // One tap gesture, dispatched on the modifiers held at the time: a plain TapGesture
+            // also fires on modified clicks, so stacking modified variants would double up.
+            .simultaneousGesture(TapGesture().onEnded { actions.click(asset.id, index) })
+            .contextMenu { contextMenu }
+            .modifier(PhotoDragSource(isEnabled: menu.albums != nil) { actions.targetIDs(asset) })
+            .onAppear { actions.appear(index) }
+    }
+
+    @ViewBuilder
+    private var contextMenu: some View {
+        Button("Open in Editor") { actions.open(asset.id) }
+        Divider()
+        Button("Copy Adjustments") { actions.copyAdjustments(asset) }
+            .disabled(!asset.hasEdit)
+        Button(menu.count > 1 ? "Paste Adjustments to \(menu.count) Photos" : "Paste Adjustments") { actions.pasteAdjustments(asset) }
+            .disabled(!menu.canPaste)
+        if menu.canAdjustDate {
+            Divider()
+            Button(menu.count > 1 ? "Adjust Date & Time of \(menu.count) Photos…" : "Adjust Date & Time…") { actions.adjustDate(asset) }
+        }
+        if menu.albums != nil {
+            Divider()
+            AlbumMenuItems(albums: actions.albums, placement: .contextMenu(count: menu.count)) { actions.targetIDs(asset) }
+        }
+        Divider()
+        Button(menu.count > 1 ? "Export \(menu.count) Photos…" : "Export…") { actions.export(asset) }
+    }
+
+    nonisolated static func == (lhs: AssetGridCell, rhs: AssetGridCell) -> Bool {
+        lhs.asset == rhs.asset && lhs.index == rhs.index && lhs.side == rhs.side && lhs.isSelected == rhs.isSelected
+            && lhs.menu == rhs.menu && lhs.identities == rhs.identities
     }
 }
 

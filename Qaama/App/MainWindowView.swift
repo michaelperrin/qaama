@@ -44,10 +44,10 @@ struct MainWindowView: View {
     private var detail: some View {
         switch selection {
         case .photos:
-            PhotosLibraryView(source: catalog.photos, albums: catalog.photosAlbums)
+            PhotosLibraryView(source: catalog.photos, albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor)
         case let .photosAlbum(id):
-            if let album = catalog.photosAlbums.albums.first(where: { $0.id == id }) {
-                PhotosLibraryView(source: catalog.photosSource(for: album))
+            if let album = catalog.photosAlbums.album(id: id) {
+                PhotosLibraryView(source: catalog.photosSource(for: album), albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor)
                     .id(album.id)
             } else {
                 ContentUnavailableView("Album Removed", systemImage: "rectangle.stack.badge.minus")

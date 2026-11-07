@@ -275,6 +275,67 @@ d'essai (JPEG 2 Mpx et 26 Mpx, un RAF).
 Bibliothèque
 
 - [ ] Vue unifiée Photos + dossiers, barre latérale (albums, dossiers, favoris, récents).
+      Gestion des albums de Photos, fait le 6/11/2026 à la demande de Michaël : créer un album
+      ou un dossier d'albums (menu contextuel de la ligne Albums pour la racine, d'un dossier
+      pour y créer dedans, et File › New Album… / New Album Folder…), supprimer un album après
+      confirmation, glisser des vignettes sur un album de la barre latérale, Add to Album
+      (arborescence, avec New Album… en tête pour créer depuis la sélection), Add to “<dernier
+      album>” (⌃⌘A, comme Photos ; retenu dans les préférences) et Remove from Album, dans le
+      menu contextuel des vignettes et dans le menu Image (sélection de la mosaïque ou photo
+      ouverte dans l'éditeur, par la valeur de focus `albumsCommand` ; pas de retrait depuis
+      l'éditeur, où l'on parcourt l'album).
+      - Architecture : protocole `PhotosAlbumLibrary` (identifiants seulement),
+        `PhotoKitAlbumLibrary` pour PhotoKit (`canPerform` vérifié avant chaque demande, sinon
+        la demande de changement est nil et ne fait rien en silence), `PhotosAlbumEditor` par
+        dessus, tenu par le catalogue : c'est lui qui rend tout annulable.
+      - Annulation : un album recréé par une annulation reçoit un nouvel identifiant de Photos.
+        L'éditeur garde la correspondance ancien → nouveau, pour que les étapes antérieures de
+        la pile (et le dernier album) le retrouvent, et enchaîne les changements un par un : un
+        rétablissement dépend de ce que l'annulation d'avant a produit, et l'annulation est
+        enregistrée avant que son travail ait tourné (`PendingStep`). Un album supprimé revient
+        avec son titre, son dossier et ses photos ; des photos retirées reviennent en fin
+        d'album (leur place dans l'ordre manuel de Photos n'est pas rendue) ; un dossier créé
+        n'est défait que s'il est encore vide (Photos supprime un dossier avec son contenu).
+      - Mesure par sonde (fenêtre hors écran, 40 vignettes, menu de 800 entrées) : SwiftUI
+        exécute la closure d'un menu contextuel pour chaque vignette à chaque mise à jour de la
+        mosaïque (280 fois en 7 mises à jour), mais n'évalue le `body` d'une vue placée dedans
+        qu'à l'ouverture du menu (0 fois). L'arborescence des albums est donc une vue à part
+        (`AlbumMenuItems`). Dans la barre de menus, elle est `Equatable` avec une cible stable
+        à la place d'une closure, pour ne pas être reconstruite à chaque changement de
+        sélection ; ce second point n'est pas mesuré.
+      - Bogue vu par Michaël le 6/11/2026 : le sous-menu Add to Album se refermait tout seul au
+        bout de 2 à 3 s, le menu contextuel restant ouvert. Cause, établie par sonde (menu ouvert
+        par `menu(for:)` puis `popUpContextMenu`, identités des `NSMenuItem` relevées toutes les
+        100 ms ; lancer la sonde depuis un timer du run loop, pas depuis la main queue, sinon les
+        mises à jour SwiftUI ne passent pas pendant le suivi du menu) : à chaque mise à jour de la
+        vue qui porte `.contextMenu`, SwiftUI remplace tous les éléments de premier niveau du menu
+        ouvert (le sous-menu, lui, est réutilisé), ce qui ferme le sous-menu déployé. Or la
+        photothèque de Michaël changeait toutes les 1 à 2 s ce jour-là (analyse ou synchro de
+        Photos, 4 506 photos modifiées depuis le lancement précédent) et chaque changement
+        reconstruit la mosaïque. Avec un contenu stable, il reste un unique remplacement, à la
+        première mise à jour de la fenêtre après l'ouverture du menu. Correction : chaque vignette
+        est une `AssetGridCell` `Equatable` (photo, index, sélection, état du menu, identités de
+        la source et d'un objet `AssetGridActions` qui porte les closures), donc les mises à jour
+        de la mosaïque ne l'atteignent pas ; et la mosaïque se met à jour elle-même à
+        `NSMenu.didBeginTrackingNotification` pour consommer l'unique remplacement avant qu'un
+        sous-menu soit ouvert (sonde : plus aucun remplacement ensuite). La barre de menus n'a
+        pas ce défaut (sonde : éléments inchangés quand les commandes se réévaluent). Leçon
+        générale : une vue qui porte un menu contextuel avec sous-menu doit avoir des entrées
+        stables. Non vérifié à l'écran par moi ; à confirmer par Michaël.
+      - Journal de Michaël au lancement : « Listed 787 albums in 222 folders in 266 ms »
+        (Debug). La liste est relue tout de suite après une création ou une suppression (pour
+        pouvoir sélectionner le nouvel album), puis une seconde fois à la notification de
+        Photos : environ une demi-seconde sur l'acteur principal par création. À sortir de
+        l'acteur principal si ça se sent.
+      - Vérifié : 10 tests de `PhotosAlbumEditor` sur une fausse photothèque (annulation,
+        rétablissement, identifiants remplacés, ordre des changements, échecs), compilation et
+        lancement. Non vérifié à l'écran : tout ce qui écrit dans la vraie photothèque, le
+        glisser-déposer (départ depuis la mosaïque à côté des clics de sélection, surbrillance
+        et dépôt sur la ligne d'album), le dialogue de nom et la fluidité des menus avec 787
+        albums.
+      - Reste : renommer et déplacer un album ou un dossier, supprimer un dossier, glisser sur
+        Favoris, faire suivre le jumeau JPEG d'un RAW ajouté à un album, raccourci pour Remove
+        from Album.
 - [ ] Grille performante (vignettes en cache, prefetch), tri et filtres (date, type,
       RAW, édité/non édité, favoris), recherche simple.
       Fait le 30/10/2026 : tri (dates, note, nom), filtres (note, drapeau, modifié, RAW,

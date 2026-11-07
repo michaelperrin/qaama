@@ -57,6 +57,11 @@ targets:
         LSMinimumSystemVersion: "27.0"
         NSPhotoLibraryUsageDescription: Qaama needs access to your photo library to browse and edit your photos.
         NSHumanReadableCopyright: "© 2026 Michaël Perrin"
+        # Photos dragged from the grid to an album of the sidebar, by identifier (see PhotoDrag).
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: fr.michaelperrin.qaama.photos
+            UTTypeDescription: Qaama photos
+            UTTypeConformsTo: [public.data]
     entitlements:
       path: Qaama/Qaama.entitlements
       properties:
