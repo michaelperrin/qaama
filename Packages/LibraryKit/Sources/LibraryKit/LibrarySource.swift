@@ -25,8 +25,9 @@ public protocol LibrarySource: AnyObject, Observable {
 
     /// Lists the photos. Calling it again once loaded is a no-op.
     func load() async
-    /// Thumbnail sized for display, in pixels (account for the screen's scale factor).
-    func thumbnail(for asset: LibraryAsset, pixelSize: CGSize) async -> CGImage?
+    /// Thumbnail for a square of `pixelSize` a side (account for the screen's scale factor), with enough
+    /// pixels to fill it or to fit in it, as `fit` says.
+    func thumbnail(for asset: LibraryAsset, pixelSize: CGSize, fit: ThumbnailFit) async -> CGImage?
     /// Full-resolution image, oriented for display.
     func fullSizeImage(for asset: LibraryAsset) async -> CGImage?
     /// Sets the star rating (0 to 5) of a photo.
@@ -56,8 +57,9 @@ public protocol LibrarySource: AnyObject, Observable {
     /// true (the user asked for it), nothing is downloaded: a source whose original is elsewhere
     /// answers with what it knows and sets `isOriginalInCloud`.
     func details(for asset: LibraryAsset, allowingDownload: Bool) async -> AssetDetails
-    /// The grid shows the row at `index`: sources may warm the thumbnails around it.
-    func prefetchThumbnails(around index: Int, pixelSize: CGSize)
+    /// The grid shows the row at `index`: sources may warm the thumbnails around it, as the grid will ask
+    /// for them (same size and fit).
+    func prefetchThumbnails(around index: Int, pixelSize: CGSize, fit: ThumbnailFit)
     /// How far a background index this source's listing relies on is, or nil when none is being built.
     var indexingProgress: IndexingProgress? { get }
     /// A sentence to show with the photos while indexing makes the current listing provisional, or nil
@@ -114,6 +116,11 @@ public extension LibrarySource {
         return assets.indices.contains(target) ? assets[target].id : nil
     }
 
+    /// A thumbnail that fills its square, for the places that show one photo at a fixed size.
+    func thumbnail(for asset: LibraryAsset, pixelSize: CGSize) async -> CGImage? {
+        await thumbnail(for: asset, pixelSize: pixelSize, fit: .fill)
+    }
+
     func endEditing(_: LibraryAsset) {}
     func prioritize(_: LibraryAsset) {}
     func setFlag(_: ItemFlag, for _: LibraryAsset) async throws {
@@ -144,7 +151,7 @@ public extension LibrarySource {
         AssetDetails(asset)
     }
 
-    func prefetchThumbnails(around _: Int, pixelSize _: CGSize) {}
+    func prefetchThumbnails(around _: Int, pixelSize _: CGSize, fit _: ThumbnailFit) {}
 
     var indexingProgress: IndexingProgress? {
         nil

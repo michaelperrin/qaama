@@ -39,7 +39,7 @@ final class StubSource: LibrarySource {
     }
 
     func load() async {}
-    func thumbnail(for _: LibraryAsset, pixelSize _: CGSize) async -> CGImage? {
+    func thumbnail(for _: LibraryAsset, pixelSize _: CGSize, fit _: ThumbnailFit) async -> CGImage? {
         nil
     }
 

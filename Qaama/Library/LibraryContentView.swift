@@ -91,6 +91,9 @@ struct LibraryContentView: View {
             .navigationTitle(source.displayName)
             .navigationSubtitle(subtitle)
             .toolbar {
+                ToolbarItem {
+                    ThumbnailSizeSlider()
+                }
                 LibraryQueryToolbar(source: source)
                 ToolbarItem(placement: .primaryAction) {
                     InspectorVisibilityButton(isVisible: $isInspectorVisible)

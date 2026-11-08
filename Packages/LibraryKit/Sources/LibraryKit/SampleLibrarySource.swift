@@ -58,7 +58,7 @@ public final class SampleLibrarySource: LibrarySource {
 
     public func load() async {}
 
-    public func thumbnail(for asset: LibraryAsset, pixelSize _: CGSize) async -> CGImage? {
+    public func thumbnail(for asset: LibraryAsset, pixelSize _: CGSize, fit _: ThumbnailFit) async -> CGImage? {
         images[asset.id]
     }
 

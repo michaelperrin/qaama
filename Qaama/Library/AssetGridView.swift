@@ -20,7 +20,9 @@ struct AssetGridView: View {
     /// album of the sidebar. Nil for libraries without albums.
     var albums: AlbumsAction?
 
-    private let thumbnailSide: CGFloat = 160
+    /// Thumbnail size and shape, from the toolbar's slider and the View menu; kept across launches.
+    @AppStorage(GridDisplay.thumbnailSideKey) private var thumbnailSide = GridDisplay.defaultSide
+    @AppStorage(GridDisplay.thumbnailFitKey) private var thumbnailFit = ThumbnailFit.fill
     /// Index of the last plain click, where a ⇧-click range starts.
     @State private var anchorIndex: Int?
     @State private var batchError: String?
@@ -29,6 +31,12 @@ struct AssetGridView: View {
     /// Bumped when a menu opens, so the one rebuild SwiftUI makes of an open menu's items at the first
     /// update of the window happens right then, before a submenu could be open. See `AssetGridCell`.
     @State private var menuNudge = 0
+    /// Where the grid is scrolled and how wide it is, for keeping the top row in place while zooming.
+    /// A plain object: it changes on every scroll frame and must not rebuild the grid.
+    @State private var viewport = GridViewport()
+    @State private var scrollPosition = ScrollPosition()
+    /// The thumbnail size when a pinch began; nil between pinches.
+    @State private var pinchBaseSide: Double?
     @Environment(\.undoManager) private var undoManager
     @Environment(\.displayScale) private var displayScale
 
@@ -38,22 +46,52 @@ struct AssetGridView: View {
         let canPaste = AdjustmentsClipboard.shared.adjustments != nil
         let canAdjustDate = onAdjustDate != nil && source.capabilities.contains(.captureDate)
         let albumState = albums.map(AssetGridCell.AlbumState.init)
+        let side = CGFloat(thumbnailSide)
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: thumbnailSide), spacing: 8)], spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: side), spacing: 8)], spacing: 8) {
                 // Iterate indices, not elements: ForEach over elements walks the whole collection to compute
                 // identities, which is far too slow for a lazily computed library of tens of thousands of rows.
                 ForEach(source.assets.indices, id: \.self) { index in
                     let asset = source.assets[index]
-                    AssetGridCell(asset: asset, index: index, side: thumbnailSide, isSelected: selection.contains(asset.id),
+                    AssetGridCell(asset: asset, index: index, side: side, fit: thumbnailFit, isSelected: selection.contains(asset.id),
                                   menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canPaste: canPaste,
                                                                 canAdjustDate: canAdjustDate, albums: albumState),
                                   source: source, actions: actions)
                         .equatable()
                 }
             }
-            .padding(12)
+            .padding(GridViewport.padding)
+            .scrollTargetLayout()
+        }
+        .scrollPosition($scrollPosition)
+        .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { _, geometry in
+            viewport.update(geometry)
+        }
+        // Pinching the trackpad zooms the grid, as in Photos; the scroll gesture is a distinct event.
+        .simultaneousGesture(MagnifyGesture()
+            .onChanged { value in
+                if pinchBaseSide == nil {
+                    pinchBaseSide = thumbnailSide
+                    // The photo under the pointer stays under it for the whole pinch.
+                    viewport.beginPinch(at: value.startLocation)
+                }
+                let base = pinchBaseSide ?? thumbnailSide
+                thumbnailSide = min(max(base * value.magnification, GridDisplay.sideRange.lowerBound), GridDisplay.sideRange.upperBound)
+            }
+            .onEnded { _ in
+                pinchBaseSide = nil
+                viewport.endPinch()
+            })
+        .onChange(of: thumbnailSide) { _, newSide in
+            // Whatever changed the size (pinch, slider, menu), one photo stays where it is: the one
+            // under the pointer for a pinch, the one at the center of the view otherwise.
+            if let target = viewport.target(forSide: newSide) {
+                scrollPosition.scrollTo(id: target.item, anchor: target.anchor)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in menuNudge += 1 }
+        // View › Zoom In, Zoom Out and the thumbnail shape act on this grid while it is shown.
+        .focusedSceneValue(\.hasAssetGrid, true)
         .focusedSceneValue(\.exportAction, selection.isEmpty ? nil : ExportAction { export(selection.compactMap { source.asset(id: $0) }) })
         .sheet(isPresented: Binding(get: { exportModel != nil }, set: {
             if !$0 {
@@ -90,9 +128,12 @@ struct AssetGridView: View {
     private func updateActions() {
         actions.open = onOpen
         actions.click = { id, index in click(id, at: index, modifiers: NSEvent.modifierFlags) }
-        actions.appear = { index in
-            source.prefetchThumbnails(around: index, pixelSize: CGSize(width: thumbnailSide * displayScale, height: thumbnailSide * displayScale))
-        }
+        let pixels = GridDisplay.requestPixels(forSide: CGFloat(thumbnailSide), displayScale: displayScale)
+        let fit = thumbnailFit
+        actions.appear = { index in source.prefetchThumbnails(around: index, pixelSize: pixels, fit: fit) }
+        let viewport = viewport
+        actions.layout = { index, frame in viewport.cellDidLayout(index, frame: frame) }
+        actions.disappear = { index in viewport.cellDidDisappear(index) }
         actions.copyAdjustments = { asset in run { try await BatchEditing.copyAdjustments(of: asset, from: source) } }
         actions.pasteAdjustments = { asset in
             run { try await BatchEditing.pasteAdjustments(to: targets(for: asset), in: source, undoManager: undoManager) }
@@ -172,6 +213,111 @@ private extension AssetGridView {
     }
 }
 
+/// The grid's scroll offset and size as last reported, and the arithmetic of its rows: `LazyVGrid`
+/// with adaptive columns puts `floor((width + spacing) / (minimum + spacing))` cells per row, every
+/// row is a thumbnail (its square plus the 2-point selection padding) and the row spacing high, and
+/// the columns share the width left (measured with a probe, see docs/PLAN.md).
+///
+/// While the size changes, one photo is kept where it is on screen: the one under the pointer for a
+/// pinch, the one at the center of the view for the slider and the menu. It is fixed once, at the
+/// first change of a continuous zoom, and every offset is derived from it: the offset reported runs
+/// an update behind the one the grid asked for, and reading it back at each step made the error
+/// compound (a visible scroll while zooming). The anchor is dropped when the user scrolls, that is
+/// when the offset reported isn't the one asked for; never during a pinch.
+/// The grid's visible area and the on-screen frames of its visible cells, and from them the photo to
+/// keep in place while the thumbnail size changes: the one under the pointer for a pinch, the one at
+/// the center of the view for the slider and the menu.
+///
+/// The photo is fixed once, at the first change of a continuous zoom, then positioned by identity with
+/// `ScrollPosition.scrollTo(id:anchor:)`, never by a computed offset: `LazyVGrid` keeps estimated
+/// heights for the rows it hasn't laid out again, which converge over a second after a change of size
+/// (measured with a probe, see docs/PLAN.md), so an offset computed from uniform rows lands anywhere.
+/// The anchor is dropped when the pinch ends, or when the slider or the menu haven't moved for a
+/// moment; a scroll by the user in between then starts from where they are.
+@MainActor
+final class GridViewport {
+    static let padding: CGFloat = 12
+    static let spacing: CGFloat = 8
+    /// Changes closer together than this belong to one zoom, and keep its anchor.
+    private static let zoomGap: Duration = .milliseconds(400)
+
+    /// A photo and where it is on screen: its index, the anchored point's distance from the top of the
+    /// visible area, and where that point is inside the cell, as a fraction of its height.
+    private struct Anchor {
+        var item: Int
+        var pointY: CGFloat
+        var fractionInCell: CGFloat
+    }
+
+    /// The scroll view's container, toolbar area included: the coordinate space of the cells' frames,
+    /// of the pinch's location and of `scrollTo(id:anchor:)`'s alignment (measured with a probe).
+    private var containerSize: CGSize = .zero
+    /// The part of the container not under the toolbar or a banner, where the center anchor goes.
+    private var visibleCenterY: CGFloat = 0
+    /// Frames of the cells on screen, in the scroll view's coordinate space.
+    private var frames: [Int: CGRect] = [:]
+    private var anchor: Anchor?
+    private var isPinching = false
+    private var lastZoom: ContinuousClock.Instant?
+
+    func update(_ geometry: ScrollGeometry) {
+        containerSize = geometry.containerSize
+        visibleCenterY = geometry.contentInsets.top + (containerSize.height - geometry.contentInsets.top - geometry.contentInsets.bottom) / 2
+    }
+
+    func cellDidLayout(_ index: Int, frame: CGRect) {
+        frames[index] = frame
+    }
+
+    func cellDidDisappear(_ index: Int) {
+        frames[index] = nil
+    }
+
+    /// `location` is the pointer in the scroll view's coordinate space.
+    func beginPinch(at location: CGPoint) {
+        anchor = makeAnchor(at: location)
+        isPinching = true
+    }
+
+    func endPinch() {
+        isPinching = false
+        anchor = nil
+    }
+
+    /// The cell to scroll to, and how to align it with the visible area, so the anchored point stays
+    /// put once thumbnails are `side` wide; nil when no cell is on screen.
+    func target(forSide side: Double) -> (item: Int, anchor: UnitPoint)? {
+        let now = ContinuousClock.now
+        if !isPinching, let lastZoom, now - lastZoom > Self.zoomGap {
+            anchor = nil
+        }
+        lastZoom = now
+        guard let anchor = anchor ?? makeAnchor(at: CGPoint(x: containerSize.width / 2, y: visibleCenterY)) else { return nil }
+        self.anchor = anchor
+        let cellHeight = side + 4
+        let top = anchor.pointY - anchor.fractionInCell * cellHeight
+        // A unit point u aligns the cell's point at u of its height with the container's point at u of
+        // its height, so the cell's top lands at u * (container - cell).
+        let room = containerSize.height - cellHeight
+        let unit = room > 0 ? min(max(top / room, 0), 1) : 0
+        return (anchor.item, UnitPoint(x: 0, y: unit))
+    }
+
+    /// The cell under `point`, or the nearest one when the point is between cells.
+    private func makeAnchor(at point: CGPoint) -> Anchor? {
+        guard let (item, frame) = frames.min(by: { Self.distance(from: point, to: $0.value) < Self.distance(from: point, to: $1.value) }) else {
+            return nil
+        }
+        return Anchor(item: item, pointY: point.y, fractionInCell: (point.y - frame.minY) / frame.height)
+    }
+
+    private static func distance(from point: CGPoint, to frame: CGRect) -> CGFloat {
+        let dx = max(frame.minX - point.x, 0, point.x - frame.maxX)
+        let dy = max(frame.minY - point.y, 0, point.y - frame.maxY)
+        return dx * dx + dy * dy
+    }
+}
+
 /// What a cell asks of its grid. One object, the same from one update to the next, where closures
 /// passed to the cell would be new ones each time and make every cell look changed.
 @MainActor
@@ -179,6 +325,9 @@ final class AssetGridActions {
     var open: (LibraryAsset.ID) -> Void = { _ in }
     var click: (LibraryAsset.ID, Int) -> Void = { _, _ in }
     var appear: (Int) -> Void = { _ in }
+    var disappear: (Int) -> Void = { _ in }
+    /// The cell's frame in the scroll view's coordinate space, whenever it changes.
+    var layout: (Int, CGRect) -> Void = { _, _ in }
     var copyAdjustments: (LibraryAsset) -> Void = { _ in }
     var pasteAdjustments: (LibraryAsset) -> Void = { _ in }
     var adjustDate: (LibraryAsset) -> Void = { _ in }
@@ -190,8 +339,8 @@ final class AssetGridActions {
 
 /// One thumbnail of the grid with its gestures, its context menu and its drag source.
 ///
-/// Equatable, with inputs that only change when the photo, the selection or what the menu offers
-/// does: an update of the view holding a context menu makes SwiftUI replace every item of the open
+/// Equatable, with inputs that only change when the photo, the selection, the zoom or what the menu
+/// offers does: an update of the view holding a context menu makes SwiftUI replace every item of the open
 /// menu, which closes the submenu the pointer is in (Add to Album), while the menu itself stays.
 /// Measured with a probe: the items are replaced on every update of that view, whatever the content;
 /// with the content unchanged, only once, at the first update of the window after the menu opened,
@@ -222,6 +371,7 @@ struct AssetGridCell: View, Equatable {
     let asset: LibraryAsset
     let index: Int
     let side: CGFloat
+    let fit: ThumbnailFit
     let isSelected: Bool
     let menu: MenuState
     let source: any LibrarySource
@@ -229,10 +379,13 @@ struct AssetGridCell: View, Equatable {
     /// The source and the actions count by identity, which can be compared off the main actor.
     private nonisolated let identities: [ObjectIdentifier]
 
-    init(asset: LibraryAsset, index: Int, side: CGFloat, isSelected: Bool, menu: MenuState, source: any LibrarySource, actions: AssetGridActions) {
+    init(asset: LibraryAsset, index: Int, side: CGFloat, fit: ThumbnailFit, isSelected: Bool, menu: MenuState,
+         source: any LibrarySource, actions: AssetGridActions)
+    {
         self.asset = asset
         self.index = index
         self.side = side
+        self.fit = fit
         self.isSelected = isSelected
         self.menu = menu
         self.source = source
@@ -241,7 +394,7 @@ struct AssetGridCell: View, Equatable {
     }
 
     var body: some View {
-        AssetThumbnailView(asset: asset, source: source, side: side, isSelected: isSelected)
+        AssetThumbnailView(asset: asset, source: source, side: side, fit: fit, isSelected: isSelected)
             .gesture(TapGesture(count: 2).onEnded { actions.open(asset.id) })
             // One tap gesture, dispatched on the modifiers held at the time: a plain TapGesture
             // also fires on modified clicks, so stacking modified variants would double up.
@@ -249,6 +402,9 @@ struct AssetGridCell: View, Equatable {
             .contextMenu { contextMenu }
             .modifier(PhotoDragSource(isEnabled: menu.albums != nil) { actions.targetIDs(asset) })
             .onAppear { actions.appear(index) }
+            .onDisappear { actions.disappear(index) }
+            // Where the cell is on screen, for the grid to know which photo is under the pointer.
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .scrollView) } action: { actions.layout(index, $0) }
     }
 
     @ViewBuilder
@@ -272,8 +428,8 @@ struct AssetGridCell: View, Equatable {
     }
 
     nonisolated static func == (lhs: AssetGridCell, rhs: AssetGridCell) -> Bool {
-        lhs.asset == rhs.asset && lhs.index == rhs.index && lhs.side == rhs.side && lhs.isSelected == rhs.isSelected
-            && lhs.menu == rhs.menu && lhs.identities == rhs.identities
+        lhs.asset == rhs.asset && lhs.index == rhs.index && lhs.side == rhs.side && lhs.fit == rhs.fit
+            && lhs.isSelected == rhs.isSelected && lhs.menu == rhs.menu && lhs.identities == rhs.identities
     }
 }
 

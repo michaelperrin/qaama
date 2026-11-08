@@ -28,6 +28,18 @@ extension FocusedValues {
     }
 }
 
+/// True in a window showing the thumbnail grid, for View › Zoom In, Zoom Out and the thumbnail shape.
+struct FocusedAssetGridKey: FocusedValueKey {
+    typealias Value = Bool
+}
+
+extension FocusedValues {
+    var hasAssetGrid: Bool? {
+        get { self[FocusedAssetGridKey.self] }
+        set { self[FocusedAssetGridKey.self] = newValue }
+    }
+}
+
 /// What File › Export… does in the key window: export the open photo, or the grid's selection.
 struct ExportAction {
     let run: () -> Void
@@ -129,7 +141,8 @@ extension FocusedValues {
     }
 }
 
-/// File › New Album…, New Album Folder… and Export…, View › Show Inspector, and the Image menu:
+/// File › New Album…, New Album Folder… and Export…, View › Show Inspector, Zoom In and Out and the
+/// thumbnail shape (square or whole photo), and the Image menu:
 /// Adjust Date & Time, Rating, Flag, the albums (Add to Album, Add to the last album, Remove from
 /// Album) and Adjustments (copy, paste, create a preset). Act on the key window: its inspector
 /// column, its export, its selection or open photo, its focused editor.
@@ -140,18 +153,36 @@ extension FocusedValues {
 struct EditorCommands: Commands {
     @FocusedValue(\.editor) private var editor
     @FocusedValue(\.hasInspector) private var hasInspector
+    @FocusedValue(\.hasAssetGrid) private var hasAssetGrid
     @FocusedValue(\.adjustDateAction) private var adjustDateAction
     @FocusedValue(\.decisionsAction) private var decisions
     @FocusedValue(\.exportAction) private var exportAction
     @FocusedValue(\.albumsCommand) private var albumsCommand
     @FocusedValue(\.newAlbumAction) private var newAlbumAction
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
+    @AppStorage(GridDisplay.thumbnailSideKey) private var thumbnailSide = GridDisplay.defaultSide
+    @AppStorage(GridDisplay.thumbnailFitKey) private var thumbnailFit = ThumbnailFit.fill
 
     var body: some Commands {
         CommandGroup(after: .sidebar) {
             Button(isInspectorVisible ? "Hide Inspector" : "Show Inspector") { isInspectorVisible.toggle() }
                 .keyboardShortcut("i", modifiers: [.command, .option])
                 .disabled(hasInspector != true)
+            Divider()
+            // The grid's thumbnails; the slider in the toolbar moves the same setting.
+            Button("Zoom In") { thumbnailSide = GridDisplay.zoomedIn(thumbnailSide) }
+                .keyboardShortcut("+")
+                .disabled(hasAssetGrid != true || thumbnailSide >= GridDisplay.sideRange.upperBound)
+            Button("Zoom Out") { thumbnailSide = GridDisplay.zoomedOut(thumbnailSide) }
+                .keyboardShortcut("-")
+                .disabled(hasAssetGrid != true || thumbnailSide <= GridDisplay.sideRange.lowerBound)
+            Divider()
+            Picker("Thumbnails", selection: $thumbnailFit) {
+                Text("Square Thumbnails").tag(ThumbnailFit.fill)
+                Text("Whole Photos").tag(ThumbnailFit.fit)
+            }
+            .pickerStyle(.inline)
+            .disabled(hasAssetGrid != true)
         }
         CommandGroup(after: .newItem) {
             // "Album Folder": a plain "Folder" here would read as a folder of photos on disk.

@@ -175,9 +175,11 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     }
 
     /// Edited photos: the thumbnail is cut from the cached preview of the real render; a missing preview
-    /// is rebuilt once in the background. Others: Quick Look on the original.
-    public func thumbnail(for asset: LibraryAsset, pixelSize: CGSize) async -> CGImage? {
+    /// is rebuilt once in the background. Others: Quick Look on the original. Both fit the box they are
+    /// asked for, so filling a square takes a box as wide (or tall) as the photo's shape.
+    public func thumbnail(for asset: LibraryAsset, pixelSize: CGSize, fit: ThumbnailFit) async -> CGImage? {
         guard let url = fileURL(for: asset) else { return nil }
+        let pixelSize = fit.requestSize(forSquare: min(pixelSize.width, pixelSize.height), aspectRatio: asset.aspectRatio)
         if asset.hasEdit {
             let cache = previewCache
             let fromCache = { @Sendable in await Task.detached { cache.thumbnail(for: asset, pixelSize: pixelSize) }.value }

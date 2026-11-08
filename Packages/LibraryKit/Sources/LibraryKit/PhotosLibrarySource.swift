@@ -272,9 +272,9 @@ public final class PhotosLibrarySource: LibrarySource {
         logger.notice("Keywords of \(asset.id, privacy: .public): +\(added.count) -\(removed.count)")
     }
 
-    /// Thumbnail sized for display, in pixels (account for the screen's scale factor).
-    public func thumbnail(for asset: LibraryAsset, pixelSize: CGSize) async -> CGImage? {
-        await requestImage(for: asset, targetSize: pixelSize, contentMode: .aspectFill)
+    /// Thumbnail for a square of `pixelSize`; PhotoKit sizes it to fill or to fit that square.
+    public func thumbnail(for asset: LibraryAsset, pixelSize: CGSize, fit: ThumbnailFit) async -> CGImage? {
+        await requestImage(for: asset, targetSize: pixelSize, contentMode: fit.contentMode)
     }
 
     /// Full-resolution image as Photos delivers it (Photos adjustments included).
@@ -285,10 +285,18 @@ public final class PhotosLibrarySource: LibrarySource {
     /// Warms the thumbnail cache for photos about to appear on screen.
     /// Keeps PhotoKit's cache warm for a window of rows around what is on screen, and drops what scrolled
     /// far away. Called for every visible tile, so it only acts when the window moves by a few rows.
-    public func prefetchThumbnails(around index: Int, pixelSize: CGSize) {
+    /// PhotoKit caches by size and content mode: when the grid is zoomed or switches between square and
+    /// whole thumbnails, what was cached is of no use and is dropped as a whole.
+    public func prefetchThumbnails(around index: Int, pixelSize: CGSize, fit: ThumbnailFit) {
         guard let fetchResult else { return }
         let count = fetchResult.count
         guard count > 0 else { return }
+        let request = PrefetchRequest(pixelSize: pixelSize, fit: fit)
+        if request != prefetchedRequest {
+            imageManager.stopCachingImagesForAllAssets()
+            prefetched = 0 ..< 0
+            prefetchedRequest = request
+        }
         let desired = max(0, index - Self.prefetchWindow / 2) ..< min(count, index + Self.prefetchWindow)
         guard abs(desired.lowerBound - prefetched.lowerBound) >= Self.prefetchStep
             || abs(desired.upperBound - prefetched.upperBound) >= Self.prefetchStep
@@ -298,10 +306,10 @@ public final class PhotosLibrarySource: LibrarySource {
         let toStart = desired.filter { !prefetched.contains($0) }.map { fetchResult.object(at: $0) }
         let toStop = prefetched.filter { !desired.contains($0) && $0 < count }.map { fetchResult.object(at: $0) }
         if !toStop.isEmpty {
-            imageManager.stopCachingImages(for: toStop, targetSize: pixelSize, contentMode: .aspectFill, options: options)
+            imageManager.stopCachingImages(for: toStop, targetSize: pixelSize, contentMode: fit.contentMode, options: options)
         }
         if !toStart.isEmpty {
-            imageManager.startCachingImages(for: toStart, targetSize: pixelSize, contentMode: .aspectFill, options: options)
+            imageManager.startCachingImages(for: toStart, targetSize: pixelSize, contentMode: fit.contentMode, options: options)
         }
         prefetched = desired
     }
@@ -310,6 +318,13 @@ public final class PhotosLibrarySource: LibrarySource {
     private static let prefetchWindow = 60
     private static let prefetchStep = 10
     @ObservationIgnored private var prefetched: Range<Int> = 0 ..< 0
+    /// What the warm thumbnails were asked at; a different request empties the cache.
+    private struct PrefetchRequest: Equatable {
+        var pixelSize: CGSize
+        var fit: ThumbnailFit
+    }
+
+    @ObservationIgnored private var prefetchedRequest: PrefetchRequest?
 
     // MARK: - Editing (PHAdjustmentData)
 
@@ -590,6 +605,15 @@ public final class PhotosLibrarySource: LibrarySource {
         options.isNetworkAccessAllowed = true
         options.resizeMode = .fast
         return options
+    }
+}
+
+private nonisolated extension ThumbnailFit {
+    var contentMode: PHImageContentMode {
+        switch self {
+        case .fill: .aspectFill
+        case .fit: .aspectFit
+        }
     }
 }
 

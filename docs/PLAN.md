@@ -343,6 +343,101 @@ Bibliothèque
       favoris, note (prédicats confirmés par sonde, PhotoKit ne documente pas la note).
       Prefetch des vignettes Photos le 30/10/2026 (fenêtre de 60 lignes autour de l'écran via
       `PHCachingImageManager`, libérée au-delà). Reste : filtre par type de fichier.
+- [x] Zoom de la mosaïque et mode d'affichage, cadré avec Michaël le 7/11/2026 : taille des
+      vignettes réglable par un curseur dans la barre d'outils et par le menu View (⌘+ / ⌘−),
+      et choix entre le carré rogné actuel et la photo entière dans un carré, sans rognage ;
+      les deux réglages mémorisés entre les sessions (`@AppStorage`, comme l'inspecteur). La
+      taille et le mode deviennent des entrées de `AssetGridCell` (règle `Equatable` dans
+      AGENTS.md) ; `AssetThumbnailView` passe en `scaledToFit` avec une demande `aspectFit` à
+      la source, et `LibraryAsset.aspectRatio` permet de réserver la place avant la vignette.
+      Fait le 7/11/2026 :
+      - `GridDisplay` (app) tient les clés de préférences, la plage 80–400 pt, le pas de 40 pt
+        de Zoom In / Zoom Out (sur une grille de multiples, quelle que soit la position du
+        curseur) et l'arrondi des pixels demandés au pas de 128 px : un glissement du curseur ne
+        recharge les vignettes visibles qu'en franchissant un pas, et le prefetch Photos demande
+        exactement la même taille (PhotoKit met en cache par taille et mode de contenu ; un
+        changement de l'un ou l'autre vide son cache, `stopCachingImagesForAllAssets`).
+      - `ThumbnailFit` (LibraryKit, `fill` / `fit`) est passé à `thumbnail(for:pixelSize:fit:)`
+        et à `prefetchThumbnails(around:pixelSize:fit:)` ; l'ancienne signature reste en
+        extension (`fill`) pour l'export, le dialogue de date et l'histogramme. Photos : mode de
+        contenu `aspectFill` / `aspectFit`. Dossiers : Quick Look et `PreviewCache` ajustent dans
+        une boîte, donc en mode carré la boîte demandée a le rapport de la photo (petit côté =
+        côté du carré, rapport borné à 4 pour les panoramas) ; avant, la vignette d'une photo
+        non carrée était demandée au carré puis agrandie à l'affichage, donc légèrement floue.
+        Tests : `ThumbnailFitTests`.
+      - Les commandes du menu View ne sont actives que lorsque la mosaïque est à l'écran (valeur
+        de focus `hasAssetGrid`), pas dans l'éditeur.
+      - En mode photo entière, la sélection et les badges suivent le rectangle de la photo, pas
+        le carré ; une fois les pixels chargés, leur rapport l'emporte sur `aspectRatio` (une
+        photo recadrée par une recette change de forme) : léger saut dans ce cas, accepté.
+      - Vu par Michaël le 7/11/2026 : le curseur marche ; ses icônes touchaient les bords de la
+        capsule Liquid Glass (la barre d'outils dessine la capsule sur les bornes de la vue) :
+        marge horizontale de 8 pt ajoutée. Icônes de grille gardées plutôt que des loupes, qui
+        diraient « zoom de l'image » : le curseur choisit entre beaucoup de petites vignettes et
+        peu de grandes.
+      - Pincement sur la grille (8/11/2026, à la demande de Michaël) : `MagnifyGesture` en
+        `simultaneousGesture` sur le `ScrollView`, borné à la plage du curseur ; macOS distingue
+        le défilement à deux doigts du pincement, pas de déclenchement en scrollant attendu. La
+        rangée du haut reste en place quel que soit le moyen de zoomer (pincement, curseur,
+        menu) : `GridViewport` relit la géométrie du défilement (`onScrollGeometryChange`, objet
+        simple pour ne pas reconstruire la grille à chaque image), retrouve la première photo
+        visible par l'arithmétique des colonnes adaptatives de `LazyVGrid`, et
+        `ScrollPosition.scrollTo(y:)` replace cette photo à la nouvelle taille. Ancrage sur la
+        photo sous le pointeur : plus tard, si le besoin se fait sentir.
+        Bogue vu par Michaël le 8/11/2026 : en agrandissant, la grille défilait parfois nettement
+        vers le haut. Cause : l'ancre était recalculée à chaque image depuis la position rapportée
+        par `onScrollGeometryChange`, qui a une image de retard sur le `scrollTo` précédent ; lue
+        avec la nouvelle hauteur de rangée, elle donnait une rangée plus petite à chaque pas, et
+        l'erreur se cumulait (produit des rapports de hauteurs : moitié de la position pour un
+        zoom ×2). Correction : l'ancre (première photo de la rangée du haut, fraction de rangée)
+        est fixée au premier changement d'un zoom continu et chaque position en découle ; elle
+        est abandonnée quand la position rapportée n'est pas celle demandée (défilement de
+        l'utilisateur), jamais pendant un pincement.
+        Second défaut vu par Michaël le 8/11/2026 : léger défilement vers le bas en agrandissant,
+        surtout en haut de la grille. Mesuré par sonde (journal OSLog, fenêtre de 550 pt) : au
+        repos `ScrollGeometry.visibleRect.minY` et `contentOffset.y` valent -52 (la hauteur de la
+        barre d'outils, `contentInsets.top`, la grille passant dessous sur macOS 27), et
+        `ScrollPosition.scrollTo(y: 500)` aboutit à `visibleRect.minY = 448` : `scrollTo(y:)`
+        place la coordonnée demandée en haut de la zone sûre, sous la barre. La position lue
+        s'exprime donc en `visibleRect.minY + contentInsets.top` pour être dans le repère de
+        `scrollTo`, ce qui absorbe aussi la bannière d'indexation. La même sonde confirme les
+        formules de `GridViewport` : 7 colonnes calculées et mesurées pour 821 pt de large et des
+        vignettes de 95,3 pt, pas de rangée 107,3 pt mesuré = côté + 4 + 8.
+        Troisième retour de Michaël le 8/11/2026 : encore un défilement vers le bas en
+        agrandissant, vers le haut en réduisant. Ce n'est plus une erreur de calcul mais l'effet
+        de l'ancrage en haut : la rangée du haut fixe, tout ce qui est sous le pointeur coule vers
+        le bas quand les vignettes grossissent. Photos ancre sur la photo sous le pointeur ; fait
+        de même : `MagnifyGesture.Value.startLocation` (repère du `ScrollView`, dont l'origine est
+        sous la barre d'outils, donc moins `contentInsets.top`) donne la photo (colonne par le pas
+        de colonne, rangée par le pas de rangée) et sa distance au haut de la zone visible, que
+        chaque position recalculée conserve. Curseur et menu, sans pointeur : ancrage sur la
+        photo au centre de la zone visible.
+        Toujours là après ça (Michaël, 8/11/2026). Sondes (zoom simulé par pas de 8 pt, cadre
+        de la cellule ancrée relevé par `onGeometryChange` dans l'espace `.scrollView`) :
+        (1) le `scrollTo(y:)` est bien appliqué (2052,3 demandé, 2052,5 obtenu), mais la cellule
+        n'atterrit à la position calculée qu'au premier pas et après un changement du nombre de
+        colonnes ; aux autres pas elle dérive de 100 à 150 pt. La hauteur de contenu de la
+        `LazyVGrid` continue d'augmenter pendant une seconde après chaque pas (13,93 M → 15,41 M
+        pour 74 007 photos, loin des 17,5 M attendus) : la grille garde des hauteurs estimées pour
+        les rangées hors écran et les fait converger peu à peu, donc un décalage calculé à partir
+        de rangées uniformes tombe n'importe où. Leçon : avec une grille paresseuse, positionner
+        par identité, jamais par décalage.
+        (2) Réécriture : `.scrollTargetLayout()` sur la grille, cadres réels des cellules visibles
+        remontés au `GridViewport` (`onGeometryChange(.scrollView)`, closure stable dans
+        `AssetGridActions` pour garder la cellule `Equatable`), cellule ancrée = celle sous le
+        point, et `ScrollPosition.scrollTo(id:anchor:)` avec un `UnitPoint` tel que le haut de la
+        cellule tombe à `u × (conteneur − cellule)`. Mesuré : l'alignement se fait dans tout le
+        conteneur, zone sous la barre d'outils comprise (948 pt visibles mais 1 000 pt
+        d'alignement, écart constant de 16 pt corrigé en prenant `containerSize.height`), et
+        l'espace `.scrollView` des cadres a la même origine. Résultat : cellule à 2,5 pt de la
+        position visée à chaque pas, sans dérive, retour symétrique. L'ancre est abandonnée à la
+        fin du pincement ou après 400 ms sans changement (curseur, menu), plus de comparaison de
+        décalages. À confirmer par Michaël avec un vrai pincement : `startLocation` est supposé
+        dans le même espace que les cadres (origine sous la barre d'outils) ; sinon, un saut
+        unique d'une hauteur de barre au début du geste le trahira. Non vérifié à l'écran
+        par moi : à confirmer par Michaël (réception du pincement par le `ScrollView`, stabilité
+        de la rangée du haut, affichage de ⌘+ sur clavier français, netteté des vignettes de
+        dossier en mode carré).
 - [ ] Appariement RAW + JPEG, détection des sidecars, mise à jour en direct des
       changements (Photos et système de fichiers).
       Fait le 30/10/2026 : appariement par nom (un RAW + une image non RAW dans le même
