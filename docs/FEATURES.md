@@ -39,9 +39,11 @@ can feed a website one day. Dates are when the feature landed.
   while pinching, the one at the center of the view stays put with the slider or the menu, and
   thumbnails are fetched at the size they are shown, so zooming in keeps them sharp. Remembered
   across launches (2026-11-07, pinch 2026-11-08).
-- Thumbnail shape, in the View menu: Square Thumbnails (the photo cropped to a square) or Whole
-  Photos (the whole photo inside the square, with its own proportions; the place is reserved at
-  the photo's shape before it loads). Remembered across launches (2026-11-07).
+- Thumbnail shape, with a toolbar button and in the View menu: Square Thumbnails (the photo
+  cropped to a square) or Whole Photos (the whole photo inside the square, with its own
+  proportions; the place is reserved at the photo's shape before it loads); the thumbnails
+  animate from one shape to the other. Remembered across launches (2026-11-07, button and
+  animation 2026-11-08).
 - Thumbnails of edited photos show the real edit, from a cached preview (2026-10-29).
 - Multiple selection in the grid: click, ⌘-click, ⇧-click, ⌘A, Escape; double-click opens the
   editor; the context menu acts on the whole selection (2026-10-30).

@@ -94,6 +94,9 @@ struct LibraryContentView: View {
                 ToolbarItem {
                     ThumbnailSizeSlider()
                 }
+                ToolbarItem {
+                    ThumbnailFitToggle()
+                }
                 LibraryQueryToolbar(source: source)
                 ToolbarItem(placement: .primaryAction) {
                     InspectorVisibilityButton(isVisible: $isInspectorVisible)

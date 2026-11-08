@@ -79,6 +79,8 @@ struct AssetThumbnailView: View {
         }
         // The square the grid lays out, whatever shape the photo takes inside it.
         .frame(width: side + 4, height: side + 4)
+        // Switching between square and whole: the photo's frame grows or shrinks to its new shape.
+        .animation(.snappy(duration: 0.3), value: fit)
         .task(id: ThumbnailKey(id: asset.id, modificationDate: asset.modificationDate, pixels: requestPixels.width, fit: fit)) {
             source.prioritize(asset)
             // The previous pixels stay on screen until the new ones are in hand, or the request is superseded.

@@ -434,7 +434,16 @@ Bibliothèque
         fin du pincement ou après 400 ms sans changement (curseur, menu), plus de comparaison de
         décalages. À confirmer par Michaël avec un vrai pincement : `startLocation` est supposé
         dans le même espace que les cadres (origine sous la barre d'outils) ; sinon, un saut
-        unique d'une hauteur de barre au début du geste le trahira. Non vérifié à l'écran
+        unique d'une hauteur de barre au début du geste le trahira.
+        Validé par Michaël le 8/11/2026 (« parfait »). Ajouts le même jour à sa demande : bouton
+        bascule carré / photo entière dans la barre d'outils (`Toggle` en style bouton à côté du
+        curseur ; Michaël n'aimait pas le symbole `aspectratio`, donc symbole dessiné
+        (`ThumbnailFitSymbol`, une `Shape` remplie avec la règle pair-impair) : un cadre carré
+        et dedans une photo qui le remplit ou une photo paysage avec des bandes, animée de l'un
+        à l'autre), et animation des vignettes au changement de mode
+        (`.animation(.snappy, value: fit)` sur la vignette, donc valable aussi depuis le menu
+        View ; la préférence passe par `@AppStorage`, dont la mise à jour ne porte pas la
+        transaction d'un `withAnimation`). Non vérifié à l'écran
         par moi : à confirmer par Michaël (réception du pincement par le `ScrollView`, stabilité
         de la rangée du haut, affichage de ⌘+ sur clavier français, netteté des vignettes de
         dossier en mode carré).
