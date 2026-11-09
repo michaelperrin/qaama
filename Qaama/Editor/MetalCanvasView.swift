@@ -25,7 +25,7 @@ struct MetalCanvasView: View {
             .onChanged { value in
                 let start = zoomAtGestureStart ?? renderer.zoom
                 zoomAtGestureStart = start
-                renderer.zoom = (start * value.magnification).clampedZoom
+                renderer.setZoom(start * value.magnification)
             }
             .onEnded { _ in zoomAtGestureStart = nil }
     }
@@ -43,12 +43,6 @@ struct MetalCanvasView: View {
     private func resetViewport() {
         renderer.zoom = 1
         renderer.panOffset = .zero
-    }
-}
-
-private extension CGFloat {
-    var clampedZoom: CGFloat {
-        Swift.min(Swift.max(self, 0.25), 16)
     }
 }
 

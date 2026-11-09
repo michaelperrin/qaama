@@ -654,6 +654,25 @@ Bibliothèque
       enregistrer, supprimer), copier/coller des ajustements entre photos (le recadrage reste
       propre à chaque photo). Reste : import/export de préréglages, dossiers de préréglages.
 - [x] Persistance : sidecar JSON pour les fichiers, `PHAdjustmentData` pour Photos (29/10/2026).
+- [x] Zoom du canevas, demandé par Michaël le 8/11/2026 : curseur dans la barre d'outils, au même
+      endroit que celui de la mosaïque, logarithmique sur la plage 0,25–16 du canevas, avec deux
+      crans : « adapter » (zoom 1 du renderer) et 100 % (un pixel de la photo par pixel d'écran,
+      `CanvasRenderer.actualSizeZoom` = 1 / échelle d'ajustement, calculée de la taille du
+      drawable, désormais exposée, et de l'étendue de l'image). Les crans sont des marques sous
+      la piste (`Canvas`, alignement vérifié hors écran : demi-largeur du bouton 8 pt) et un
+      aimant de ±0,1 doublement (≈ 7 %) dans le setter de la liaison ; pourcentage de la taille
+      réelle à côté, largeur fixe. Menu View : Zoom In / Zoom Out agissent sur le canevas quand
+      une photo est ouverte (×1,25), sinon sur la mosaïque ; Zoom to Fit (⌘0) et Actual Size (⌘1).
+      Tests : `CanvasZoomTests`. Retour de Michaël : le bouton de l'inspecteur doit être seul,
+      tout à droite ; la barre d'outils de l'éditeur est désormais construite au même endroit
+      (`EditorView`, plus dans `InspectorControls`) pour maîtriser l'ordre, et un
+      `ToolbarSpacer(.fixed)` isole le bouton dans sa propre capsule, dans l'éditeur comme dans
+      la mosaïque.
+      Zoom minimal ramené à « adapter » le 9/11/2026, à la demande de Michaël (plus petit ne
+      sert à rien) : `CanvasRenderer.zoomRange` part de 1, ou de 100 % pour une photo plus
+      petite que la vue (qu'« adapter » agrandit, sinon Actual Size n'aurait plus d'effet) ; le
+      curseur commence donc à « adapter » et n'a plus qu'un cran, 100 %. Revenir à « adapter »
+      recentre la photo (`setZoom` remet le décalage à zéro).
 
 Export
 

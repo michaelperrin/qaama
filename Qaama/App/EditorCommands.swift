@@ -1,6 +1,7 @@
 import EditModel
 import EditorKit
 import LibraryKit
+import RenderEngine
 import SwiftUI
 
 /// The editor shown in the key window, for the menu bar commands.
@@ -141,8 +142,9 @@ extension FocusedValues {
     }
 }
 
-/// File › New Album…, New Album Folder… and Export…, View › Show Inspector, Zoom In and Out and the
-/// thumbnail shape (square or whole photo), and the Image menu:
+/// File › New Album…, New Album Folder… and Export…, View › Show Inspector, Zoom In and Out (the
+/// canvas of the open photo, else the grid), Zoom to Fit and Actual Size, the thumbnail shape (square
+/// or whole photo), and the Image menu:
 /// Adjust Date & Time, Rating, Flag, the albums (Add to Album, Add to the last album, Remove from
 /// Album) and Adjustments (copy, paste, create a preset). Act on the key window: its inspector
 /// column, its export, its selection or open photo, its focused editor.
@@ -169,13 +171,39 @@ struct EditorCommands: Commands {
                 .keyboardShortcut("i", modifiers: [.command, .option])
                 .disabled(hasInspector != true)
             Divider()
-            // The grid's thumbnails; the slider in the toolbar moves the same setting.
-            Button("Zoom In") { thumbnailSide = GridDisplay.zoomedIn(thumbnailSide) }
-                .keyboardShortcut("+")
-                .disabled(hasAssetGrid != true || thumbnailSide >= GridDisplay.sideRange.upperBound)
-            Button("Zoom Out") { thumbnailSide = GridDisplay.zoomedOut(thumbnailSide) }
-                .keyboardShortcut("-")
-                .disabled(hasAssetGrid != true || thumbnailSide <= GridDisplay.sideRange.lowerBound)
+            // The canvas of the open photo, else the grid's thumbnails; the sliders in the toolbar move
+            // the same settings.
+            Button("Zoom In") {
+                if let canvas {
+                    canvas.setZoom(canvas.zoom * Self.canvasZoomStep)
+                } else {
+                    thumbnailSide = GridDisplay.zoomedIn(thumbnailSide)
+                }
+            }
+            .keyboardShortcut("+")
+            .disabled(canvas.map { $0.zoom >= $0.zoomRange.upperBound } ?? (hasAssetGrid != true || thumbnailSide >= GridDisplay.sideRange.upperBound))
+            Button("Zoom Out") {
+                if let canvas {
+                    canvas.setZoom(canvas.zoom / Self.canvasZoomStep)
+                } else {
+                    thumbnailSide = GridDisplay.zoomedOut(thumbnailSide)
+                }
+            }
+            .keyboardShortcut("-")
+            .disabled(canvas.map { $0.zoom <= $0.zoomRange.lowerBound } ?? (hasAssetGrid != true || thumbnailSide <= GridDisplay.sideRange.lowerBound))
+            Button("Zoom to Fit") {
+                canvas?.setZoom(1)
+                canvas?.panOffset = .zero
+            }
+            .keyboardShortcut("0")
+            .disabled(canvas == nil)
+            Button("Actual Size") {
+                if let canvas, let actual = canvas.actualSizeZoom {
+                    canvas.setZoom(actual)
+                }
+            }
+            .keyboardShortcut("1")
+            .disabled(canvas?.actualSizeZoom == nil)
             Divider()
             Picker("Thumbnails", selection: $thumbnailFit) {
                 Text("Square Thumbnails").tag(ThumbnailFit.fill)
@@ -238,6 +266,14 @@ struct EditorCommands: Commands {
             }
         }
     }
+
+    /// The canvas of the photo open in the key window, for View › Zoom; nil in the grid.
+    private var canvas: CanvasRenderer? {
+        guard let editor, editor.isOpen else { return nil }
+        return editor.renderer
+    }
+
+    private static let canvasZoomStep: CGFloat = 1.25
 
     private static func ratingTitle(_ stars: Int) -> String {
         switch stars {

@@ -25,6 +25,44 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
         didSet { view?.setNeedsDisplay(view?.bounds ?? .zero) }
     }
 
+    /// The largest zoom the gestures, the slider and the menu allow.
+    public static let maximumZoom: CGFloat = 16
+
+    /// What the gestures, the slider and the menu keep `zoom` within. It starts at Fit, since
+    /// nothing is gained by showing the photo smaller than the view allows, or at 100% for a photo
+    /// smaller than the view, which Fit enlarges.
+    public var zoomRange: ClosedRange<CGFloat> {
+        min(1, actualSizeZoom ?? 1) ... Self.maximumZoom
+    }
+
+    /// Size of the view's drawable in pixels, as last laid out; zero before the view has one.
+    public private(set) var drawableSize: CGSize = .zero
+
+    /// The zoom at which one pixel of the image is one pixel of the screen, or nil without an image
+    /// or a view to show it in. Above `maximumZoom` for an image much larger than the view.
+    public var actualSizeZoom: CGFloat? {
+        guard let image else { return nil }
+        let fit = Self.fitScale(imageSize: image.extent.size, in: drawableSize)
+        return fit > 0 ? 1 / fit : nil
+    }
+
+    /// Screen pixels per image pixel when the whole image fits the drawable (zoom 1); 0 when either
+    /// size is unknown.
+    public nonisolated static func fitScale(imageSize: CGSize, in drawableSize: CGSize) -> CGFloat {
+        guard imageSize.width > 0, imageSize.height > 0, drawableSize.width > 0, drawableSize.height > 0 else { return 0 }
+        return min(drawableSize.width / imageSize.width, drawableSize.height / imageSize.height)
+    }
+
+    /// Zooms around the center, within `zoomRange`. At Fit or below the whole photo is in view and
+    /// there is nothing to pan to, so it goes back to the center.
+    public func setZoom(_ value: CGFloat) {
+        let range = zoomRange
+        zoom = min(max(value, range.lowerBound), range.upperBound)
+        if zoom <= 1, panOffset != .zero {
+            panOffset = .zero
+        }
+    }
+
     /// Offset of the image center from the view center, in view points.
     public var panOffset: CGPoint = .zero {
         didSet { view?.setNeedsDisplay(view?.bounds ?? .zero) }
@@ -123,7 +161,8 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
 
     // MARK: - MTKViewDelegate
 
-    public func mtkView(_ view: MTKView, drawableSizeWillChange _: CGSize) {
+    public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+        drawableSize = size
         view.setNeedsDisplay(view.bounds)
     }
 
@@ -133,6 +172,9 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
         else {
             logger.error("Canvas draw skipped: no drawable or command buffer")
             return
+        }
+        if drawableSize != view.drawableSize {
+            drawableSize = view.drawableSize
         }
         let clock = ContinuousClock()
         let start = clock.now
@@ -180,8 +222,7 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
     private func placed(_ image: CIImage, in drawableSize: CGSize, scaleFactor: CGFloat) -> CIImage {
         let extent = image.extent
         guard extent.width > 0, extent.height > 0 else { return image }
-        let fit = min(drawableSize.width / extent.width, drawableSize.height / extent.height)
-        let scale = fit * zoom
+        let scale = Self.fitScale(imageSize: extent.size, in: drawableSize) * zoom
         let scaledSize = CGSize(width: extent.width * scale, height: extent.height * scale)
         let origin = CGPoint(
             x: (drawableSize.width - scaledSize.width) / 2 + panOffset.x * scaleFactor,

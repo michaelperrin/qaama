@@ -72,6 +72,25 @@ struct EditorView: View {
             Divider()
             EditorBottomBar(model: model, onExport: openExport, onClose: onClose)
         }
+        .toolbar {
+            if let renderer = model.renderer {
+                ToolbarItem {
+                    CanvasZoomSlider(renderer: renderer)
+                        .disabled(!model.isOpen)
+                }
+            }
+            if isInspectorVisible {
+                ToolbarItem(placement: .primaryAction) {
+                    InspectorTabPicker(selection: $inspectorTab)
+                        .disabled(!model.isOpen)
+                }
+            }
+            // The inspector button stands alone at the far right, as in the grid.
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+            ToolbarItem(placement: .primaryAction) {
+                InspectorVisibilityButton(isVisible: $isInspectorVisible)
+            }
+        }
         .modifier(InspectorControls(model: model, tab: $inspectorTab, isVisible: $isInspectorVisible))
         .presetNamingPrompt(model: model, presets: presets)
         .focusedSceneValue(\.editor, model)

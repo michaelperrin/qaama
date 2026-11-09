@@ -114,3 +114,49 @@ struct SourceImageDraftTests {
         #expect(await renderer.rasterized(CIImage(color: .red)) == nil) // an infinite image has no pixels to keep
     }
 }
+
+struct CanvasZoomTests {
+    @Test func fitScaleIsTheTighterOfTheTwoAxes() {
+        #expect(CanvasRenderer.fitScale(imageSize: CGSize(width: 6000, height: 4000), in: CGSize(width: 1500, height: 1500)) == 0.25)
+        #expect(CanvasRenderer.fitScale(imageSize: CGSize(width: 400, height: 1000), in: CGSize(width: 1000, height: 500)) == 0.5)
+        #expect(CanvasRenderer.fitScale(imageSize: .zero, in: CGSize(width: 1000, height: 500)) == 0)
+        #expect(CanvasRenderer.fitScale(imageSize: CGSize(width: 10, height: 10), in: .zero) == 0)
+    }
+
+    @MainActor @Test func actualSizeZoomUndoesTheFit() throws {
+        let renderer = try #require(CanvasRenderer())
+        #expect(renderer.actualSizeZoom == nil)
+        renderer.image = CIImage(color: .red).cropped(to: CGRect(x: 0, y: 0, width: 6000, height: 4000))
+        // No view yet: the drawable size is unknown.
+        #expect(renderer.actualSizeZoom == nil)
+        let view = renderer.makeView()
+        renderer.mtkView(view, drawableSizeWillChange: CGSize(width: 1500, height: 1500))
+        #expect(renderer.actualSizeZoom == 4)
+        renderer.setZoom(100)
+        #expect(renderer.zoom == CanvasRenderer.maximumZoom)
+    }
+
+    @MainActor @Test func zoomStopsAtFitAndRecentersThere() throws {
+        let renderer = try #require(CanvasRenderer())
+        renderer.image = CIImage(color: .red).cropped(to: CGRect(x: 0, y: 0, width: 6000, height: 4000))
+        renderer.mtkView(renderer.makeView(), drawableSizeWillChange: CGSize(width: 1500, height: 1500))
+        #expect(renderer.zoomRange == 1 ... CanvasRenderer.maximumZoom)
+        renderer.setZoom(3)
+        renderer.panOffset = CGPoint(x: 40, y: -20)
+        renderer.setZoom(2)
+        #expect(renderer.panOffset == CGPoint(x: 40, y: -20)) // still zoomed in: the pan is kept
+        renderer.setZoom(0.3)
+        #expect(renderer.zoom == 1)
+        #expect(renderer.panOffset == .zero)
+    }
+
+    @MainActor @Test func aPhotoSmallerThanTheViewZoomsOutToItsActualSize() throws {
+        let renderer = try #require(CanvasRenderer())
+        renderer.image = CIImage(color: .red).cropped(to: CGRect(x: 0, y: 0, width: 300, height: 200))
+        renderer.mtkView(renderer.makeView(), drawableSizeWillChange: CGSize(width: 1500, height: 1500))
+        // Fit enlarges it five times, so 100% is below Fit and becomes the lower end.
+        #expect(renderer.zoomRange.lowerBound == 0.2)
+        renderer.setZoom(0.01)
+        #expect(renderer.zoom == 0.2)
+    }
+}

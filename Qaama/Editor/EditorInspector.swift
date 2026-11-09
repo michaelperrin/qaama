@@ -50,9 +50,10 @@ struct EditorInspector: View {
     }
 }
 
-/// What drives the inspector from outside the column: the toolbar's tabs and show/hide button, the
-/// C key, and the link between the Crop & Straighten tab and the model's crop mode. Attached to the
-/// editor view rather than to the column, so all of it keeps working while the column is hidden.
+/// What drives the inspector from outside the column: the C key, and the link between the Crop &
+/// Straighten tab and the model's crop mode. Attached to the editor view rather than to the column,
+/// so all of it keeps working while the column is hidden. The toolbar's tabs and show/hide button
+/// are laid out by `EditorView` with the rest of its toolbar, so their order is in one place.
 ///
 /// The Crop & Straighten tab is the crop tool: selecting it frames the image for cropping, leaving
 /// it applies the crop. The model stays the source of truth for that mode, the tab follows it.
@@ -70,17 +71,6 @@ struct InspectorControls: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(cropShortcut)
-            .toolbar {
-                if isVisible {
-                    ToolbarItem(placement: .primaryAction) {
-                        InspectorTabPicker(selection: $tab)
-                            .disabled(!model.isOpen)
-                    }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    InspectorVisibilityButton(isVisible: $isVisible)
-                }
-            }
             .onAppear { tab = restingTab == .crop ? .adjustments : restingTab }
             .onChange(of: tab) { _, new in
                 if new == .crop {

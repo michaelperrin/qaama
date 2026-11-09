@@ -116,6 +116,10 @@ can feed a website one day. Dates are when the feature landed.
   thumbnails' context menu without opening the editor, to one photo or the whole selection);
   the crop stays with each photo; undoable (2026-10-30).
 - Zoom with a pinch, pan by dragging, double-click to fit (2026-10-29).
+- Zoom slider in the toolbar, from Fit (the whole photo, never smaller) up to 16 times that, with
+  a detent at 100% (one pixel of the photo per pixel of the screen) and the zoom shown as a
+  percentage of the photo's real size; zooming back out to Fit recenters the photo; View › Zoom In
+  (⌘+), Zoom Out (⌘−), Zoom to Fit (⌘0) and Actual Size (⌘1) (2026-11-09).
 - Round Back button at the top left of the toolbar returns to the photo grid (2026-11-05).
 - Inspector in three icon tabs in the toolbar: Info (histogram and file metadata), Crop & Straighten (the crop
   tool: opening the tab frames the image, leaving it or pressing Done applies the crop; C toggles
