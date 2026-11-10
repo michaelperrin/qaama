@@ -79,6 +79,50 @@ public struct Geometry: Codable, Hashable, Sendable {
         return copy
     }
 
+    /// Where a point of the original lands in the reference frame: the image once flipped, turned
+    /// and straightened, before cropping. Both points are in unit coordinates, origin top-left.
+    /// `width` and `height` are the original's, in pixels: straightening depends on the aspect.
+    /// A point the straightening trims off comes out outside 0…1.
+    public func referencePoint(fromSource point: UnitPoint2D, width: Double, height: Double) -> UnitPoint2D {
+        var x = point.x, y = point.y, w = width, h = height
+        if isFlippedHorizontally {
+            x = 1 - x
+        }
+        for _ in 0 ..< quarterTurns {
+            // A quarter turn clockwise: the left edge becomes the top.
+            (x, y) = (1 - y, x)
+            swap(&w, &h)
+        }
+        guard angle != 0, w > 0, h > 0 else { return UnitPoint2D(x: x, y: y) }
+        let theta = angle * .pi / 180, scale = Self.inscribedScale(width: w, height: h, degrees: angle)
+        // Pixels from the center, turned clockwise (y points down), then measured in the safe area.
+        let px = (x - 0.5) * w, py = (y - 0.5) * h
+        let rx = px * cos(theta) - py * sin(theta), ry = px * sin(theta) + py * cos(theta)
+        return UnitPoint2D(x: 0.5 + rx / (w * scale), y: 0.5 + ry / (h * scale))
+    }
+
+    /// The inverse of `referencePoint(fromSource:width:height:)`; `width` and `height` are still the
+    /// original's.
+    public func sourcePoint(fromReference point: UnitPoint2D, width: Double, height: Double) -> UnitPoint2D {
+        var x = point.x, y = point.y
+        let turned = quarterTurns % 2 == 1
+        let w = turned ? height : width, h = turned ? width : height
+        if angle != 0, w > 0, h > 0 {
+            let theta = angle * .pi / 180, scale = Self.inscribedScale(width: w, height: h, degrees: angle)
+            let rx = (x - 0.5) * w * scale, ry = (y - 0.5) * h * scale
+            let px = rx * cos(theta) + ry * sin(theta), py = -rx * sin(theta) + ry * cos(theta)
+            x = 0.5 + px / w
+            y = 0.5 + py / h
+        }
+        for _ in 0 ..< quarterTurns {
+            (x, y) = (y, 1 - x)
+        }
+        if isFlippedHorizontally {
+            x = 1 - x
+        }
+        return UnitPoint2D(x: x, y: y)
+    }
+
     /// Scale of the largest rectangle with aspect `width : height` that fits inside that rectangle once
     /// rotated by `degrees`. 1 at 0°; a square at 45° gives 1/√2.
     public static func inscribedScale(width: Double, height: Double, degrees: Double) -> Double {

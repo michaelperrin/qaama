@@ -53,6 +53,17 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
         return min(drawableSize.width / imageSize.width, drawableSize.height / imageSize.height)
     }
 
+    /// Where the image is drawn in a view of `size`, in the view's points with the origin at the
+    /// top-left: fitted, zoomed and panned as `draw(in:)` does. Nil without an image. What an overlay
+    /// needs to convert between its own coordinates and the image's.
+    public func imageRect(inViewOfSize size: CGSize) -> CGRect? {
+        guard let extent = image?.extent, !extent.isInfinite, extent.width > 0, extent.height > 0, size.width > 0, size.height > 0 else { return nil }
+        let scale = Self.fitScale(imageSize: extent.size, in: size) * zoom
+        let scaled = CGSize(width: extent.width * scale, height: extent.height * scale)
+        return CGRect(x: (size.width - scaled.width) / 2 + panOffset.x, y: (size.height - scaled.height) / 2 + panOffset.y,
+                      width: scaled.width, height: scaled.height)
+    }
+
     /// Zooms around the center, within `zoomRange`. At Fit or below the whole photo is in view and
     /// there is nothing to pan to, so it goes back to the center.
     public func setZoom(_ value: CGFloat) {

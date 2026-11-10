@@ -31,7 +31,8 @@ Packages/
   EditModel/      EditRecipe: the versioned JSON edit description, pure Swift
   EditorKit/      EditorModel: editing workflow (open, preview, undo, save, export), testable without views
   ImageIOKit/     ImageIO and Quick Look: headers (EXIF), thumbnails, full-size decoding
-  RenderEngine/   Core Image on Metal: decoding (CIRAWFilter for RAW), pipeline, canvas, export
+  RenderEngine/   Core Image on Metal: decoding (CIRAWFilter for RAW), pipeline, canvas, export,
+                  and the retouch fill (target HealingFill, always optimized)
   LibraryKit/     Sources of photos (Photos library, folders), SQLite catalog (GRDB), sidecars, caches
 Experiments/      Throwaway feasibility prototypes, never linked into the app
 ```
@@ -47,6 +48,9 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   `any LibrarySource` and `LibraryAsset`. Keep PhotoKit and file-system types inside LibraryKit.
 - Edits are recipes, never pixels: sidecar `<file>.qaama` next to folder images,
   `PHAdjustmentData` plus a rendered JPEG for Photos. Reset means removing the recipe.
+- Retouches are strokes in the recipe, in the original's coordinates. What fills them is computed
+  by `RetouchRenderer` once per stroke, off the main actor, and only composited by the pipeline;
+  each fill depends on the retouches before it.
 - Thumbnails of edited folder photos come from `PreviewCache` (2048 px JPEG of the real
   render, keyed by asset id and modification date), never from re-applying the recipe on a
   small image.
@@ -103,6 +107,9 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   as `HSL.Evaluator` does), cache derived data keyed by the setting that produced it (as
   `ColorCube.data(for:)` does), and remember the app is tested in Debug builds, which are
   several times slower than Release. Measure with a temporary test before and after.
+- Pure Swift loops over pixels are hundreds of times slower without optimization (measured:
+  38 s against 59 ms for one retouch fill). Code of that kind goes into a small target of its
+  own compiled with `-O` in Debug too, as `HealingFill` is in the RenderEngine package.
 
 ## Tests
 

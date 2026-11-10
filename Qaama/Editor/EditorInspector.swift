@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The panels of the editor's right column, one per icon of its tab picker.
 enum InspectorTab: String, CaseIterable, Identifiable {
-    case info, crop, adjustments
+    case info, crop, retouch, adjustments
 
     var id: Self {
         self
@@ -14,6 +14,7 @@ enum InspectorTab: String, CaseIterable, Identifiable {
         switch self {
         case .info: String(localized: "Info")
         case .crop: String(localized: "Crop & Straighten")
+        case .retouch: String(localized: "Retouch")
         case .adjustments: String(localized: "Adjustments")
         }
     }
@@ -22,8 +23,15 @@ enum InspectorTab: String, CaseIterable, Identifiable {
         switch self {
         case .info: "info.circle"
         case .crop: "crop.rotate"
+        case .retouch: "bandage"
         case .adjustments: "slider.horizontal.3"
         }
+    }
+
+    /// True for the tabs that are tools on the canvas: the photo is in that tool's mode while the
+    /// tab is selected, and leaving the tool goes back to the tab the user was on.
+    var isTool: Bool {
+        self == .crop || self == .retouch
     }
 }
 
@@ -43,6 +51,7 @@ struct EditorInspector: View {
             switch tab {
             case .info: InfoInspector(model: model)
             case .crop: CropInspector(model: model) { tab = restingTab }
+            case .retouch: RetouchInspector(model: model) { tab = restingTab }
             case .adjustments: AdjustmentsInspector(model: model, presets: presets)
             }
         }
@@ -50,13 +59,15 @@ struct EditorInspector: View {
     }
 }
 
-/// What drives the inspector from outside the column: the C key, and the link between the Crop &
-/// Straighten tab and the model's crop mode. Attached to the editor view rather than to the column,
-/// so all of it keeps working while the column is hidden. The toolbar's tabs and show/hide button
-/// are laid out by `EditorView` with the rest of its toolbar, so their order is in one place.
+/// What drives the inspector from outside the column: the C and R keys, and the link between the
+/// tool tabs and the model's modes. Attached to the editor view rather than to the column, so all
+/// of it keeps working while the column is hidden. The toolbar's tabs and show/hide button are laid
+/// out by `EditorView` with the rest of its toolbar, so their order is in one place.
 ///
 /// The Crop & Straighten tab is the crop tool: selecting it frames the image for cropping, leaving
-/// it applies the crop. The model stays the source of truth for that mode, the tab follows it.
+/// it applies the crop. The Retouch tab is the retouch tool: while it is selected, dragging on the
+/// canvas paints out what to remove. The model stays the source of truth for both modes, the tab
+/// follows it.
 struct InspectorControls: ViewModifier {
     static let restingTabKey = "editorInspectorTab"
     /// Whether the window's right column is shown; the grid's Info panel follows the same setting.
@@ -65,19 +76,41 @@ struct InspectorControls: ViewModifier {
     let model: EditorModel
     @Binding var tab: InspectorTab
     @Binding var isVisible: Bool
-    /// Where leaving the crop tool goes back to, and what the next photo opens on.
+    /// Where leaving a tool goes back to, and what the next photo opens on.
     @AppStorage(InspectorControls.restingTabKey) private var restingTab = InspectorTab.adjustments
+    /// The retouch brush keeps its size from one photo and one launch to the next.
+    @AppStorage(RetouchInspector.radiusKey) private var retouchRadius = 0.02
 
     func body(content: Content) -> some View {
         content
-            .background(cropShortcut)
-            .onAppear { tab = restingTab == .crop ? .adjustments : restingTab }
+            .background(toolShortcuts)
+            .onAppear { tab = restingTab.isTool ? .adjustments : restingTab }
             .onChange(of: tab) { _, new in
-                if new == .crop {
-                    model.beginCropping()
-                } else {
+                if !new.isTool {
                     restingTab = new
+                }
+                // Each tool ends the other one when it begins.
+                switch new {
+                case .crop:
+                    model.beginCropping()
+                case .retouch:
+                    model.beginRetouching(radius: retouchRadius)
+                default:
                     model.endCropping()
+                    model.endRetouching()
+                }
+            }
+            .onChange(of: model.isRetouching) { _, isRetouching in
+                // A new photo starts outside the tool, and the crop tool ends it.
+                if isRetouching, tab != .retouch {
+                    tab = .retouch
+                } else if !isRetouching, tab == .retouch {
+                    tab = restingTab
+                }
+            }
+            .onChange(of: model.retouchTool?.radius) { _, radius in
+                if let radius {
+                    retouchRadius = radius
                 }
             }
             .onChange(of: model.isCropping) { _, isCropping in
@@ -90,13 +123,17 @@ struct InspectorControls: ViewModifier {
             }
     }
 
-    /// The C key toggles the crop tool from any tab, and with the column hidden.
-    private var cropShortcut: some View {
-        Button("") { tab = tab == .crop ? restingTab : .crop }
-            .keyboardShortcut("c", modifiers: [])
-            .disabled(!model.isOpen)
-            .hidden()
-            .frame(width: 0, height: 0)
+    /// The C and R keys toggle the crop and retouch tools from any tab, and with the column hidden.
+    private var toolShortcuts: some View {
+        Group {
+            Button("") { tab = tab == .crop ? restingTab : .crop }
+                .keyboardShortcut("c", modifiers: [])
+            Button("") { tab = tab == .retouch ? restingTab : .retouch }
+                .keyboardShortcut("r", modifiers: [])
+        }
+        .disabled(!model.isOpen)
+        .hidden()
+        .frame(width: 0, height: 0)
     }
 }
 

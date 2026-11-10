@@ -199,7 +199,7 @@ public final class ExportModel {
             } else {
                 let input = try await input(for: item)
                 edited = try await Task.detached(priority: .userInitiated) { () throws -> (CIImage, CGSize) in
-                    let full = await EditRenderer.render(image: input.image, recipe: input.recipe, masks: input.masks)
+                    let full = await EditRenderer.render(image: input.image, recipe: input.recipe, masks: input.masks, fills: input.fills)
                     // Small photos stay at their size: an enlarged preview would only blur them.
                     let edge = min(Self.previewLongEdge, Int(max(full.extent.width, full.extent.height)))
                     let reduced = ExportRenderer.resize(full, to: .longEdge(edge))

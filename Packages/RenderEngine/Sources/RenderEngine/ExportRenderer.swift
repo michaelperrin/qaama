@@ -7,22 +7,26 @@ import ImageIO
 import ImageIOKit
 import UniformTypeIdentifiers
 
-/// A photo to export: its decoded pixels, the recipe to render, the model masks already resolved
-/// (missing ones are resolved during the render) and, when the source is a file, where to read the
-/// metadata to carry over.
+/// A photo to export: its decoded pixels, the recipe to render, the model masks and retouch fills
+/// already resolved (missing ones are resolved during the render) and, when the source is a file,
+/// where to read the metadata to carry over.
 public nonisolated struct ExportInput: Sendable {
     public var image: CIImage
     public var recipe: EditRecipe
     public var masks: [UUID: CIImage]
+    public var fills: [UUID: CIImage]
     public var metadataURL: URL?
     /// The capture date the user corrected in the library, written in place of the original's; nil
     /// keeps what the original says.
     public var captureDate: Date?
 
-    public init(image: CIImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:], metadataURL: URL? = nil, captureDate: Date? = nil) {
+    public init(image: CIImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:], fills: [UUID: CIImage] = [:], metadataURL: URL? = nil,
+                captureDate: Date? = nil)
+    {
         self.image = image
         self.recipe = recipe
         self.masks = masks
+        self.fills = fills
         self.metadataURL = metadataURL
         self.captureDate = captureDate
     }
@@ -46,7 +50,7 @@ public nonisolated enum ExportRenderer {
     /// The edited image with its watermark and frame, at the size the settings ask for, origin at zero.
     /// `watermarkPicture` is the decoded picture of an image watermark, when there is one.
     public static func render(_ input: ExportInput, settings: ExportSettings, watermarkPicture: CIImage? = nil) async -> CIImage {
-        let edited = await EditRenderer.render(image: input.image, recipe: input.recipe, masks: input.masks)
+        let edited = await EditRenderer.render(image: input.image, recipe: input.recipe, masks: input.masks, fills: input.fills)
         return resize(compose(edited, settings: settings, watermarkPicture: watermarkPicture), to: settings.size)
     }
 

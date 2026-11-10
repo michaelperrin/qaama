@@ -40,6 +40,9 @@ public final class EditorModel {
     public private(set) var keywords: [String] = []
     public private(set) var undoStack: [EditRecipe] = []
     public private(set) var redoStack: [EditRecipe] = []
+    /// What the Edit menu calls each step of the two stacks.
+    private var undoNames: [String] = []
+    private var redoNames: [String] = []
     /// Header of the original (EXIF), read when the editor opens; nil when the source gives no file.
     private var header: ImageMetadata?
     /// The read of that header, for the export, which may be asked for before it has finished.
@@ -170,6 +173,136 @@ public final class EditorModel {
         currentStroke.map { recipe(adding: $0) } ?? recipe
     }
 
+    // MARK: - Retouch
+
+    /// The retouch brush, while the retouch tool is on: dragging on the canvas paints what to remove.
+    public struct RetouchTool: Hashable, Sendable {
+        /// Radius as a fraction of the original's long edge.
+        public var radius: Double
+
+        public init(radius: Double = 0.02) {
+            self.radius = min(max(radius, Retouch.radiusRange.lowerBound), Retouch.radiusRange.upperBound)
+        }
+    }
+
+    public private(set) var retouchTool: RetouchTool?
+
+    public var isRetouching: Bool {
+        retouchTool != nil
+    }
+
+    /// Changes the brush size, kept within what the tool offers.
+    public func setRetouchRadius(_ radius: Double) {
+        guard isRetouching else { return }
+        retouchTool = RetouchTool(radius: radius)
+    }
+
+    /// The stroke being painted, for the canvas to draw. It enters the recipe when the mouse goes up.
+    public private(set) var retouchStroke: Retouch?
+    /// What each retouch puts in place of what was painted out (`RetouchRenderer`), by retouch id.
+    public private(set) var retouchFills: [UUID: CIImage] = [:]
+    /// The retouches those fills were computed for, in order: each fill was computed on top of the
+    /// ones before it, so it is only good for a list that starts the same way.
+    private var filledRetouches: [Retouch] = []
+    private var retouchResolution: Task<Void, Never>?
+
+    /// Retouches whose fill is still being computed: the canvas shows them as painted meanwhile.
+    public var pendingRetouches: [Retouch] {
+        recipe.retouches.filter { retouchFills[$0.id] == nil }
+    }
+
+    /// Turns the retouch tool on, leaving the crop tool and mask painting.
+    public func beginRetouching(radius: Double = 0.02) {
+        guard !isRetouching, isOpen else { return }
+        endCropping()
+        brushTool = nil
+        showsMaskOverlay = false
+        retouchTool = RetouchTool(radius: radius)
+    }
+
+    public func endRetouching() {
+        guard isRetouching else { return }
+        retouchTool = nil
+        retouchStroke = nil
+    }
+
+    /// Paints with the retouch brush; points are in the original's unit coordinates
+    /// (`sourcePoint(fromDisplayed:)`).
+    public func beginRetouchStroke(at point: UnitPoint2D) {
+        guard let tool = retouchTool else { return }
+        retouchStroke = Retouch(points: [point], radius: tool.radius)
+    }
+
+    public func extendRetouchStroke(to point: UnitPoint2D) {
+        guard retouchStroke != nil, retouchStroke?.points.last != point else { return }
+        retouchStroke?.points.append(point)
+    }
+
+    /// Writes the stroke into the recipe, as one undoable change; its fill follows in the background.
+    public func endRetouchStroke() {
+        guard let stroke = retouchStroke else { return }
+        retouchStroke = nil
+        recipe.retouches.append(stroke)
+        commitChange(named: "Retouch")
+    }
+
+    /// Brings back everything that was painted out, as one undoable change.
+    public func removeRetouches() {
+        guard !recipe.retouches.isEmpty else { return }
+        recipe.retouches.removeAll()
+        commitChange(named: "Remove Retouches")
+    }
+
+    /// Maps a point of the displayed image (unit, origin top-left) to the original, where retouches
+    /// are defined, undoing the crop, the straightening, the turns and the flip.
+    public func sourcePoint(fromDisplayed point: UnitPoint2D) -> UnitPoint2D {
+        let reference = referencePoint(fromDisplayed: point)
+        guard let geometry = recipe.geometry, let size = sourceImage?.pixelSize else { return reference }
+        return geometry.sourcePoint(fromReference: reference, width: size.width, height: size.height)
+    }
+
+    public func displayedPoint(fromSource point: UnitPoint2D) -> UnitPoint2D {
+        guard let geometry = recipe.geometry, let size = sourceImage?.pixelSize else { return displayedPoint(fromReference: point) }
+        return displayedPoint(fromReference: geometry.referencePoint(fromSource: point, width: size.width, height: size.height))
+    }
+
+    /// Computes, in the background and one at a time, the fills the recipe's retouches don't have
+    /// yet, then re-renders. Fills computed for a list this one has diverged from are dropped from
+    /// the point where they differ; those of retouches merely undone are kept for the redo.
+    private func resolveRetouchesIfNeeded() {
+        let retouches = recipe.retouches
+        guard !retouches.isEmpty || !filledRetouches.isEmpty, !isClosed, let sourceImage else { return }
+        let shared = zip(retouches, filledRetouches).prefix { $0 == $1 }.count
+        if shared < min(retouches.count, filledRetouches.count) {
+            for stale in filledRetouches[shared...] {
+                retouchFills[stale.id] = nil
+            }
+            filledRetouches.removeSubrange(shared...)
+        }
+        guard retouchResolution == nil, filledRetouches.count < retouches.count else { return }
+        let next = retouches[filledRetouches.count]
+        let earlier = filledRetouches
+        let base = RetouchRenderer.apply(earlier, fills: retouchFills, to: sourceImage.image)
+        // The canvas's context has the original decoded already: a RAW isn't decoded again.
+        let context = renderer?.renderingContext
+        retouchResolution = Task { [weak self] in
+            let fill = await Task.detached(priority: .userInitiated) { RetouchRenderer.fill(next, in: base, context: context) }.value
+            guard let self, !isClosed else { return }
+            retouchResolution = nil
+            // The list may have changed while this ran: the fill is kept only if it still follows
+            // the same retouches.
+            if filledRetouches == earlier, recipe.retouches.starts(with: earlier + [next]) {
+                if fill == nil {
+                    statusMessage = "There is nothing around that area to fill it with."
+                }
+                retouchFills[next.id] = fill ?? CIImage.empty()
+                filledRetouches.append(next)
+                renderPreview()
+            }
+            resolveRetouchesIfNeeded()
+        }
+    }
+
     // MARK: - Reference frame
 
     /// Maps a point of the displayed image (unit, origin top-left) to the mask reference frame, which
@@ -284,6 +417,7 @@ public final class EditorModel {
 
     public func beginCropping() {
         guard !isCropping else { return }
+        endRetouching()
         isCropping = true
         renderer?.zoom = 1
         renderer?.panOffset = .zero
@@ -355,6 +489,7 @@ public final class EditorModel {
         didSet {
             renderPreview()
             resolveModelMasksIfNeeded()
+            resolveRetouchesIfNeeded()
         }
     }
 
@@ -455,6 +590,7 @@ public final class EditorModel {
             renderPreview()
             logger.notice("Opened \(self.assetID, privacy: .public) in \((ContinuousClock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
             resolveModelMasksIfNeeded()
+            resolveRetouchesIfNeeded()
             headerTask = photo.metadata
             header = await photo.metadata?.value
         } catch {
@@ -472,6 +608,7 @@ public final class EditorModel {
         isClosed = true
         renderer = nil
         maskResolution?.cancel()
+        retouchResolution?.cancel()
         histogramTask?.cancel()
         undoManager?.removeAllActions(withTarget: self)
         if preparation == nil, let asset {
@@ -492,11 +629,18 @@ public final class EditorModel {
 
     /// Records the current recipe as one undoable step, if it changed since the last checkpoint.
     public func commitChange() {
+        commitChange(named: "Adjustment")
+    }
+
+    /// Same, under the name the Edit menu shows after Undo and Redo.
+    public func commitChange(named actionName: String) {
         guard recipe != checkpoint else { return }
         undoStack.append(checkpoint)
+        undoNames.append(actionName)
         redoStack.removeAll()
+        redoNames.removeAll()
         checkpoint = recipe
-        registerUndo()
+        registerUndo(named: actionName)
     }
 
     public func reset() {
@@ -508,22 +652,26 @@ public final class EditorModel {
     /// this through it; the inspector's button goes through the manager too so both stay in sync.
     public func undo() {
         guard let previous = undoStack.popLast() else { return }
+        let name = undoNames.popLast() ?? "Adjustment"
         redoStack.append(recipe)
+        redoNames.append(name)
         recipe = previous
         checkpoint = previous
         // Registered while undoing, the manager files this as the matching redo.
-        registerUndo(isRedo: true)
+        registerUndo(named: name, isRedo: true)
     }
 
     public func redo() {
         guard let next = redoStack.popLast() else { return }
+        let name = redoNames.popLast() ?? "Adjustment"
         undoStack.append(recipe)
+        undoNames.append(name)
         recipe = next
         checkpoint = next
-        registerUndo()
+        registerUndo(named: name)
     }
 
-    private func registerUndo(isRedo: Bool = false) {
+    private func registerUndo(named actionName: String, isRedo: Bool = false) {
         guard let undoManager else { return }
         undoManager.registerUndo(withTarget: self) { model in
             if isRedo {
@@ -532,7 +680,7 @@ public final class EditorModel {
                 model.undo()
             }
         }
-        undoManager.setActionName("Adjustment")
+        undoManager.setActionName(actionName)
     }
 
     private func renderPreview() {
@@ -544,9 +692,9 @@ public final class EditorModel {
             source
         } else if isCropping {
             // The crop tool frames the straightened image: show it whole, the frame does the cropping.
-            RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry?.withoutCrop, masks: maskImages)
+            RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry?.withoutCrop, masks: maskImages, fills: retouchFills)
         } else {
-            RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry, masks: maskImages)
+            RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry, masks: maskImages, fills: retouchFills)
         }
         renderer?.image = showsMaskOverlay ? withMaskOverlay(shown, of: recipe, source: source) : shown
         scheduleHistogram(of: shown)
@@ -620,9 +768,9 @@ public final class EditorModel {
     public func renderJPEG() async throws -> Data {
         guard let sourceImage else { throw LibrarySourceError.assetUnavailable }
         let recipe = recipe
-        let masks = maskImages
+        let masks = maskImages, fills = retouchFills
         return try await Task.detached(priority: .userInitiated) {
-            try await ImageExporter.jpegData(for: EditRenderer.render(image: sourceImage.image, recipe: recipe, masks: masks))
+            try await ImageExporter.jpegData(for: EditRenderer.render(image: sourceImage.image, recipe: recipe, masks: masks, fills: fills))
         }.value
     }
 
@@ -640,7 +788,7 @@ public final class EditorModel {
     /// The open photo with its current edit, saved or not, for the export window.
     public func exportItem() -> ExportItem? {
         guard let sourceImage else { return nil }
-        let input = ExportInput(image: sourceImage.image, recipe: recipe, masks: maskImages, metadataURL: imageURL)
+        let input = ExportInput(image: sourceImage.image, recipe: recipe, masks: maskImages, fills: retouchFills, metadataURL: imageURL)
         let name = baseName
         let headerTask = headerTask
         let source = source

@@ -4,7 +4,7 @@ import EditModel
 
 /// Turns an `EditRecipe` into a Core Image filter chain. Pure function of its inputs.
 ///
-/// Layers are applied in order; within a layer the adjustments run in the engine's fixed order:
+/// Retouches come first, on the original, then the geometry, then the layers in order; within a layer the adjustments run in the engine's fixed order:
 /// white balance, exposure, dehaze, highlights and shadows, black point, contrast, curves, color,
 /// selective color, detail, black and white, then effects.
 public nonisolated enum RenderPipeline {
@@ -12,13 +12,16 @@ public nonisolated enum RenderPipeline {
         apply(recipe, to: image, geometry: recipe.geometry)
     }
 
-    /// Full render: straighten, global layer, masked layers blended through their masks, then crop.
-    /// `geometry` can be overridden (the crop tool shows the straightened image without its crop);
-    /// `masks` holds the precomputed images of model-based mask components, by component id.
-    public static func apply(_ recipe: EditRecipe, to image: CIImage, geometry: Geometry?, masks: [UUID: CIImage] = [:]) -> CIImage {
-        var current = image
+    /// Full render: retouches, straighten, global layer, masked layers blended through their masks,
+    /// then crop. `geometry` can be overridden (the crop tool shows the straightened image without
+    /// its crop); `masks` holds the precomputed images of model-based mask components, by component
+    /// id, and `fills` the precomputed fills of the retouches, by retouch id (`RetouchRenderer`).
+    public static func apply(_ recipe: EditRecipe, to image: CIImage, geometry: Geometry?, masks: [UUID: CIImage] = [:],
+                             fills: [UUID: CIImage] = [:]) -> CIImage
+    {
+        var current = recipe.retouches.isEmpty ? image : RetouchRenderer.apply(recipe.retouches, fills: fills, to: image)
         if let geometry {
-            current = GeometryRenderer.straighten(image, with: geometry)
+            current = GeometryRenderer.straighten(current, with: geometry)
         }
         let reference = current
         for (index, layer) in recipe.layers.enumerated() where layer.isEnabled && !layer.adjustments.isIdentity {

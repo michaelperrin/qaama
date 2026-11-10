@@ -154,6 +154,15 @@ can feed a website one day. Dates are when the feature landed.
 - Straighten from -45° to +45° with automatic trimming of empty corners; rotate by quarter
   turns; flip horizontally (2026-10-30).
 
+### Retouch
+- Retouch tool (R, or the bandage tab of the inspector): paint over an object, a wire or a spot
+  and it is filled in from its surroundings when the mouse goes up, on device and without a
+  machine learning model; brush size from the inspector or the [ and ] keys; pinch to zoom and
+  Option-drag to move around while painting; each stroke is one undo step, Remove All brings
+  everything back; retouches are stored as strokes in the edit, stay on what they removed when
+  the photo is cropped, turned or straightened, and are carried into saves, exports and
+  thumbnails (2026-11-10).
+
 ### Masks
 - Masked adjustment layers: linear gradient, radial gradient, luminance range and color range
   masks, combined by adding, subtracting or intersecting components; feather, density, invert;

@@ -264,4 +264,38 @@ struct MaskTests {
         #expect(blues.weight(hue: 210, saturation: 0) == 0, "gray doesn't count")
         #expect(ColorRange(hue: -10).hue == 350)
     }
+
+    @Test func retouchesRoundTripAndCountAsEdits() throws {
+        var recipe = EditRecipe()
+        let plain = try recipe.jsonData()
+        #expect(!String(decoding: plain, as: UTF8.self).contains("retouches"), "a photo without retouches keeps the document it had")
+        #expect(try EditRecipe(jsonData: plain).retouches.isEmpty)
+        recipe.retouches.append(Retouch(points: [UnitPoint2D(x: 0.2, y: 0.3), UnitPoint2D(x: 0.25, y: 0.3)], radius: 0.02))
+        #expect(!recipe.isIdentity)
+        let reloaded = try EditRecipe(jsonData: recipe.jsonData())
+        #expect(reloaded == recipe)
+        #expect(reloaded.retouches[0].algorithm == Retouch.currentAlgorithm)
+    }
+
+    @Test func geometryMapsPointsBetweenTheOriginalAndTheReferenceFrame() {
+        let point = UnitPoint2D(x: 0.2, y: 0.1)
+        func mapped(_ geometry: Geometry) -> UnitPoint2D {
+            geometry.referencePoint(fromSource: point, width: 300, height: 200)
+        }
+        #expect(mapped(Geometry()) == point)
+        #expect(mapped(Geometry(isFlippedHorizontally: true)) == UnitPoint2D(x: 0.8, y: 0.1))
+        // A quarter turn clockwise sends the top-left corner to the top right.
+        #expect(mapped(Geometry(quarterTurns: 1)) == UnitPoint2D(x: 0.9, y: 0.2))
+        #expect(Geometry(quarterTurns: 1).referencePoint(fromSource: UnitPoint2D(x: 0, y: 0), width: 300, height: 200) == UnitPoint2D(x: 1, y: 0))
+        // Straightening turns around the center, which stays put, and trims: points move outward.
+        let straightened = Geometry(angle: 10)
+        #expect(straightened.referencePoint(fromSource: UnitPoint2D(x: 0.5, y: 0.5), width: 300, height: 200) == UnitPoint2D(x: 0.5, y: 0.5))
+        let right = straightened.referencePoint(fromSource: UnitPoint2D(x: 0.75, y: 0.5), width: 300, height: 200)
+        #expect(right.x > 0.75 && right.y > 0.5, "clockwise: what was right of the center goes down")
+        for geometry in [Geometry(angle: 10), Geometry(angle: -7, quarterTurns: 3, isFlippedHorizontally: true), Geometry(quarterTurns: 2)] {
+            let there = geometry.referencePoint(fromSource: point, width: 300, height: 200)
+            let back = geometry.sourcePoint(fromReference: there, width: 300, height: 200)
+            #expect(abs(back.x - point.x) < 1e-9 && abs(back.y - point.y) < 1e-9)
+        }
+    }
 }

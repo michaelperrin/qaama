@@ -14,7 +14,8 @@ public nonisolated enum EditRenderer {
         }
     }
 
-    /// `masks` are precomputed model masks by component id; missing ones are resolved here.
+    /// `masks` are precomputed model masks by component id; missing ones are resolved here, as are
+    /// the fills of the recipe's retouches.
     public static func jpeg(imageURL: URL?, image: CGImage?, recipe: EditRecipe, masks: [UUID: CIImage] = [:]) async throws -> Data {
         let source: RenderSource
         if let imageURL {
@@ -28,10 +29,12 @@ public nonisolated enum EditRenderer {
         return try await ImageExporter.jpegData(for: render(image: loaded.image, recipe: recipe, masks: masks))
     }
 
-    /// The recipe applied to a decoded image, model masks resolved first (the ones in `masks` are reused).
-    public static func render(image: CIImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:]) async -> CIImage {
+    /// The recipe applied to a decoded image, retouch fills and model masks resolved first. The ones
+    /// in `fills` and `masks` are reused: they must have been computed for this recipe and image.
+    public static func render(image: CIImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:], fills: [UUID: CIImage] = [:]) async -> CIImage {
+        let resolvedFills = recipe.retouches.isEmpty ? [:] : RetouchRenderer.resolveAll(recipe.retouches, image: image, existing: fills)
         let reference = recipe.geometry.map { GeometryRenderer.straighten(image, with: $0) } ?? image
         let resolved = await ModelMasks.resolveAll(in: recipe, reference: reference, existing: masks)
-        return RenderPipeline.apply(recipe, to: image, geometry: recipe.geometry, masks: resolved)
+        return RenderPipeline.apply(recipe, to: image, geometry: recipe.geometry, masks: resolved, fills: resolvedFills)
     }
 }

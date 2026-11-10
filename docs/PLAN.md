@@ -270,6 +270,60 @@ d'essai (JPEG 2 Mpx et 26 Mpx, un RAF).
   par points inclus/exclus. Le même DETR donne aussi mer, route, herbe, bâtiment, etc. Peau et
   cheveux restent hors de portée sans modèle dédié.
 
+### Étude de faisabilité : pinceau correcteur (9/11/2026)
+
+Demande de Michaël : un outil de retouche en pinceau, de taille réglable, qui efface un objet
+« intelligemment », si possible sans modèle d'IA. Prototype dans `Experiments/heal/`, testé sur
+six scènes de synthèse de 1200 × 900 (ciel nuageux, herbe, briques, horizon, sable), avec du
+grain, faute d'avoir le dossier de photos d'essai.
+
+- **Deux méthodes sans modèle comparées.** (1) Correcteur par source : une zone de même forme
+  copiée d'ailleurs, raccordée par une membrane (fusion de Poisson). (2) Remplissage par patchs
+  7 × 7 du flou vers le net (Wexler et al. 2007) : chaque patch touchant le trou cherche son
+  plus proche semblable autour, chaque pixel du trou prend la moyenne pondérée des propositions,
+  la dernière passe ne garde que la meilleure pour conserver texture et grain.
+- **Le remplissage par patchs réussit les six scènes**, y compris celles où une source unique
+  échoue : objet à cheval sur l'horizon (la source laisse un fantôme flou), fil traversant
+  l'image et grande serviette (aucune zone de même forme disponible). Briques réalignées,
+  rides du sable prolongées. Défaut : un léger contour visible sur l'herbe et le ciel, qu'une
+  membrane fine au bord devrait effacer.
+- **Mesures** : 22 à 104 ms en 1200 × 900 ; sur les mêmes scènes agrandies en 17 Mpx, 380 ms
+  pour un fil traversant l'image, 390 ms pour un objet de 600 px, 1,1 s pour 1364 × 1044 px.
+  Le calcul ne porte que sur les alentours du trou (4 fois son épaisseur, 48 à 600 px). Donc
+  calculable au relâchement du trait, en tâche de fond, jamais par mouvement de curseur.
+- **Brevets** : PatchMatch (recherche aléatoire, Adobe, US 8 285 055, déposé en février 2009)
+  serait en vigueur jusque vers 2029. Le prototype s'en passe : recherche exhaustive à
+  l'échelle la plus grossière, puis locale et par cohérence avec les voisins (Ashikhmin 2001).
+  L'inpainting par exemplaires de Criminisi (Microsoft, déposé en 2003) aurait expiré vers
+  2023. Statuts à vérifier auprès de l'office avant de livrer.
+- **Limite** : les scènes de synthèse sont favorables (textures identiques partout). Sur de
+  vraies photos, attendre des répétitions et des lignes tordues quand le trou grandit ou
+  couvre une structure unique ; c'est là qu'un modèle (LaMa, Apache 2.0) prendrait le relais.
+- **Essai sur trois photos de Michaël (10/11/2026, 1280 px)**, zones peintes à la main.
+  Bateau bleu sur l'eau avec son reflet : propre (71 ms). Poteaux électriques et sept câbles
+  sur ciel bleu : ciel propre, pied du poteau plausible devant clôture et arbres, mais barbelé
+  interrompu et un fragment de piquet dans le ciel (135 ms). Escargot sur gravier vert en
+  perspective : l'escargot disparaît mais la zone se voit, gravier de la mauvaise taille (pris
+  plus près de l'objectif) et plage plus sombre à bord net (109 ms).
+- **Leçons des vraies photos** : (1) le masque doit couvrir tout l'objet, chaque oubli (cou de
+  l'escargot, câble décalé de quelques pixels) est recopié dans le remplissage comme du fond ;
+  prévoir de dilater la zone peinte et de pouvoir repasser sur un reste à peu de frais.
+  (2) La perspective est la première vraie limite : une texture dont l'échelle varie n'a pas de
+  patch de la bonne taille au bon endroit ; réduire la zone de recherche n'y change rien.
+  (3) Les zones fines (câbles, poteaux) sont le meilleur cas, même sur fond détaillé.
+- **Retour de Michaël (10/11/2026)** : « assez propre même si pas parfait » ; très bien sur
+  le ciel, dommage que la texture des arbres ne soit pas reprise là où un poteau passait
+  devant un arbre ; on ne fera sans doute pas beaucoup mieux pour le moment. Vérifié : à ces
+  endroits le remplissage pose une bande de ciel uni. Piste essayée sans succès : ajouter des
+  caractéristiques de texture à la comparaison des patchs (gradient absolu moyen, Newson et
+  al. 2017, option `--texture`) ; à poids 50 la bande reste, à 200 de l'herbe et un arbre
+  entier arrivent dans le ciel. Prolonger une structure unique (branches, toit) dépasse les
+  patchs : ce sera le rôle d'un modèle. L'option reste dans le prototype, désactivée.
+- **Conclusion : faisable sans modèle pour une première version**, sur la base du remplissage
+  par patchs, bonne pour les objets fins ou petits et les fonds réguliers ; les gros objets
+  sur texture en perspective resteront visibles tant qu'il n'y a pas de recherche à plusieurs
+  échelles ou de modèle.
+
 ### Phase 2 — MVP (une appli utilisable au quotidien)
 
 Bibliothèque
@@ -823,8 +877,60 @@ Interface
       écrire dans une propriété observée par beaucoup de vues ; le journal « Brush stroke »
       (notice) donne la répartition modèle / encodage / GPU par trait.
 - [ ] Super‑résolution et débruitage via modèles open source convertis en Core ML.
-- [ ] Outil de retouche/suppression d'objets (approche simple d'abord : clonage,
-      inpainting basique).
+- [x] Outil de retouche/suppression d'objets (approche simple d'abord : clonage,
+      inpainting basique). Faisabilité sans modèle vérifiée le 9/11/2026, voir « Étude de
+      faisabilité : pinceau correcteur » plus haut, essai sur de vraies photos compris.
+      Intégré à l'appli le 10/11/2026 :
+      - **Recette** : `EditRecipe.retouches`, une `Retouch` par trait (points, rayon, numéro
+        d'algorithme pour qu'un futur remplissage ne change pas les photos déjà retouchées).
+        Points en coordonnées unitaires de l'original, avant toute géométrie : la retouche
+        reste sur l'objet quand on recadre, tourne ou redresse (`Geometry.sourcePoint` /
+        `referencePoint`, vérifiés contre `GeometryRenderer`). La clé est absente du JSON des
+        photos sans retouche : version de recette inchangée, les sidecars existants restent
+        lisibles.
+      - **Moteur** : `PatchFill` (porté du prototype) dans une cible à part du paquet
+        RenderEngine, `HealingFill`, toujours compilée avec `-O`. Mesuré : 38 s en Debug sans
+        optimisation contre 59 ms avec, pour un trou de 147 px dans 700 × 700 ; l'appli étant
+        testée en Debug, c'était inutilisable autrement. Leçon : des boucles serrées sur des
+        pixels en Swift pur ne supportent pas `-Onone` ; les isoler dans une cible optimisée
+        plutôt que d'optimiser tout le paquet.
+      - **Rendu** : `RetouchRenderer` rastérise le trait (élargi de 15 %, au moins 2 px, leçon
+        des vraies photos), lit les pixels alentour en flottants sRGB étendu (les hautes
+        lumières d'un RAW survivent), remplit, et rend une image de la taille de la zone,
+        transparente ailleurs. Le pipeline ne fait que la composer sur l'original avant la
+        géométrie : rien n'est recalculé par mouvement de curseur. Au-delà de 6 Mpx de zone de
+        travail, le remplissage se fait sur une copie réduite.
+      - **Éditeur** : le trait en cours reste hors de la recette (leçon du pinceau des
+        masques) et se dessine en SwiftUI par-dessus le canevas ; au relâchement il entre dans
+        la recette (une étape d'annulation nommée « Retouch ») et son remplissage se calcule
+        en tâche de fond avec le contexte du canevas (un RAW n'est pas redécodé). Chaque
+        remplissage dépend des précédents : ils sont jetés à partir du point où la liste
+        diverge, et gardés pour le « rétablir » quand elle est seulement raccourcie.
+      - **Interface** : onglet « Retouch » de l'inspecteur (pansement, touche R), outil au même
+        titre que le recadrage ; taille du pinceau (curseur, touches [ et ]), nombre de
+        retouches, « Remove All ». Pincer pour zoomer, Option-glisser pour se déplacer. Au
+        passage, le calque des masques suit lui aussi le zoom et le déplacement du canevas
+        (`CanvasRenderer.imageRect`), ce qu'il ignorait.
+      - **Vérifié sur deux vraies photos par le chemin de l'appli** (`EditRenderer.jpeg`, test
+        temporaire non versionné) : bateau bleu effacé puis redressement, miroir et exposition
+        appliqués par-dessus, au bon endroit ; poteau effacé d'un seul trait. 58 à 174 ms par
+        retouche en 1280 px, dont la moitié à lire les pixels. Deux défauts que les scènes de
+        synthèse ne montraient pas, corrigés avec tests : (1) un trait fin dans une zone
+        étroite (le poteau) n'était pas rempli, la pyramide descendait jusqu'à une échelle où
+        le trou, épaissi, ne laissait plus aucun patch source ; elle s'arrête désormais à la
+        dernière échelle qui a plus de matière que de trou ; (2) l'épaisseur du trait était
+        mesurée dans son propre cadre, qu'il remplit bord à bord, donc surestimée, et la zone
+        de recherche trois fois trop large. Leçon : essayer le chemin réel sur de vraies
+        photos avant de conclure, les tests de synthèse étaient verts.
+      - **Retour de Michaël (10/11/2026)** après quelques essais dans l'appli : intégration
+        validée, mais le résultat de l'outil « n'est pas génial » ; à reprendre plus tard, sans
+        priorité. Cas précis à recueillir à ce moment-là. Pistes déjà identifiées : raccord au
+        bord, recherche de patchs à plusieurs échelles (perspective), modèle (LaMa) pour les
+        structures uniques.
+      - **Reste** : essai à la main dans l'appli (peinture, zoom, annulation), non fait ici ;
+        raccord au bord (léger contour sur les fonds en dégradé) ; masques de sujet calculés
+        sur l'image non retouchée ; à l'ouverture d'une photo retouchée, l'objet réapparaît
+        le temps du calcul ; pas de liste pour supprimer une retouche précise.
 - [ ] Extension d'édition pour Photos (`PHEditingExtension`) et extension de partage.
 - [ ] HDR (gain map, EDR sur écran compatible), vidéo courte peut‑être.
 - [ ] iCloud (si compte développeur), puis déclinaison iPad si le cœur reste portable.

@@ -1,6 +1,7 @@
 import Foundation
 
-/// The non-destructive edit applied to a photo: a list of adjustment layers, never pixels.
+/// The non-destructive edit applied to a photo: retouches, then a list of adjustment layers, never
+/// pixels.
 ///
 /// Serialized as JSON and stored next to the photo (sidecar file or Photos adjustment data),
 /// so the original is untouched and the edit can be reopened or reset at any time.
@@ -13,6 +14,8 @@ public struct EditRecipe: Codable, Hashable, Sendable {
     public var layers: [AdjustmentLayer]
     /// Straighten, rotate and crop; nil when untouched.
     public var geometry: Geometry?
+    /// What was painted out of the original, in order, before anything else applies.
+    public var retouches: [Retouch] = []
 
     public static let identity = EditRecipe()
 
@@ -41,7 +44,7 @@ public struct EditRecipe: Codable, Hashable, Sendable {
     /// True when applying the recipe would leave the photo unchanged. A masked layer counts only when
     /// it has both adjustments and a mask that selects something.
     public var isIdentity: Bool {
-        (geometry?.isIdentity ?? true) && layers.allSatisfy { layer in
+        retouches.isEmpty && (geometry?.isIdentity ?? true) && layers.allSatisfy { layer in
             !layer.isEnabled || layer.adjustments.isIdentity || (layer.mask?.isEmpty ?? false)
         }
     }
@@ -52,6 +55,30 @@ public struct EditRecipe: Codable, Hashable, Sendable {
     }
 
     // MARK: - Serialization
+
+    private enum CodingKeys: String, CodingKey {
+        case version, layers, geometry, retouches
+    }
+
+    /// Retouches are absent from the documents of photos that have none, so those documents are
+    /// what they were before retouching existed.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        layers = try container.decode([AdjustmentLayer].self, forKey: .layers)
+        geometry = try container.decodeIfPresent(Geometry.self, forKey: .geometry)
+        retouches = try container.decodeIfPresent([Retouch].self, forKey: .retouches) ?? []
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(version, forKey: .version)
+        try container.encode(layers, forKey: .layers)
+        try container.encodeIfPresent(geometry, forKey: .geometry)
+        if !retouches.isEmpty {
+            try container.encode(retouches, forKey: .retouches)
+        }
+    }
 
     public enum DecodingError: Error, Equatable {
         case unsupportedVersion(Int)

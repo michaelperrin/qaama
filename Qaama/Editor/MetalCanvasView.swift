@@ -6,28 +6,16 @@ import SwiftUI
 struct MetalCanvasView: View {
     let renderer: CanvasRenderer
 
-    /// Zoom and pan when the gesture under way began; nil between gestures. Read from the renderer
-    /// at that moment rather than remembered, because the session resets the viewport when the
-    /// photo changes.
-    @State private var zoomAtGestureStart: CGFloat?
+    /// The pan when the drag under way began; nil between drags. Read from the renderer at that
+    /// moment rather than remembered, because the session resets the viewport when the photo changes.
     @State private var panAtGestureStart: CGPoint?
 
     var body: some View {
         MetalViewRepresentable(renderer: renderer)
-            .gesture(magnify)
+            .canvasPinchZoom(renderer)
             .simultaneousGesture(drag)
             .onTapGesture(count: 2) { resetViewport() }
             .help("Pinch to zoom, drag to pan, double-click to fit")
-    }
-
-    private var magnify: some Gesture {
-        MagnifyGesture()
-            .onChanged { value in
-                let start = zoomAtGestureStart ?? renderer.zoom
-                zoomAtGestureStart = start
-                renderer.setZoom(start * value.magnification)
-            }
-            .onEnded { _ in zoomAtGestureStart = nil }
     }
 
     private var drag: some Gesture {
@@ -43,6 +31,32 @@ struct MetalCanvasView: View {
     private func resetViewport() {
         renderer.zoom = 1
         renderer.panOffset = .zero
+    }
+}
+
+/// Pinch to zoom the canvas, for the canvas itself and for the overlays that cover it.
+private struct CanvasPinchZoom: ViewModifier {
+    let renderer: CanvasRenderer
+    /// The zoom when the pinch under way began; nil between pinches. Read from the renderer at that
+    /// moment rather than remembered, because the session resets the viewport when the photo changes.
+    @State private var zoomAtGestureStart: CGFloat?
+
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(
+            MagnifyGesture()
+                .onChanged { value in
+                    let start = zoomAtGestureStart ?? renderer.zoom
+                    zoomAtGestureStart = start
+                    renderer.setZoom(start * value.magnification)
+                }
+                .onEnded { _ in zoomAtGestureStart = nil }
+        )
+    }
+}
+
+extension View {
+    func canvasPinchZoom(_ renderer: CanvasRenderer) -> some View {
+        modifier(CanvasPinchZoom(renderer: renderer))
     }
 }
 

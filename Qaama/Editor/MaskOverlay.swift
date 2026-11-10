@@ -4,7 +4,8 @@ import RenderEngine
 import SwiftUI
 
 /// Mask editing on the canvas: gradient handles to drag, brush strokes to paint. Coordinates are
-/// converted between the view, the displayed (cropped) image and the mask reference frame.
+/// converted between the view, the displayed (cropped) image, wherever the zoom and pan put it, and
+/// the mask reference frame.
 struct MaskOverlay: View {
     @Bindable var model: EditorModel
 
@@ -216,14 +217,9 @@ struct MaskOverlay: View {
 
     // MARK: - Coordinates
 
-    /// Where the renderer draws the image at zoom 1 with no pan: fitted and centered.
+    /// Where the renderer draws the image in this view.
     private func displayedImageRect(in size: CGSize) -> CGRect {
-        guard let extent = model.renderer?.image?.extent, extent.width > 0, extent.height > 0 else {
-            return CGRect(origin: .zero, size: size)
-        }
-        let fit = min(size.width / extent.width, size.height / extent.height)
-        let fitted = CGSize(width: extent.width * fit, height: extent.height * fit)
-        return CGRect(x: (size.width - fitted.width) / 2, y: (size.height - fitted.height) / 2, width: fitted.width, height: fitted.height)
+        model.renderer?.imageRect(inViewOfSize: size) ?? CGRect(origin: .zero, size: size)
     }
 
     private func viewPoint(_ reference: UnitPoint2D, in imageRect: CGRect) -> CGPoint {

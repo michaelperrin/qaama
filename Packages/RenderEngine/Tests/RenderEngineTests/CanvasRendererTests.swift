@@ -150,6 +150,17 @@ struct CanvasZoomTests {
         #expect(renderer.panOffset == .zero)
     }
 
+    @MainActor @Test func imageRectFollowsZoomAndPan() throws {
+        let renderer = try #require(CanvasRenderer())
+        #expect(renderer.imageRect(inViewOfSize: CGSize(width: 800, height: 600)) == nil)
+        renderer.image = CIImage(color: .red).cropped(to: CGRect(x: 0, y: 0, width: 4000, height: 2000))
+        // Fitted: the full width, centered vertically.
+        #expect(renderer.imageRect(inViewOfSize: CGSize(width: 800, height: 600)) == CGRect(x: 0, y: 100, width: 800, height: 400))
+        renderer.zoom = 2
+        renderer.panOffset = CGPoint(x: 30, y: -10)
+        #expect(renderer.imageRect(inViewOfSize: CGSize(width: 800, height: 600)) == CGRect(x: -370, y: -110, width: 1600, height: 800))
+    }
+
     @MainActor @Test func aPhotoSmallerThanTheViewZoomsOutToItsActualSize() throws {
         let renderer = try #require(CanvasRenderer())
         renderer.image = CIImage(color: .red).cropped(to: CGRect(x: 0, y: 0, width: 300, height: 200))

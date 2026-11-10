@@ -16,9 +16,11 @@ struct EditorCanvas: View {
             Color.black
             if let renderer = model.renderer {
                 MetalCanvasView(renderer: renderer)
-                    .disabled(model.isCropping || model.isEditingMask)
+                    .disabled(model.isCropping || model.isEditingMask || model.isRetouching)
                 if model.isCropping {
                     CropOverlay(model: model)
+                } else if model.isRetouching {
+                    RetouchOverlay(model: model, renderer: renderer)
                 } else if model.isEditingMask {
                     MaskOverlay(model: model)
                 }
