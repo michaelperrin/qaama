@@ -10,6 +10,15 @@ import SwiftUI
 /// and its actions on one object that stays the same (`actions`): the grid is rebuilt on every change
 /// of the library (every second or two while Photos is analyzing or syncing), and a context menu that
 /// is open must not notice. See `AssetGridCell`.
+///
+/// When the source knows the months of its photos (`LibrarySource.timeline`, photos sorted by capture
+/// date), the grid is cut into one section per month, each under its name. The headers scroll with
+/// the photos: a first version pinned the header of the month on screen under the toolbar, as a bar,
+/// which sat badly there (Michaël, 2026-11-10); the dates on screen are told in the window's subtitle
+/// instead. Cells keep their row as identifier whatever their section, and sections are identified by
+/// their month: a photo added elsewhere or the dates arriving late leave the thumbnails on screen as
+/// they are. Measured with a probe (docs/PLAN.md): among 74,000 cells in 125 sections, a jump to a far
+/// row lands in 25 ms, to the point.
 struct AssetGridView: View {
     let source: any LibrarySource
     @Binding var selection: Set<LibraryAsset.ID>
@@ -19,6 +28,8 @@ struct AssetGridView: View {
     /// Filing in albums: its items in the context menu, and thumbnails that can be dragged to an
     /// album of the sidebar. Nil for libraries without albums.
     var albums: AlbumsAction?
+    /// Told which month is at the top, and asked to scroll to another; nil for a grid without the toolbar's month button.
+    var navigator: TimelineNavigator?
 
     /// Thumbnail size and shape, from the toolbar's slider and the View menu; kept across launches.
     @AppStorage(GridDisplay.thumbnailSideKey) private var thumbnailSide = GridDisplay.defaultSide
@@ -47,17 +58,28 @@ struct AssetGridView: View {
         let canAdjustDate = onAdjustDate != nil && source.capabilities.contains(.captureDate)
         let albumState = albums.map(AssetGridCell.AlbumState.init)
         let side = CGFloat(thumbnailSide)
+        let timeline = sections
+        let _ = followVisibleRows(in: timeline)
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: side), spacing: 8)], spacing: 8) {
-                // Iterate indices, not elements: ForEach over elements walks the whole collection to compute
-                // identities, which is far too slow for a lazily computed library of tens of thousands of rows.
-                ForEach(source.assets.indices, id: \.self) { index in
-                    let asset = source.assets[index]
-                    AssetGridCell(asset: asset, index: index, side: side, fit: thumbnailFit, isSelected: selection.contains(asset.id),
-                                  menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canPaste: canPaste,
-                                                                canAdjustDate: canAdjustDate, albums: albumState),
-                                  source: source, actions: actions)
-                        .equatable()
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: side), spacing: GridViewport.spacing)], spacing: GridViewport.spacing) {
+                ForEach(timeline.sections) { section in
+                    Section {
+                        // Iterate indices, not elements: ForEach over elements walks the whole collection to compute
+                        // identities, which is far too slow for a lazily computed library of tens of thousands of rows.
+                        ForEach(section.range, id: \.self) { index in
+                            let asset = source.assets[index]
+                            AssetGridCell(asset: asset, index: index, side: side, fit: thumbnailFit, isSelected: selection.contains(asset.id),
+                                          menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canPaste: canPaste,
+                                                                        canAdjustDate: canAdjustDate, albums: albumState),
+                                          source: source, actions: actions)
+                                .equatable()
+                        }
+                    } header: {
+                        if source.timeline != nil, let title = MonthFormat.title(section.id) {
+                            GridSectionHeader(title: title, count: section.range.count)
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewport.headerHeight = $0 }
+                        }
+                    }
                 }
             }
             .padding(GridViewport.padding)
@@ -67,6 +89,13 @@ struct AssetGridView: View {
         .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { _, geometry in
             viewport.update(geometry)
         }
+        .onChange(of: navigator?.jump) { _, jump in
+            // The first row of the month goes under its header, which then sits at the top of the grid.
+            guard let jump, source.assets.indices.contains(jump.row) else { return }
+            scrollPosition.scrollTo(id: jump.row, anchor: viewport.anchor(underHeaderForSide: thumbnailSide))
+        }
+        // The months can change under a grid that doesn't move: the dates read late, a photo added.
+        .onChange(of: source.timeline, initial: true) { reportVisible(rows: viewport.visibleRows, in: sections) }
         // Pinching the trackpad zooms the grid, as in Photos; the scroll gesture is a distinct event.
         .simultaneousGesture(MagnifyGesture()
             .onChanged { value in
@@ -122,6 +151,36 @@ struct AssetGridView: View {
                                        description: Text("This library doesn't contain any images."))
             }
         }
+    }
+
+    /// The sections to lay the rows out in: the source's months made to cover exactly the rows listed
+    /// now, or all the rows as one section without a header when the source has no timeline.
+    private var sections: DateTimeline {
+        let count = source.assets.count
+        return (source.timeline ?? .undated(count: count)).fitted(to: count)
+    }
+
+    /// Has the viewport tell which rows are on screen, as the grid scrolls. Not a state change: a
+    /// plain object, pointed at this version of the sections.
+    private func followVisibleRows(in timeline: DateTimeline) {
+        if source.timeline == nil {
+            viewport.headerHeight = 0
+        }
+        viewport.onVisibleRowsChange = { rows in reportVisible(rows: rows, in: timeline) }
+    }
+
+    /// Tells the navigator the month at the top of the grid and the dates of the photos on screen,
+    /// from the first to the last row showing. Only when the photos are sorted by date: in any other
+    /// order the photos on screen aren't a period.
+    private func reportVisible(rows: ClosedRange<Int>?, in timeline: DateTimeline) {
+        guard let navigator else { return }
+        guard source.timeline != nil, let rows, source.assets.indices.contains(rows.upperBound) else {
+            navigator.gridShows(section: nil, dates: nil)
+            return
+        }
+        let dates = [source.assets[rows.lowerBound].creationDate, source.assets[rows.upperBound].creationDate].compactMap(\.self)
+        navigator.gridShows(section: timeline.section(containing: rows.lowerBound)?.id,
+                            dates: dates.min().flatMap { first in dates.max().map { first ... $0 } })
     }
 
     /// Points the cells' actions at this version of the grid. Not a state change: a plain object.
@@ -250,28 +309,67 @@ final class GridViewport {
         var fractionInCell: CGFloat
     }
 
-    /// The scroll view's container, toolbar area included: the coordinate space of the cells' frames,
-    /// of the pinch's location and of `scrollTo(id:anchor:)`'s alignment (measured with a probe).
+    /// The scroll view's container: the part of it not under the toolbar or a banner. Its top left
+    /// corner is the origin of the cells' frames, of the pinch's location and of
+    /// `scrollTo(id:anchor:)`'s alignment, and where section headers pin (measured with a probe in
+    /// a real window: a first cell reported at y = 50 sits 50 points under the toolbar, and the
+    /// container is the window's height less the toolbar's).
     private var containerSize: CGSize = .zero
-    /// The part of the container not under the toolbar or a banner, where the center anchor goes.
-    private var visibleCenterY: CGFloat = 0
     /// Frames of the cells on screen, in the scroll view's coordinate space.
     private var frames: [Int: CGRect] = [:]
     private var anchor: Anchor?
     private var isPinching = false
     private var lastZoom: ContinuousClock.Instant?
 
+    /// Height of the month headers, each above the first row of its month; 0 when the grid has none.
+    var headerHeight: CGFloat = 0
+    /// The first and the last row showing; nil when no cell is on screen.
+    private(set) var visibleRows: ClosedRange<Int>?
+    /// Called when `visibleRows` changes: a few times a second while scrolling, not on every frame.
+    var onVisibleRowsChange: (ClosedRange<Int>?) -> Void = { _ in }
+    private var visibleRowsAreOutdated = false
+
     func update(_ geometry: ScrollGeometry) {
         containerSize = geometry.containerSize
-        visibleCenterY = geometry.contentInsets.top + (containerSize.height - geometry.contentInsets.top - geometry.contentInsets.bottom) / 2
     }
 
     func cellDidLayout(_ index: Int, frame: CGRect) {
         frames[index] = frame
+        setNeedsVisibleRows()
     }
 
     func cellDidDisappear(_ index: Int) {
         frames[index] = nil
+        setNeedsVisibleRows()
+    }
+
+    /// Every cell on screen reports its frame on each scroll frame: the rows showing are worked out
+    /// once they all have, at the next turn of the main actor, rather than once per cell.
+    private func setNeedsVisibleRows() {
+        guard !visibleRowsAreOutdated else { return }
+        visibleRowsAreOutdated = true
+        Task { [weak self] in self?.updateVisibleRows() }
+    }
+
+    private func updateVisibleRows() {
+        visibleRowsAreOutdated = false
+        var first: Int?
+        var last: Int?
+        // The grid keeps a few cells beyond its edges: only those crossing the visible area count.
+        for (index, frame) in frames where frame.maxY > 0 && frame.minY < containerSize.height {
+            first = min(first ?? index, index)
+            last = max(last ?? index, index)
+        }
+        let rows = first.flatMap { first in last.map { first ... $0 } }
+        guard rows != visibleRows else { return }
+        visibleRows = rows
+        onVisibleRowsChange(rows)
+    }
+
+    /// How to align a row with the visible area so it shows right under its header, when the row is
+    /// the first of its section: the header then sits at the very top of the grid.
+    func anchor(underHeaderForSide side: Double) -> UnitPoint {
+        unitPoint(forCellTop: headerHeight + Self.spacing, side: side)
     }
 
     /// `location` is the pointer in the scroll view's coordinate space.
@@ -293,15 +391,20 @@ final class GridViewport {
             anchor = nil
         }
         lastZoom = now
-        guard let anchor = anchor ?? makeAnchor(at: CGPoint(x: containerSize.width / 2, y: visibleCenterY)) else { return nil }
+        guard let anchor = anchor ?? makeAnchor(at: CGPoint(x: containerSize.width / 2, y: containerSize.height / 2)) else { return nil }
         self.anchor = anchor
+        let top = anchor.pointY - anchor.fractionInCell * (side + 4)
+        return (anchor.item, unitPoint(forCellTop: top, side: side))
+    }
+
+    /// The alignment that puts the top of a cell `top` points under the top of the visible area, once
+    /// thumbnails are `side` wide.
+    private func unitPoint(forCellTop top: CGFloat, side: Double) -> UnitPoint {
         let cellHeight = side + 4
-        let top = anchor.pointY - anchor.fractionInCell * cellHeight
         // A unit point u aligns the cell's point at u of its height with the container's point at u of
         // its height, so the cell's top lands at u * (container - cell).
         let room = containerSize.height - cellHeight
-        let unit = room > 0 ? min(max(top / room, 0), 1) : 0
-        return (anchor.item, UnitPoint(x: 0, y: unit))
+        return UnitPoint(x: 0, y: room > 0 ? min(max(top / room, 0), 1) : 0)
     }
 
     /// The cell under `point`, or the nearest one when the point is between cells.
@@ -434,9 +537,38 @@ struct AssetGridCell: View, Equatable {
     }
 }
 
+/// The header of a month in the grid: its name and how many photos it holds here, as a plain
+/// title above its first row.
+struct GridSectionHeader: View {
+    let title: String
+    let count: Int
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title)
+                .font(.title3.weight(.semibold))
+            Text("^[\(count) photo](inflect: true)")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 4)
+        .padding(.top, 10)
+        .padding(.bottom, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
 #Preview("Sample library") {
     @Previewable @State var selection: Set<LibraryAsset.ID> = ["sample-1", "sample-2"]
     AssetGridView(source: SampleLibrarySource(), selection: $selection) { _ in }
+        .frame(width: 720, height: 500)
+}
+
+#Preview("Months") {
+    @Previewable @State var selection: Set<LibraryAsset.ID> = []
+    AssetGridView(source: SampleLibrarySource(count: 60, daysApart: 4), selection: $selection) { _ in }
         .frame(width: 720, height: 500)
 }
 

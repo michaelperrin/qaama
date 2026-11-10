@@ -15,6 +15,9 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     public let folderURL: URL
     public let displayName: String
     public private(set) var assets: AssetCollection = .empty
+    /// The months of `assets`, when they are sorted by capture date. Photos whose header has no date
+    /// (or isn't read yet) are listed last, as the section without a date.
+    public private(set) var timeline: DateTimeline?
     /// Duration of the listing phase of the last scan.
     public private(set) var lastLoadDuration: Duration?
     /// True once the catalog has delivered the items (even if a scan is still running).
@@ -153,6 +156,11 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
         rowsByID = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.id, $0.offset) })
         assets = AssetCollection(items.map(LibraryAsset.init))
+        // The items are in memory: a pass over their dates takes a few milliseconds for a large folder.
+        let timeline = query.sort == .captureDate ? DateTimeline(dates: items.lazy.map(\.effectiveCaptureDate)) : nil
+        if timeline != self.timeline {
+            self.timeline = timeline
+        }
         prioritized.subtract(items.filter { !$0.needsMetadata }.map(\.id))
     }
 

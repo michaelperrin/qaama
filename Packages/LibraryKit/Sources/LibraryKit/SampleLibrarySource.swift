@@ -9,6 +9,7 @@ import Observation
 public final class SampleLibrarySource: LibrarySource {
     public let displayName: String
     public private(set) var assets: AssetCollection = .empty
+    public private(set) var timeline: DateTimeline?
     public private(set) var lastLoadDuration: Duration?
     public var capabilities: Set<LibraryCapability> = [.rating, .flag, .keywords, .captureDate]
     public var queryCapabilities: Set<QueryCapability> {
@@ -25,8 +26,10 @@ public final class SampleLibrarySource: LibrarySource {
     /// The dates the photos were "shot" at, to go back to when a correction is removed.
     private var ownDates: [String: Date] = [:]
 
-    /// `pairsFirstTwo` makes the first two photos a RAW + JPEG pair stored as two photos.
-    public init(displayName: String = "Sample", count: Int = 12, pairsFirstTwo: Bool = false) {
+    /// `pairsFirstTwo` makes the first two photos a RAW + JPEG pair stored as two photos. The photos
+    /// are "shot" `daysApart` from one another, the first one being the newest: a day by default, more
+    /// to spread them over several months.
+    public init(displayName: String = "Sample", count: Int = 12, pairsFirstTwo: Bool = false, daysApart: Double = 1) {
         self.displayName = displayName
         var list: [LibraryAsset] = []
         for index in 0 ..< count {
@@ -35,7 +38,7 @@ public final class SampleLibrarySource: LibrarySource {
             let size = landscape ? (width: 600, height: 400) : (width: 400, height: 600)
             var asset = LibraryAsset(
                 id: id, pixelWidth: size.width, pixelHeight: size.height,
-                creationDate: Date(timeIntervalSince1970: 1_700_000_000 - Double(index) * 86400),
+                creationDate: Date(timeIntervalSince1970: 1_700_000_000 - Double(index) * daysApart * 86400),
                 isFavorite: index % 5 == 0, rating: index % 6,
                 flag: index % 7 == 0 ? .picked : (index % 7 == 1 ? .rejected : .none),
                 keywords: index % 2 == 0 ? ["sample", "even"] : [],
@@ -130,6 +133,7 @@ public final class SampleLibrarySource: LibrarySource {
     private func refresh() {
         let matching = byID.values.filter { query.matches($0) }.sorted(by: query.areInIncreasingOrder)
         assets = AssetCollection(matching)
+        timeline = query.sort == .captureDate ? DateTimeline(dates: matching.lazy.map(\.creationDate)) : nil
     }
 
     /// A two-tone gradient, enough to tell thumbnails apart.

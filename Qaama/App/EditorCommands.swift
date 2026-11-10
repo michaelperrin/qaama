@@ -144,7 +144,7 @@ extension FocusedValues {
 
 /// File › New Album…, New Album Folder… and Export…, View › Show Inspector, Zoom In and Out (the
 /// canvas of the open photo, else the grid), Zoom to Fit and Actual Size, the thumbnail shape (square
-/// or whole photo), and the Image menu:
+/// or whole photo), Go to Month, and the Image menu:
 /// Adjust Date & Time, Rating, Flag, the albums (Add to Album, Add to the last album, Remove from
 /// Album) and Adjustments (copy, paste, create a preset). Act on the key window: its inspector
 /// column, its export, its selection or open photo, its focused editor.
@@ -161,6 +161,7 @@ struct EditorCommands: Commands {
     @FocusedValue(\.exportAction) private var exportAction
     @FocusedValue(\.albumsCommand) private var albumsCommand
     @FocusedValue(\.newAlbumAction) private var newAlbumAction
+    @FocusedValue(\.goToMonthAction) private var goToMonthAction
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
     @AppStorage(GridDisplay.thumbnailSideKey) private var thumbnailSide = GridDisplay.defaultSide
     @AppStorage(GridDisplay.thumbnailFitKey) private var thumbnailFit = ThumbnailFit.fill
@@ -211,6 +212,11 @@ struct EditorCommands: Commands {
             }
             .pickerStyle(.inline)
             .disabled(hasAssetGrid != true)
+            Divider()
+            // As Calendar's Go to Date…; the toolbar's month button opens the same picker.
+            Button("Go to Month…") { goToMonthAction?.run() }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .disabled(goToMonthAction == nil)
         }
         CommandGroup(after: .newItem) {
             // "Album Folder": a plain "Folder" here would read as a folder of photos on disk.

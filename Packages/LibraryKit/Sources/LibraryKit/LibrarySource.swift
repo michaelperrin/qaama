@@ -22,6 +22,11 @@ public protocol LibrarySource: AnyObject, Observable {
     var query: LibraryQuery { get set }
     /// The parts of a query this source honors; the UI disables the others.
     var queryCapabilities: Set<QueryCapability> { get }
+    /// The months of `assets` and the rows each holds, for browsing by date; nil unless the photos are
+    /// sorted by capture date. A source that reads its dates in the background first answers for the
+    /// rows at the top (`DateTimeline.isComplete` is false), and keeps the previous answer while a
+    /// change of the library is being read: it may then be a few rows off, see `DateTimeline.fitted(to:)`.
+    var timeline: DateTimeline? { get }
 
     /// Lists the photos. Calling it again once loaded is a no-op.
     func load() async
@@ -129,6 +134,10 @@ public extension LibrarySource {
     /// A thumbnail that fills its square, for the places that show one photo at a fixed size.
     func thumbnail(for asset: LibraryAsset, pixelSize: CGSize) async -> CGImage? {
         await thumbnail(for: asset, pixelSize: pixelSize, fit: .fill)
+    }
+
+    var timeline: DateTimeline? {
+        nil
     }
 
     func endEditing(_: LibraryAsset) {}

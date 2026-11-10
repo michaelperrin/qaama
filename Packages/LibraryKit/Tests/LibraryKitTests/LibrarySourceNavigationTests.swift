@@ -1,4 +1,6 @@
+import CoreGraphics
 import LibraryKit
+import Observation
 import Testing
 
 @MainActor
@@ -43,5 +45,51 @@ struct LibrarySourceNavigationTests {
         #expect(Set(mixed) == Set(listed.prefix(6)))
         #expect(Array(mixed.prefix { kept.contains($0) }) == source.assets.map(\.id).filter { listed.prefix(6).contains($0) })
         #expect(source.assets(withIDs: []).isEmpty)
+    }
+
+    @Test func theSampleLibraryHasATimelineWhenSortedByCaptureDate() throws {
+        // Forty photos ten days apart, newest first: over a year of months.
+        let source = SampleLibrarySource(count: 40, daysApart: 10)
+        let timeline = try #require(source.timeline)
+        #expect(timeline.count == 40)
+        #expect(timeline.isComplete)
+        #expect(timeline.sections.count >= 13)
+        #expect(timeline.years.first == 2023)
+        // A filter keeps the timeline in step with what is listed.
+        source.query.favoritesOnly = true
+        #expect(source.timeline?.count == source.assets.count)
+        source.query.sort = .rating
+        #expect(source.timeline == nil)
+    }
+
+    @Test func sourcesWithoutDatesHaveNoTimeline() {
+        final class Bare: LibrarySource {
+            let displayName = "Bare"
+            let assets = AssetCollection.empty
+            let lastLoadDuration: Duration? = nil
+            let capabilities: Set<LibraryCapability> = []
+            var query = LibraryQuery.default
+            let queryCapabilities: Set<QueryCapability> = []
+            func asset(id _: LibraryAsset.ID) -> LibraryAsset? {
+                nil
+            }
+
+            func load() async {}
+            func thumbnail(for _: LibraryAsset, pixelSize _: CGSize, fit _: ThumbnailFit) async -> CGImage? {
+                nil
+            }
+
+            func fullSizeImage(for _: LibraryAsset) async -> CGImage? {
+                nil
+            }
+
+            func setRating(_: Int, for _: LibraryAsset) async throws {}
+            func editingInput(for _: LibraryAsset) async throws -> EditingInput {
+                throw LibrarySourceError.assetUnavailable
+            }
+
+            func saveEdit(_: EditingOutput, for _: LibraryAsset) async throws {}
+        }
+        #expect(Bare().timeline == nil)
     }
 }

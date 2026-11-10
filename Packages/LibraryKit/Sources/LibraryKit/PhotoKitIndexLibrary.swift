@@ -5,9 +5,6 @@ import Photos
 /// The Apple Photos library as the index reads it. Everything comes from PhotoKit's database, never
 /// from the originals, most of which may only be in iCloud.
 public nonisolated struct PhotoKitIndexLibrary: PhotosIndexLibrary {
-    /// Objects are faulted and released by slices, to keep memory flat on large libraries.
-    private static let sliceSize = 2000
-
     public init() {}
 
     public func assetIDs() async -> [String] {
@@ -30,7 +27,7 @@ public nonisolated struct PhotoKitIndexLibrary: PhotosIndexLibrary {
         let result = PHAsset.fetchAssets(withLocalIdentifiers: ids, options: options)
         var readings: [PhotosAssetReading] = []
         readings.reserveCapacity(result.count)
-        Self.forEachAsset(in: result) { asset in
+        PhotosFetchEnumeration.forEachAsset(in: result) { asset in
             let metadata = asset.extendedMetadata
             readings.append(PhotosAssetReading(id: asset.localIdentifier, fileName: metadata.originalFilename,
                                                captureDate: asset.creationDate, keywords: metadata.keywords))
@@ -81,17 +78,8 @@ public nonisolated struct PhotoKitIndexLibrary: PhotosIndexLibrary {
     private static func identifiers(of result: PHFetchResult<PHAsset>) -> [String] {
         var ids: [String] = []
         ids.reserveCapacity(result.count)
-        forEachAsset(in: result) { ids.append($0.localIdentifier) }
+        PhotosFetchEnumeration.forEachAsset(in: result) { ids.append($0.localIdentifier) }
         return ids
-    }
-
-    private static func forEachAsset(in result: PHFetchResult<PHAsset>, _ body: (PHAsset) -> Void) {
-        let count = result.count
-        for start in stride(from: 0, to: count, by: sliceSize) {
-            autoreleasepool {
-                result.objects(at: IndexSet(integersIn: start ..< min(start + sliceSize, count))).forEach(body)
-            }
-        }
     }
 }
 

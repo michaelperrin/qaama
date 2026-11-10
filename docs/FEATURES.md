@@ -19,6 +19,17 @@ can feed a website one day. Dates are when the feature landed.
 - Sorting by capture date, modification date, rating or file name, ascending or descending
   (2026-10-30).
 - Filters: minimum rating, flag, edited only, RAW only, favorites only (2026-10-30).
+- Browsing by month, in the Apple Photos library, its albums and folders alike, whenever photos
+  are sorted by capture date (2026-11-10):
+  - Month headers in the grid: each month starts under its name and its number of photos.
+    Photos without a date come under "No Date".
+  - The window's subtitle tells the dates of the photos on screen ("Oct 10 – Nov 2, 2021"), and
+    the toolbar the month at the top of the grid, both following the scroll.
+  - Month picker, from that toolbar button or View › Go to Month… (⇧⌘T): the years with photos
+    in a column and the twelve months of the chosen year, those without photos dimmed and the
+    month on screen highlighted; a click on a year or a month scrolls the grid there, and the
+    picker stays open to try the month next to it. The number of photos of the month under the
+    pointer shows below. It follows the filters, the search and the album shown.
 - Search on file names and keywords, in folders (2026-10-30) and in the Apple Photos library and
   its albums (2026-11-06): any part of a name ("1234" finds DSCF1234.RAF), several words at
   once, whatever the case and accents; combines with every filter and follows keywords as they

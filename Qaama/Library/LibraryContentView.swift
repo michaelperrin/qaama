@@ -20,6 +20,8 @@ struct LibraryContentView: View {
     @State private var decisionError: String?
     /// The name being asked for a new album made from photos.
     @State private var albumDialog: AlbumDialog?
+    /// The month at the top of the grid and the jumps asked from the toolbar's month button.
+    @State private var navigator = TimelineNavigator()
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
@@ -29,6 +31,7 @@ struct LibraryContentView: View {
             .focusedSceneValue(\.adjustDateAction, adjustDateAction)
             .focusedSceneValue(\.decisionsAction, decisionsAction)
             .focusedSceneValue(\.albumsCommand, albumsCommand)
+            .focusedSceneValue(\.goToMonthAction, goToMonthAction)
             .albumDialogs($albumDialog, editor: albums?.editor, error: $decisionError)
             .alert("Couldn't Update the Photos", isPresented: Binding(get: { decisionError != nil }, set: {
                 if !$0 {
@@ -73,7 +76,7 @@ struct LibraryContentView: View {
         } else {
             HStack(spacing: 0) {
                 AssetGridView(source: source, selection: $selection, onOpen: { editorSession = EditorSession(assetID: $0, source: source) },
-                              onAdjustDate: adjustDate, albums: albumsAction)
+                              onAdjustDate: adjustDate, albums: albumsAction, navigator: navigator)
                     .safeAreaInset(edge: .top, spacing: 0) {
                         if let notice = source.indexingNotice {
                             IndexingNoticeView(notice: notice, progress: source.indexingProgress)
@@ -89,8 +92,13 @@ struct LibraryContentView: View {
                 }
             }
             .navigationTitle(source.displayName)
-            .navigationSubtitle(subtitle)
+            // The subtitle starts with the dates on screen, which change as the grid scrolls: set from
+            // a view of its own, so scrolling doesn't run this body again.
+            .background { GridSubtitle(navigator: navigator, details: subtitle) }
             .toolbar {
+                ToolbarItem {
+                    MonthButton(navigator: navigator, timeline: source.timeline)
+                }
                 ToolbarItem {
                     ThumbnailSizeSlider()
                 }
@@ -106,6 +114,13 @@ struct LibraryContentView: View {
             .searchable(text: searchText, placement: .toolbar, prompt: "Search names and keywords")
             .searchSuggestions {}
         }
+    }
+
+    /// View › Go to Month…: opens the month picker of the grid; nil (the command is disabled) in the
+    /// editor, and while the months aren't known (another sort order, dates still being read).
+    private var goToMonthAction: GoToMonthAction? {
+        guard editorSession == nil, let timeline = source.timeline, timeline.isComplete, !timeline.sections.isEmpty else { return nil }
+        return GoToMonthAction { navigator.isPickerPresented = true }
     }
 
     /// Image › Rating and Image › Flag: the photo open in the editor, else the grid's selection; nil
@@ -217,6 +232,18 @@ struct LibraryContentView: View {
             text += " · indexing \(progress.fraction.formatted(.percent.precision(.fractionLength(0))))"
         }
         return text
+    }
+}
+
+/// The window's subtitle next to the grid: the dates of the photos on screen, as Photos shows them,
+/// then the counts. A view of its own because the dates change while scrolling.
+private struct GridSubtitle: View {
+    let navigator: TimelineNavigator
+    let details: String
+
+    var body: some View {
+        Color.clear
+            .navigationSubtitle([navigator.visibleDates, details.isEmpty ? nil : details].compactMap(\.self).joined(separator: " · "))
     }
 }
 

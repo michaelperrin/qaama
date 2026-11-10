@@ -15,6 +15,9 @@ import UniformTypeIdentifiers
 @Observable
 public final class PhotosLibrarySource: LibrarySource {
     public private(set) var assets: AssetCollection = .empty
+    /// The months of `assets`, when they are sorted by capture date: the first rows as soon as they
+    /// are listed, every row once their dates are read in the background (see `rebuildTimeline`).
+    public private(set) var timeline: DateTimeline?
     /// Bumped on every library change, so views reading a single asset refresh with the library.
     public private(set) var libraryVersion = 0
     public private(set) var access: PhotoLibraryAccess = .current
@@ -90,6 +93,9 @@ public final class PhotosLibrarySource: LibrarySource {
     /// The text last searched in the index and the assets found for it; nil when nothing is searched.
     @ObservationIgnored private var search: (text: String, matches: [String])?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
+    /// The reading of the dates in progress, and its number: a reading the listing has outrun is dropped.
+    @ObservationIgnored private var timelineTask: Task<Void, Never>?
+    @ObservationIgnored private var timelineGeneration = 0
     /// A listing costs tens of ms: one per pause in typing, not one per keystroke.
     private static let typingDelay = Duration.milliseconds(150)
 
@@ -408,7 +414,12 @@ public final class PhotosLibrarySource: LibrarySource {
         for removed in details.removedObjects {
             materialized[removed.localIdentifier] = nil
         }
+        let timelineIsOutdated = outdatesTimeline(details)
         apply(fetchResult: details.fetchResultAfterChanges)
+        if timelineIsOutdated {
+            // The months in place stay until the new ones are read: a few rows off for a moment.
+            rebuildTimeline(showingFirstRows: false)
+        }
         logger.notice("Applied library change (\(details.insertedObjects.count) inserted, \(details.removedObjects.count) removed, \(details.changedObjects.count) changed)")
     }
 
@@ -529,6 +540,71 @@ public final class PhotosLibrarySource: LibrarySource {
     private func apply(_ result: PHFetchResult<PHAsset>, for listing: PhotosListing) {
         listedSnapshot = listing.index ?? PhotosIndexSnapshot()
         apply(fetchResult: result)
+        rebuildTimeline(showingFirstRows: true)
+    }
+
+    // MARK: - Timeline
+
+    /// Reads the dates of the listing again, off the main actor (a second or two for a large library),
+    /// and publishes its months when done. With `showingFirstRows`, for a listing that has nothing to
+    /// do with the previous one, the months of the first rows are read at once and replace the timeline
+    /// in place; the grid then keeps its top rows as they are when the rest arrives.
+    private func rebuildTimeline(showingFirstRows: Bool) {
+        timelineTask?.cancel()
+        timelineTask = nil
+        timelineGeneration += 1
+        guard query.sort == .captureDate, let fetchResult else {
+            timeline = nil
+            return
+        }
+        let clock = ContinuousClock()
+        let start = clock.now
+        if showingFirstRows {
+            let first = PhotosTimeline.firstRows(of: fetchResult)
+            timeline = first
+            // A short listing (an album, a search) is read whole already.
+            if first.isComplete {
+                return
+            }
+        }
+        let firstRows = clock.now - start
+        let generation = timelineGeneration
+        // PhotoKit documents fetch results as safe to read from any thread; this one is only read there.
+        let result = UncheckedSendable(fetchResult)
+        timelineTask = Task.detached(priority: .userInitiated) { [weak self] in
+            guard let complete = PhotosTimeline.complete(for: result.value) else { return }
+            await self?.publish(complete, generation: generation, firstRows: firstRows, total: clock.now - start)
+        }
+    }
+
+    private func publish(_ complete: DateTimeline, generation: Int, firstRows: Duration, total: Duration) {
+        guard generation == timelineGeneration else { return }
+        timelineTask = nil
+        if complete != timeline {
+            timeline = complete
+        }
+        logger.notice("Timeline: \(complete.sections.count) months of \(complete.count) photos in \(total.formatted(.units(allowed: [.milliseconds])), privacy: .public) (first rows in \(firstRows.formatted(.units(allowed: [.milliseconds])), privacy: .public))")
+    }
+
+    /// Whether a change of the library moved photos between months or rows. Photos reports changes
+    /// every second or two while it analyzes or syncs; most touch neither the rows nor the dates, and
+    /// reading 74,000 dates again for each would never end.
+    private func outdatesTimeline(_ details: PHFetchResultChangeDetails<PHAsset>) -> Bool {
+        guard query.sort == .captureDate else { return false }
+        guard details.hasIncrementalChanges else { return true }
+        if !details.insertedObjects.isEmpty || !details.removedObjects.isEmpty || details.hasMoves {
+            return true
+        }
+        // Same rows. A reading in progress stays valid for them; once done, a date corrected without
+        // moving its photo past another may still have left its month.
+        guard timelineTask == nil, let timeline, timeline.isComplete, let rows = details.changedIndexes else { return false }
+        for (row, asset) in zip(rows, details.changedObjects) {
+            let month = asset.creationDate.map { YearMonth($0) }
+            if timeline.section(containing: row)?.month != month {
+                return true
+            }
+        }
+        return false
     }
 
     /// Exposes the fetch result as a lazy collection: a row is built only when the grid asks for it.

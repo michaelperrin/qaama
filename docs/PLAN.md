@@ -501,6 +501,77 @@ Bibliothèque
         par moi : à confirmer par Michaël (réception du pincement par le `ScrollView`, stabilité
         de la rangée du haut, affichage de ⌘+ sur clavier français, netteté des vignettes de
         dossier en mode carré).
+- [ ] Navigation par date, demandée par Michaël le 10/11/2026 (« je sais que ce voyage était en
+      mai 2017, ou peut-être juin ») : plutôt que les vues Years / Months d'Apple Photos (sélection
+      de photos clés, mise en page en mosaïque), une seule grille continue avec trois repères,
+      valables pour Photos, ses albums et les dossiers dès que le tri est par date de prise de vue.
+      Fait le 10/11/2026 :
+      - **Socle** : `DateTimeline` (LibraryKit), les mois d'un listage et les rangées de chacun,
+        construit en une passe sur les dates dans l'ordre du listage (le calendrier n'est
+        interrogé qu'au changement de mois : 34 ms pour 74 000 dates en Debug). Les photos sans
+        date forment leur propre section. `LibrarySource.timeline`, nil hors tri par date.
+        Dossiers : calculé à chaque livraison du catalogue (éléments en mémoire). Photos :
+        PhotoKit n'a pas de requête « nombre par mois », les dates sont lues dans le
+        `PHFetchResult`, ce qui reste exact avec un album, un filtre ou une recherche.
+      - **Mesures sur la photothèque de Michaël** (74 002 photos, 237 mois, Debug) : les
+        1 000 premières rangées lues à l'affichage du listage en 21 ms (listage complet 157 ms,
+        comme avant), toutes les dates en 1,6 s hors du fil principal. Entre les deux, la
+        timeline est partielle (`isComplete` faux, une section « en attente » pour le reste) :
+        la grille a ses en-têtes tout de suite et les vignettes du haut ne sont pas recréées à
+        l'arrivée du reste, les sections étant identifiées par leur mois et non par leurs
+        rangées.
+      - **Changements de la photothèque** : Photos en signale toutes les une à deux secondes
+        pendant ses analyses ; relire 74 000 dates à chaque fois ne finirait jamais. Les dates
+        ne sont relues que si des photos sont ajoutées, retirées ou déplacées, ou si une photo
+        modifiée a quitté son mois ; l'ancienne timeline reste en place pendant la relecture,
+        ajustée au nombre de rangées (`fitted(to:)`), donc décalée de quelques rangées pendant
+        1,6 s au plus.
+      - **Grille** : `LazyVGrid` en sections avec `pinnedViews: [.sectionHeaders]`, cellules
+        toujours identifiées par leur rangée. Sonde hors écran avant de s'engager (74 000
+        cellules, 125 sections épinglées) : un saut `scrollTo(id:anchor:)` vers une rangée
+        lointaine arrive en 25 ms, au point près. Leçon de la même sonde, dans une vraie fenêtre
+        `WindowGroup` : le repère `.scrollView` commence sous la barre d'outils (et sous le
+        bandeau d'indexation), pas en haut de la fenêtre ; les en-têtes s'épinglent à y = 0 de
+        ce repère et `containerSize` exclut déjà la barre. Le commentaire de `GridViewport`
+        disait l'inverse : corrigé, et le centre d'ancrage du zoom est maintenant le vrai centre
+        de la zone visible (il était 26 pt trop bas).
+      - **Mois affiché** dans la barre d'outils (`MonthButton`) : `GridViewport` calcule la
+        première rangée visible sous l'en-tête épinglé une fois par image (pas une fois par
+        cellule), et `TimelineNavigator` n'est écrit que quand le mois change : seul le bouton
+        se redessine pendant le défilement.
+      - **Sélecteur de mois** (`MonthPicker`, bouton de la barre d'outils ou View › Go to
+        Month…, ⇧⌘T comme Go to Date de Calendrier) : tableau années × mois. Un clic amène le
+        premier rang du mois juste sous son en-tête ; le sélecteur reste ouvert pour essayer le
+        mois voisin. Première version : cases teintées selon le nombre de photos, nombre écrit
+        dedans. Vu par Michaël le 10/11/2026 : « assez violent visuellement », une navigation
+        plus simple suffit, tant pis pour les nombres. Refait le jour même en tableau sobre :
+        noms de mois en texte (plus besoin de remonter à l'en-tête de colonne, où J, M et A
+        étaient ambigus), mois sans photo estompés, mois affiché sur fond d'accent, survol
+        discret ; le nombre de photos n'apparaît plus que sous le tableau, pour le mois survolé.
+        Vu de nouveau le même jour : « la répétition est un peu dérangeante » (Jan Feb Mar… sur
+        chaque ligne). Troisième version : les années en colonne à gauche, les douze mois de
+        l'année choisie écrits une seule fois à droite (3 × 4) ; cliquer une année y amène la
+        grille et montre ses mois.
+      - **En-têtes et dates affichées**, revus le 10/11/2026 après essai par Michaël : le
+        bandeau de mois épinglé sous la barre d'outils « ne s'intègre pas très bien ». Les
+        en-têtes ne sont plus épinglés : un simple titre au-dessus de la première rangée du
+        mois, sans fond. À la place, le sous-titre de la fenêtre donne la plage de dates des
+        photos à l'écran, comme Apple Photos (« Oct 10 – Nov 2, 2021 », puis les compteurs).
+        `GridViewport` donne la première et la dernière rangée visibles ; la plage n'est écrite
+        dans `TimelineNavigator` que quand son texte change, et le sous-titre est posé par une
+        petite vue à part (`GridSubtitle`, `navigationSubtitle` remonte d'une vue en
+        arrière-plan : vérifié par sonde sur `NSWindow.subtitle`), pour que le défilement ne
+        réévalue pas `LibraryContentView`.
+      - Vérifié : tests (`DateTimeline`, timelines des sources dossier et d'exemple), rendu des
+        vraies vues hors écran avec la bibliothèque d'exemple (en-têtes, saut à mai 2017 signalé
+        en 56 ms, tri par note sans en-têtes et bouton désactivé, sélecteur), durées ci-dessus
+        dans les journaux. Non vérifié à l'écran : la fluidité du défilement dans la vraie
+        photothèque pendant et après la lecture des dates, l'allure de l'en-tête épinglé sous la
+        barre Liquid Glass (matériau `.bar`), l'ouverture du popover depuis la barre d'outils,
+        ⇧⌘T, le comportement pendant une synchronisation de Photos.
+      - Pistes : cartes de mois avec photo de couverture façon Apple (favorite ou mieux notée,
+        sinon une photo du jour le plus fourni), filtre par période, « mai 2017 » tapé dans la
+        recherche, clic sur un en-tête pour sélectionner le mois.
 - [ ] Appariement RAW + JPEG, détection des sidecars, mise à jour en direct des
       changements (Photos et système de fichiers).
       Fait le 30/10/2026 : appariement par nom (un RAW + une image non RAW dans le même

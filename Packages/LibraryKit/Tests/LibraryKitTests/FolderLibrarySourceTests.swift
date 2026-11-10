@@ -152,6 +152,36 @@ struct FolderLibrarySourceTests {
         #expect(try Sidecar.read(forImageAt: image) == nil)
     }
 
+    @Test func timelineGroupsThePhotosByMonthAndFollowsACorrectedDate() async throws {
+        let root = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try makeSource(root: root)
+        await source.load()
+        await wait { source.assets.count == 2 && !source.isScanning }
+
+        // The generated images carry no capture date: one section, without a month.
+        #expect(source.timeline?.sections.map(\.range) == [0 ..< 2])
+        #expect(source.timeline?.sections.first?.month == nil)
+        #expect(source.timeline?.isComplete == true)
+
+        // Dated photos come first, in their month; those without a date stay last.
+        let asset = try #require(source.assets.first)
+        let shot = try #require(Calendar.current.date(from: DateComponents(year: 2017, month: 5, day: 14, hour: 12)))
+        try await source.setCaptureDate(shot, for: asset)
+        await wait { source.timeline?.sections.count == 2 }
+        #expect(source.timeline?.sections.map(\.month) == [YearMonth(year: 2017, month: 5), nil])
+        #expect(source.timeline?.sections.map(\.range) == [0 ..< 1, 1 ..< 2])
+        #expect(source.assets.first?.id == asset.id)
+
+        // Months are places in the grid only when it is sorted by capture date.
+        source.query.sort = .fileName
+        await wait { source.timeline == nil }
+        #expect(source.timeline == nil)
+        source.query.sort = .captureDate
+        await wait { source.timeline != nil }
+        #expect(source.timeline?.sections.count == 2)
+    }
+
     @Test func findsThePlaceOfAPhotoAndOrdersASelectionLikeTheListing() async throws {
         let root = try makeFolder()
         defer { try? FileManager.default.removeItem(at: root) }
