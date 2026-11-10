@@ -92,7 +92,7 @@ struct AssetGridView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in menuNudge += 1 }
         // View › Zoom In, Zoom Out and the thumbnail shape act on this grid while it is shown.
         .focusedSceneValue(\.hasAssetGrid, true)
-        .focusedSceneValue(\.exportAction, selection.isEmpty ? nil : ExportAction { export(selection.compactMap { source.asset(id: $0) }) })
+        .focusedSceneValue(\.exportAction, selection.isEmpty ? nil : ExportAction { export(source.assets(withIDs: selection)) })
         .sheet(isPresented: Binding(get: { exportModel != nil }, set: {
             if !$0 {
                 exportModel = nil
@@ -177,12 +177,13 @@ struct AssetGridView: View {
         selection.formUnion(range.compactMap { assets.indices.contains($0) ? assets[$0].id : nil })
     }
 
-    /// The photos a context menu acts on: the whole selection when the clicked photo is part of it.
+    /// The photos a context menu acts on: the whole selection when the clicked photo is part of it,
+    /// in the grid's order (an export numbers its files in that order).
     /// Resolved only when the action runs: SwiftUI may build menu content for every visible tile, and
     /// walking a 74,000-photo collection there froze the grid on each click.
     private func targets(for asset: LibraryAsset) -> [LibraryAsset] {
         guard actsOnSelection(asset) else { return [asset] }
-        return selection.compactMap { source.asset(id: $0) }
+        return source.assets(withIDs: selection)
     }
 
     /// The same photos by identifier, for what needs nothing else: no lookup, whatever the selection's size.

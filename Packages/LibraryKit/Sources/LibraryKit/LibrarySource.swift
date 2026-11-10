@@ -116,6 +116,16 @@ public extension LibrarySource {
         return assets.indices.contains(target) ? assets[target].id : nil
     }
 
+    /// The photos with these identifiers in the order `assets` lists them, which is the order the
+    /// grid shows them in: a selection is a set, and what is made from it in sequence (numbered
+    /// exports) must not come out in the set's arbitrary order. Photos the current query no longer
+    /// lists come last; unknown identifiers are left out.
+    func assets(withIDs ids: some Collection<LibraryAsset.ID>) -> [LibraryAsset] {
+        ids.compactMap { id in asset(id: id).map { (row: index(of: id) ?? Int.max, asset: $0) } }
+            .sorted { ($0.row, $0.asset.id) < ($1.row, $1.asset.id) }
+            .map(\.asset)
+    }
+
     /// A thumbnail that fills its square, for the places that show one photo at a fixed size.
     func thumbnail(for asset: LibraryAsset, pixelSize: CGSize) async -> CGImage? {
         await thumbnail(for: asset, pixelSize: pixelSize, fit: .fill)

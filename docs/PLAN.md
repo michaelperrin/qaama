@@ -741,6 +741,19 @@ Export
       séquentiel, écraser ou renommer, métadonnées), étape 6, préréglages d'export, le même
       jour. Reste à valider par Michaël à son retour ; pistes : WebP via libwebp, profondeur
       16 bits, profil couleur autre que sRGB, métadonnées pour les photos de Photos.
+      Ordre de l'export par lot, corrigé le 10/11/2026 : la sélection est un `Set`, et les photos
+      partaient à l'export dans son ordre arbitraire, différent à chaque fois. Avec un nommage en
+      séquence, le même numéro désignait une photo différente d'un export à l'autre. Constaté en
+      cherchant un bug signalé par Michaël (« les éditions faites dans Apple Photos ne sont pas
+      appliquées à l'export ») qui n'a pas été reproduit : sur ses deux exports de dix photos,
+      chaque photo est identique au pixel près d'un export à l'autre et identique à la version
+      courante de Photos (sonde temporaire dans l'app, retirée) ; seule la numérotation
+      différait (DSCF1875 en 008 puis en 003). `LibrarySource.assets(withIDs:)` rend maintenant
+      une sélection dans l'ordre du listage ; la source dossier trouve la rangée d'une photo sans
+      parcourir le dossier (`rowsByID`). À retenir sur PhotoKit : pour une photo modifiée dans
+      Apple Photos, `requestContentEditingInput` remet le rendu complet
+      (`resources/renders/…_1_201_a`), édition incluse, tant que `canHandleAdjustmentData`
+      répond non ; le fichier reste lisible après la fin de la session.
 - [ ] Enregistrement dans Photos ou dans un dossier, partage système.
 
 Qualité

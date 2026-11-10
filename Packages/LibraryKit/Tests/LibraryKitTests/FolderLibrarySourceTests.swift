@@ -152,6 +152,25 @@ struct FolderLibrarySourceTests {
         #expect(try Sidecar.read(forImageAt: image) == nil)
     }
 
+    @Test func findsThePlaceOfAPhotoAndOrdersASelectionLikeTheListing() async throws {
+        let root = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try makeSource(root: root)
+        await source.load()
+        await wait { source.assets.count == 2 && !source.isScanning }
+        let listed = source.assets.map(\.id)
+        #expect(source.index(of: listed[0]) == 0 && source.index(of: listed[1]) == 1)
+        #expect(source.index(of: "not-a-uuid") == nil && source.index(of: UUID().uuidString) == nil)
+        #expect(source.assets(withIDs: Set(listed)).map(\.id) == listed)
+        // The listing turned around: the places follow.
+        source.query.sort = .fileName
+        source.query.ascending = false
+        await wait { source.assets.map(\.id) == Array(listed.reversed()) || source.assets.map(\.id) == listed }
+        let now = source.assets.map(\.id)
+        #expect(now.enumerated().allSatisfy { source.index(of: $0.element) == $0.offset })
+        #expect(source.assets(withIDs: Set(listed)).map(\.id) == now)
+    }
+
     @Test func detailsOfAnUnknownPhotoFallBackToTheListing() async throws {
         let root = try makeFolder()
         defer { try? FileManager.default.removeItem(at: root) }

@@ -206,6 +206,8 @@ can feed a website one day. Dates are when the feature landed.
   with their saved edits, the same format and size settings, a progress bar and Stop; files keep
   their original names with the new extension, a numeric suffix avoids overwriting; failures are
   listed at the end (2026-10-30).
+- Photos are exported in the order the grid shows them, so numbered file names follow the grid
+  (2026-11-10).
 
 ### Files
 - Naming: original names, or a sequence with a prefix, a start number and a digit count

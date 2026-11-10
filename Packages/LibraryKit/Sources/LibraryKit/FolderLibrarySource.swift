@@ -49,6 +49,8 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     private let previewCache: PreviewCache
     private let hasSecurityScope: Bool
     private var itemsByID: [UUID: CatalogItem] = [:]
+    /// Row of each item in `assets`, so finding a photo's place doesn't scan the folder.
+    private var rowsByID: [UUID: Int] = [:]
     private var observation: Task<Void, Never>?
     private var scan: Task<Void, Never>?
     private var watcher: FolderWatcher?
@@ -149,6 +151,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
 
     private func apply(_ items: [CatalogItem]) {
         itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        rowsByID = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.id, $0.offset) })
         assets = AssetCollection(items.map(LibraryAsset.init))
         prioritized.subtract(items.filter { !$0.needsMetadata }.map(\.id))
     }
@@ -156,6 +159,10 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     public func asset(id: LibraryAsset.ID) -> LibraryAsset? {
         guard let uuid = UUID(uuidString: id), let item = itemsByID[uuid] else { return nil }
         return LibraryAsset(item)
+    }
+
+    public func index(of id: LibraryAsset.ID) -> Int? {
+        UUID(uuidString: id).flatMap { rowsByID[$0] }
     }
 
     public func prioritize(_ asset: LibraryAsset) {
