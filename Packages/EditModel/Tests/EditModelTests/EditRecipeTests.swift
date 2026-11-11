@@ -18,7 +18,7 @@ struct EditRecipeTests {
         #expect(set.saturation == nil, "a neutral value is stored as absent")
         #expect(AdjustmentSet(exposure: 0) == AdjustmentSet())
         #expect(AdjustmentSet(temperature: 4).temperature == 1)
-        #expect(AdjustmentSet.all.count == 14)
+        #expect(AdjustmentSet.all.count == 13)
         #expect(AdjustmentSet(noiseReduction: -1).noiseReduction == nil, "noise reduction has no negative side")
         #expect(AdjustmentSet.range(of: \.exposure) == -3 ... 3 && AdjustmentSet.range(of: \.shadows) == -1 ... 1)
     }
@@ -100,6 +100,46 @@ struct GeometryTests {
         #expect(reloaded.geometry == recipe.geometry)
         recipe.geometry = Geometry()
         #expect(try EditRecipe(jsonData: recipe.jsonData()).geometry == nil, "an identity geometry is dropped on read")
+    }
+}
+
+struct VignetteTests {
+    @Test func switchingOnGivesAVisibleSoftVignette() {
+        let vignette = Vignette()
+        #expect(vignette.isEnabled && vignette.amount < 0 && !vignette.isNeutral)
+        #expect(vignette.midpoint == 0.5 && vignette.feather == 0.5 && vignette.roundness == 0 && vignette.highlights == 0)
+    }
+
+    @Test func clampsItsValues() {
+        let vignette = Vignette(amount: -4, midpoint: 3, feather: -1, roundness: 2, highlights: 5)
+        #expect(vignette.amount == -1 && vignette.midpoint == 1 && vignette.feather == 0)
+        #expect(vignette.roundness == 1 && vignette.highlights == 1)
+        var edited = Vignette()
+        edited.feather = 7
+        #expect(edited.clamped.feather == 1)
+    }
+
+    @Test func countsTowardIdentityOnlyWhenItShows() {
+        var set = AdjustmentSet(vignette: Vignette())
+        #expect(!set.isIdentity)
+        set.vignette?.isEnabled = false
+        #expect(set.isIdentity, "switched off, the settings stay but the photo is unchanged")
+        #expect(set.vignette?.amount == Vignette().amount)
+        set.vignette = Vignette(amount: 0, midpoint: 0.2, feather: 0.9)
+        #expect(set.isIdentity, "the shape alone changes nothing")
+        set.vignette?.amount = 0.2
+        #expect(!set.isIdentity)
+    }
+
+    @Test func roundTripsAndIsClampedWhenRead() throws {
+        let vignette = Vignette(isEnabled: false, amount: -0.7, midpoint: 0.13, feather: 0.53, roundness: -0.14, highlights: 0.3)
+        let recipe = EditRecipe(adjustments: AdjustmentSet(exposure: 1, vignette: vignette))
+        let reloaded = try EditRecipe(jsonData: recipe.jsonData())
+        #expect(reloaded.global.vignette == vignette)
+
+        let json = #"{"version":2,"layers":[{"id":"00000000-0000-0000-0000-000000000001","isEnabled":true,"adjustments":{"vignette":{"isEnabled":true,"amount":-9,"midpoint":0.5,"feather":3,"roundness":0,"highlights":0}}}]}"#
+        let read = try EditRecipe(jsonData: Data(json.utf8))
+        #expect(read.global.vignette == Vignette(amount: -1, feather: 1))
     }
 }
 

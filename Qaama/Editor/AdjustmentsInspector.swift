@@ -105,8 +105,8 @@ struct AdjustmentsInspector: View {
                 slider("Sharpness", \.sharpness)
                 slider("Noise Reduction", \.noiseReduction)
             }
-            Section("Black & White") {
-                Toggle("Black & White", isOn: monochromeEnabled)
+            Section {
+                SectionSwitch("Black & White", isOn: monochromeEnabled)
                 if let monochrome = model.adjustments.monochrome {
                     AdjustmentSlider(title: "Red", value: mix(\.red, monochrome), range: Monochrome.range, onEditingEnded: model.commitChange)
                     AdjustmentSlider(title: "Green", value: mix(\.green, monochrome), range: Monochrome.range, onEditingEnded: model.commitChange)
@@ -115,8 +115,21 @@ struct AdjustmentsInspector: View {
             }
             Section("Effects") {
                 slider("Dehaze", \.dehaze)
-                slider("Vignette", \.vignette)
                 slider("Grain", \.grain)
+            }
+            Section {
+                SectionSwitch("Vignette", isOn: vignetteEnabled)
+                // The sliders stay in view when the vignette is off: its settings are kept.
+                Group {
+                    vignetteSlider("Amount", \.amount, range: Vignette.amountRange)
+                    vignetteSlider("Midpoint", \.midpoint, range: Vignette.unitRange)
+                    vignetteSlider("Feather", \.feather, range: Vignette.unitRange)
+                    vignetteSlider("Roundness", \.roundness, range: Vignette.roundnessRange)
+                    // Highlights only resist a darkening vignette.
+                    vignetteSlider("Highlights", \.highlights, range: Vignette.unitRange)
+                        .disabled((model.adjustments.vignette ?? Vignette()).amount >= 0)
+                }
+                .disabled(!vignetteEnabled.wrappedValue)
             }
             Section {
                 HStack {
@@ -181,6 +194,36 @@ struct AdjustmentsInspector: View {
                 model.adjustments.monochrome = monochrome
             }
         )
+    }
+
+    /// Off until the vignette is first switched on, which gives it its default settings; switching it
+    /// off afterwards keeps them.
+    private var vignetteEnabled: Binding<Bool> {
+        Binding(
+            get: { model.adjustments.vignette?.isEnabled ?? false },
+            set: { enabled in
+                var vignette = model.adjustments.vignette ?? Vignette()
+                vignette.isEnabled = enabled
+                model.adjustments.vignette = vignette
+                model.commitChange()
+            }
+        )
+    }
+
+    /// A slider on one setting of the vignette; a double-click brings back that setting's default.
+    private func vignetteSlider(_ title: LocalizedStringKey, _ keyPath: WritableKeyPath<Vignette, Double>,
+                                range: ClosedRange<Double>) -> some View
+    {
+        let value = Binding(
+            get: { (model.adjustments.vignette ?? Vignette())[keyPath: keyPath] },
+            set: { newValue in
+                var vignette = model.adjustments.vignette ?? Vignette()
+                vignette[keyPath: keyPath] = newValue
+                model.adjustments.vignette = vignette
+            }
+        )
+        return AdjustmentSlider(title: title, value: value, range: range, resetValue: Vignette()[keyPath: keyPath],
+                                onEditingEnded: model.commitChange)
     }
 
     /// Curves of the global layer; identity curves are stored as absent.

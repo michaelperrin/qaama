@@ -41,10 +41,10 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     /// Effects
     /// Remove (+) or add (-) atmospheric haze, -1 to +1.
     public var dehaze: Double?
-    /// Darken (+) or brighten (-) the corners, -1 to +1.
-    public var vignette: Double?
     /// Film-like grain, 0 to 1.
     public var grain: Double?
+    /// Darkened or brightened corners; nil until it is first switched on.
+    public var vignette: Vignette?
     /// Black and white conversion; nil keeps the colors.
     public var monochrome: Monochrome?
 
@@ -54,7 +54,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     public init(temperature: Double? = nil, tint: Double? = nil, exposure: Double? = nil, highlights: Double? = nil,
                 shadows: Double? = nil, blackPoint: Double? = nil, contrast: Double? = nil, vibrance: Double? = nil,
                 saturation: Double? = nil, sharpness: Double? = nil, noiseReduction: Double? = nil, dehaze: Double? = nil,
-                vignette: Double? = nil, grain: Double? = nil, monochrome: Monochrome? = nil)
+                grain: Double? = nil, vignette: Vignette? = nil, monochrome: Monochrome? = nil)
     {
         self.temperature = temperature
         self.tint = tint
@@ -68,16 +68,16 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
         self.sharpness = sharpness
         self.noiseReduction = noiseReduction
         self.dehaze = dehaze
-        self.vignette = vignette
         self.grain = grain
+        self.vignette = vignette
         self.monochrome = monochrome
         clamp()
     }
 
-    /// Every adjustment, in the order the engine applies them.
+    /// Every single-value adjustment, in the order the engine applies them.
     public static let all: [WritableKeyPath<AdjustmentSet, Double?> & Sendable] = [
         \.temperature, \.tint, \.exposure, \.highlights, \.shadows, \.blackPoint, \.contrast, \.vibrance, \.saturation,
-        \.sharpness, \.noiseReduction, \.dehaze, \.vignette, \.grain,
+        \.sharpness, \.noiseReduction, \.dehaze, \.grain,
     ]
 
     public static let positiveRange: ClosedRange<Double> = 0 ... 1
@@ -93,6 +93,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     /// True when every adjustment is absent or neutral.
     public var isIdentity: Bool {
         Self.all.allSatisfy { (self[keyPath: $0] ?? 0) == 0 } && (curves?.isIdentity ?? true) && (hsl?.isIdentity ?? true) && monochrome == nil
+            && (vignette?.isNeutral ?? true)
     }
 
     /// Brings every value back into its range and stores neutral values as absent, so equal edits give
@@ -109,6 +110,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
         if hsl?.isIdentity == true {
             hsl = nil
         }
+        vignette = vignette?.clamped
     }
 
     /// Kept for call sites written against the first version.

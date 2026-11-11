@@ -155,7 +155,12 @@ can feed a website one day. Dates are when the feature landed.
 - Color mixer: hue, saturation and luminance per color range (red, orange, yellow, green,
   aqua, blue, purple, magenta) with smooth blends between ranges (2026-10-30).
 - Black and white with a channel mixer (red, green, blue contributions) (2026-10-30).
-- Effects: vignette, darkening or brightening the corners; film-like grain (2026-10-30).
+- Effects: film-like grain (2026-10-30).
+- Vignette with its own switch, which keeps the settings when off: amount (darker or brighter
+  edges, down to black corners), midpoint (how far from the center it starts), feather, roundness
+  (from a rounded rectangle that follows the frame to the fitted oval to a circle) and highlights
+  (bright areas resist the darkening). It follows the crop: the shape is fitted to the final
+  frame (2026-11-11).
 - Dehaze: removes atmospheric haze estimated from the photo itself (dark channel prior), or adds
   some with negative values; works inside masks like every adjustment (2026-10-30).
 

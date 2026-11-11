@@ -757,6 +757,11 @@ Bibliothèque
       undo/redo par geste relié au menu Édition. Avant/après le 30/10/2026 (bouton Compare à
       maintenir). Reste : interface des calques, à faire avec les masques (sans masque rendu,
       un calque supplémentaire n'apporte rien de visible).
+      Reste aussi (demandé le 11/11/2026) : un interrupteur par catégorie de réglages (Lumière,
+      Couleur, Détail…), comme celui de la vignette. La ligne de titre `SectionSwitch` est prête
+      et sert déjà au noir et blanc et à la vignette ; il manque l'état « désactivé » de chaque
+      groupe dans la recette (les groupes sont aujourd'hui des champs à plat d'`AdjustmentSet`)
+      et son respect par `RenderPipeline`.
 - [ ] Ajustements de base : balance des blancs, exposition, contraste, luminosité,
       hautes lumières/ombres, saturation/vibrance, netteté, réduction de bruit simple,
       vignettage, grain, courbes, niveaux, teinte/saturation sélective, noir et blanc.
@@ -769,6 +774,31 @@ Bibliothèque
       TSL le 30/10/2026 (huit plages, cube 3D `CIColorCubeWithColorSpace` construit en Swift).
       Niveaux abandonnés (couverts par point noir et courbes, comme dans les éditeurs RAW
       récents) ; à rouvrir si Michaël y tient.
+      Vignette refaite le 11/11/2026, en deux temps. D'abord trois réglages façon Photomator
+      (exposition des coins, point noir des coins, douceur) : rejeté par Michaël à l'usage, trop
+      fort au maximum et un ovale trop lisible à douceur 100 %. Ensuite les cinq réglages de
+      LightCraft (open source, MIT ou Apache 2.0, `github.com/storytold/lightcraft`), qui sont
+      ceux des développeurs RAW : quantité (−1 assombrit jusqu'au noir, +1 éclaircit vers le
+      blanc), point médian, fondu, rondeur (−1 rectangle arrondi qui suit le cadre, 0 ovale,
+      +1 cercle) et hautes lumières (les zones claires résistent à l'assombrissement). Plus un
+      interrupteur, qui garde les réglages dans la recette quand la vignette est coupée.
+      `VignetteRenderer` reprend la correspondance réglages → forme de LightCraft (début
+      0,15 + 0,95 × point médian, largeur 0,05 + 1,1 × fondu, donc jamais de bord dur même à
+      fondu 0 ; superellipse d'exposant 2 à 8), réécrite en filtres Core Image sans noyau
+      maison : deux `CILinearGradient` portent les coordonnées dans le rouge et le vert, puis
+      `CIColorPolynomial`, `CIGammaAdjust` et `CIColorMatrix` calculent la distance et le fondu.
+      `VignetteRenderer.Shape` porte la même formule en Swift pur et un test vérifie que l'image
+      du masque lui correspond. La vignette suit le cadre recadré et non plus l'image entière.
+      Mesuré sur GPU, cache de Core Image coupé : 6 ms à 24 Mpx et 10 ms à 45 Mpx (12 ms avec
+      rondeur négative et hautes lumières), contre 5 et 9 ms pour l'ancien `CIVignetteEffect`.
+      - Leçon : `CIToneCurve` travaille en valeurs d'affichage (sRGB), pas en lumière linéaire :
+        le point noir à fond déplace le noir de 0,15 en sRGB.
+      - Leçon : pour chronométrer un rendu Core Image, couper `cacheIntermediates` et changer un
+        réglage à chaque passe, sinon les passes suivantes sortent du cache (0,1 ms mesuré à
+        tort). Un filtre couleur appliqué après un recadrage peut rendre l'étendue infinie
+        (`CIColorClamp` sur le transparent) : recadrer en dernier.
+      - Le champ `vignette` de la recette passe d'un nombre à un objet : les sidecars qui
+        portaient l'ancienne vignette ne se relisent plus (pas de rétrocompatibilité à ce stade).
 - [ ] Recadrage, redressement, rotation, perspective simple.
       Fait le 30/10/2026 : cadre à poignées, grille des tiers, rapports verrouillables
       (original, carré, 3:2, 4:3, 16:9, 5:4), redressement ±45° avec rognage automatique des

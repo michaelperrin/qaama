@@ -24,11 +24,13 @@ public nonisolated enum RenderPipeline {
             current = GeometryRenderer.straighten(current, with: geometry)
         }
         let reference = current
+        // What stays once cropped: the vignette is fitted to it, not to the whole reference.
+        let frame = geometry.map { GeometryRenderer.cropRect(of: $0, in: reference.extent) }
         for (index, layer) in recipe.layers.enumerated() where layer.isEnabled && !layer.adjustments.isIdentity {
             if index == 0 || layer.mask == nil {
-                current = apply(layer.adjustments, to: current)
+                current = apply(layer.adjustments, to: current, frame: frame)
             } else if let mask = layer.mask, let maskImage = MaskRenderer.render(mask, reference: reference, resolved: masks) {
-                let adjusted = apply(layer.adjustments, to: current)
+                let adjusted = apply(layer.adjustments, to: current, frame: frame)
                 let blend = CIFilter.blendWithMask()
                 blend.inputImage = adjusted
                 blend.backgroundImage = current
@@ -42,7 +44,9 @@ public nonisolated enum RenderPipeline {
         return current
     }
 
-    public static func apply(_ adjustments: AdjustmentSet, to image: CIImage) -> CIImage {
+    /// One layer's adjustments. `frame` is the part of the image that will be kept, for the
+    /// adjustments that depend on the final frame (the vignette); nil means the whole image.
+    public static func apply(_ adjustments: AdjustmentSet, to image: CIImage, frame: CGRect? = nil) -> CIImage {
         var output = image
 
         let temperature = adjustments.temperature ?? 0
@@ -170,15 +174,8 @@ public nonisolated enum RenderPipeline {
             output = applyGrain(grain, to: output)
         }
 
-        if let vignette = adjustments.vignette, vignette != 0 {
-            let filter = CIFilter.vignetteEffect()
-            filter.inputImage = output
-            let extent = output.extent
-            filter.center = CGPoint(x: extent.midX, y: extent.midY)
-            filter.radius = Float(hypot(extent.width, extent.height) / 2)
-            filter.intensity = Float(vignette)
-            filter.falloff = 0.5
-            output = filter.outputImage ?? output
+        if let vignette = adjustments.vignette, !vignette.isNeutral {
+            output = VignetteRenderer.apply(vignette, to: output, frame: frame ?? output.extent)
         }
         return output
     }

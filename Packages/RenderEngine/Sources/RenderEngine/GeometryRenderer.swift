@@ -30,17 +30,21 @@ public nonisolated enum GeometryRenderer {
 
     /// The crop frame, expressed in the reference image's unit coordinates (origin top-left).
     public static func crop(_ reference: CIImage, with geometry: Geometry) -> CIImage {
+        guard !geometry.crop.isFull else { return reference }
+        return reference.cropped(to: cropRect(of: geometry, in: reference.extent)).movedToOrigin()
+    }
+
+    /// The crop frame in pixels of the reference image, whose extent is given.
+    static func cropRect(of geometry: Geometry, in extent: CGRect) -> CGRect {
         let crop = geometry.crop
-        guard !crop.isFull else { return reference }
-        let extent = reference.extent
+        guard !crop.isFull else { return extent }
         // The crop's origin is at the top-left; Core Image's is at the bottom-left.
-        let cropRect = CGRect(
+        return CGRect(
             x: extent.minX + crop.x * extent.width,
             y: extent.minY + (1 - crop.y - crop.height) * extent.height,
             width: crop.width * extent.width,
             height: crop.height * extent.height
         ).integral
-        return reference.cropped(to: cropRect).movedToOrigin()
     }
 
     /// Largest rectangle with the straight image's aspect ratio inside the rotated image, centered.

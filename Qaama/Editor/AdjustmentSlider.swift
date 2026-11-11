@@ -6,13 +6,18 @@ struct AdjustmentSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     var unit: String = ""
+    /// What a double-click brings the slider back to.
+    var resetValue: Double = 0
     /// Called when a drag ends, so the owner can record one undo step per gesture.
     var onEditingEnded: () -> Void = {}
+    /// Text does not dim by itself in a disabled section (a vignette switched off), the slider does.
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(title)
+                    .foregroundStyle(isEnabled ? .primary : .secondary)
                 Spacer()
                 Text(value, format: .number.precision(.fractionLength(2)).sign(strategy: .always(includingZero: false)))
                     .monospacedDigit()
@@ -28,7 +33,7 @@ struct AdjustmentSlider: View {
                 }
             }
             .onTapGesture(count: 2) {
-                value = 0
+                value = resetValue
                 onEditingEnded()
             }
         }
