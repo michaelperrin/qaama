@@ -54,6 +54,25 @@ struct FolderLibrarySourceTests {
         #expect(names.allSatisfy { $0?.hasSuffix(".jpg") == true || $0?.hasSuffix(".png") == true || $0?.hasSuffix(".JPG") == true })
     }
 
+    @Test func givesTheFileOfEachPhotoForTheFinder() async throws {
+        let root = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try makeSource(root: root)
+        await source.load()
+        await wait { source.assets.count == 2 }
+
+        #expect(source.hasFileURLs)
+        let urls = source.fileURLs(for: Array(source.assets))
+        #expect(Set(urls.map(\.lastPathComponent)) == ["a.png", "b.png"])
+        #expect(urls.allSatisfy { $0.deletingLastPathComponent().standardizedFileURL == root.standardizedFileURL })
+        #expect(urls.allSatisfy { FileManager.default.fileExists(atPath: $0.path) })
+        let gone = LibraryAsset(id: UUID().uuidString, pixelWidth: 1, pixelHeight: 1, creationDate: nil, isFavorite: false)
+        #expect(source.fileURL(for: gone) == nil)
+        // Photos owns its files: the sample source, like it, has none to show.
+        let sample = SampleLibrarySource(count: 1)
+        #expect(sample.fileURL(for: sample.assets[0]) == nil && !sample.hasFileURLs)
+    }
+
     @Test func detailsNameTheFileAndGiveItsHeaderWhetherIndexedOrNot() async throws {
         let root = try makeFolder()
         defer { try? FileManager.default.removeItem(at: root) }

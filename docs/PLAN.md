@@ -689,6 +689,23 @@ Bibliothèque
       « Details of … : header read / original in iCloud … in … ms »). Reste : garder dans le
       catalogue l'EXIF lu à l'ouverture dans l'éditeur, pour l'afficher ensuite même quand
       l'original est reparti dans iCloud (et nourrir les filtres EXIF de Photos).
+      Show in Finder, fait le 12/11/2026 à la demande de Michaël, pour les photos de dossier
+      seulement : `LibrarySource.fileURL(for:)` (nil par défaut, donc pour Photos), entrée du
+      menu contextuel des vignettes (toute la sélection, `NSWorkspace.activateFileViewerSelecting`)
+      et bouton `ellipsis.circle` à côté du nom de fichier du panneau Info, en mosaïque et dans
+      l'éditeur, qui ouvre un menu (place pour d'autres actions sur le fichier). Rendu vérifié
+      par sonde hors écran, clair et sombre ; non vérifié à l'écran : l'ouverture du Finder
+      depuis l'appli sandboxée. Puis File › Show in Finder (⇧⌘R, comme Musique et Xcode),
+      valeur de focus `showInFinderAction` : sélection de la mosaïque ou photo ouverte ; les URL
+      ne sont cherchées qu'au clic, pour ne pas résoudre une grande sélection à chaque mise à jour.
+      Plantage le même jour, trouvé par Michaël : clic sur un sous-dossier avec des photos
+      sélectionnées, index hors limites à `source.assets[index]` dans la grille. Cause, établie
+      par sonde hors écran (grille réelle, dossier de 62 photos, sous-dossier de 2, sélection) :
+      chaque vignette appelait `source.fileURL(for:)`, qui lit `itemsByID`, propriété observée ;
+      quand la liste rétrécit, SwiftUI recalcule ces vignettes seules, avec leur ancienne ligne,
+      avant la grille. Corrigé par `LibrarySource.hasFileURLs`, constante de la source lue une
+      fois par la grille. Leçon : dans le contenu d'un `ForEach` de la grille, ne lire de la
+      source que `assets[index]`, rien d'autre qui soit observé.
       Localisation, fait le 6/11/2026 : carte MapKit (`LocationMap`) sous le bloc Info, en
       mosaïque et dans l'onglet Info de l'éditeur. D'abord figée avec un clic ouvrant Plans,
       puis, à la demande de Michaël le même jour : plus de clic vers Plans, déplacement et zoom

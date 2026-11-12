@@ -10,6 +10,8 @@ struct InfoPanel: View {
     let fileName: String?
     /// Opens the date correction when the place showing the panel offers it; nil leaves the date as text.
     var onAdjustDate: (() -> Void)?
+    /// Shows the file in the Finder, for photos that are files of a folder; nil leaves the name alone.
+    var onShowInFinder: (() -> Void)?
 
     var body: some View {
         if summary.isEmpty, onAdjustDate == nil {
@@ -32,7 +34,16 @@ struct InfoPanel: View {
             }
         }
         if let fileName {
-            LabeledContent("File", value: fileName)
+            if let onShowInFinder {
+                LabeledContent("File") {
+                    HStack(spacing: 6) {
+                        Text(fileName)
+                        FileActionsMenu(showInFinder: onShowInFinder)
+                    }
+                }
+            } else {
+                LabeledContent("File", value: fileName)
+            }
         }
     }
 
@@ -65,7 +76,7 @@ struct InfoPanel: View {
             InfoPanel(summary: InfoSummary(metadata: ImageMetadata(pixelWidth: 6240, pixelHeight: 4160, captureDate: .now, cameraMake: "FUJIFILM",
                                                                    cameraModel: "X-T5", lens: "XF35mmF2 R WR", iso: 400, exposureTime: 0.004,
                                                                    aperture: 2.8, focalLength: 35)),
-                      fileName: "DSCF1234.RAF")
+                      fileName: "DSCF1234.RAF", onShowInFinder: {})
         }
     }
     .formStyle(.grouped)

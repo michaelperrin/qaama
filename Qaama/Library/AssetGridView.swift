@@ -56,6 +56,7 @@ struct AssetGridView: View {
         let _ = updateActions()
         let canPaste = AdjustmentsClipboard.shared.adjustments != nil
         let canAdjustDate = onAdjustDate != nil && source.capabilities.contains(.captureDate)
+        let canShowInFinder = source.hasFileURLs
         let albumState = albums.map(AssetGridCell.AlbumState.init)
         let side = CGFloat(thumbnailSide)
         let timeline = sections
@@ -70,7 +71,8 @@ struct AssetGridView: View {
                             let asset = source.assets[index]
                             AssetGridCell(asset: asset, index: index, side: side, fit: thumbnailFit, isSelected: selection.contains(asset.id),
                                           menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canPaste: canPaste,
-                                                                        canAdjustDate: canAdjustDate, albums: albumState),
+                                                                        canAdjustDate: canAdjustDate,
+                                                                        canShowInFinder: canShowInFinder, albums: albumState),
                                           source: source, actions: actions)
                                 .equatable()
                         }
@@ -122,6 +124,7 @@ struct AssetGridView: View {
         // View › Zoom In, Zoom Out and the thumbnail shape act on this grid while it is shown.
         .focusedSceneValue(\.hasAssetGrid, true)
         .focusedSceneValue(\.exportAction, selection.isEmpty ? nil : ExportAction { export(source.assets(withIDs: selection)) })
+        .focusedSceneValue(\.showInFinderAction, canShowInFinder && !selection.isEmpty ? ShowInFinderAction { showInFinder(selection) } : nil)
         .sheet(isPresented: Binding(get: { exportModel != nil }, set: {
             if !$0 {
                 exportModel = nil
@@ -199,6 +202,7 @@ struct AssetGridView: View {
         }
         actions.adjustDate = { asset in onAdjustDate?(targets(for: asset)) }
         actions.export = { asset in export(targets(for: asset)) }
+        actions.showInFinder = { asset in showInFinder(Set(targetIDs(for: asset))) }
         actions.targetIDs = targetIDs(for:)
         actions.albums = albums
     }
@@ -240,6 +244,10 @@ struct AssetGridView: View {
     /// in the grid's order (an export numbers its files in that order).
     /// Resolved only when the action runs: SwiftUI may build menu content for every visible tile, and
     /// walking a 74,000-photo collection there froze the grid on each click.
+    private func showInFinder(_ ids: Set<LibraryAsset.ID>) {
+        FinderReveal.show(source.fileURLs(for: source.assets(withIDs: ids)))
+    }
+
     private func targets(for asset: LibraryAsset) -> [LibraryAsset] {
         guard actsOnSelection(asset) else { return [asset] }
         return source.assets(withIDs: selection)
@@ -436,6 +444,7 @@ final class AssetGridActions {
     var pasteAdjustments: (LibraryAsset) -> Void = { _ in }
     var adjustDate: (LibraryAsset) -> Void = { _ in }
     var export: (LibraryAsset) -> Void = { _ in }
+    var showInFinder: (LibraryAsset) -> Void = { _ in }
     /// The photos a context menu acts on, by identifier: the selection when the photo is part of it.
     var targetIDs: (LibraryAsset) -> [LibraryAsset.ID] = { [$0.id] }
     var albums: AlbumsAction?
@@ -456,6 +465,8 @@ struct AssetGridCell: View, Equatable {
         var count: Int
         var canPaste: Bool
         var canAdjustDate: Bool
+        /// The photo is a file of a folder, which the Finder can show.
+        var canShowInFinder: Bool
         var albums: AlbumState?
     }
 
@@ -514,6 +525,9 @@ struct AssetGridCell: View, Equatable {
     @ViewBuilder
     private var contextMenu: some View {
         Button("Open in Editor") { actions.open(asset.id) }
+        if menu.canShowInFinder {
+            Button("Show in Finder") { actions.showInFinder(asset) }
+        }
         Divider()
         Button("Copy Adjustments") { actions.copyAdjustments(asset) }
             .disabled(!asset.hasEdit)

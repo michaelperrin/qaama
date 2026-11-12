@@ -95,6 +95,9 @@ struct EditorView: View {
         .presetNamingPrompt(model: model, presets: presets)
         .focusedSceneValue(\.editor, model)
         .focusedSceneValue(\.exportAction, model.canExport ? ExportAction(openExport) : nil)
+        .focusedSceneValue(\.showInFinderAction, model.asset.flatMap(model.source.fileURL(for:)).map { url in
+            ShowInFinderAction { FinderReveal.show([url]) }
+        })
         .onChange(of: undoManager, initial: true) { _, manager in session.undoManager = manager }
         .background(navigationShortcuts)
         .onChange(of: isInspectorVisible, initial: true) { _, isVisible in

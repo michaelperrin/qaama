@@ -184,7 +184,11 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
 
     // MARK: - Images
 
-    private func fileURL(for asset: LibraryAsset) -> URL? {
+    public var hasFileURLs: Bool {
+        true
+    }
+
+    public func fileURL(for asset: LibraryAsset) -> URL? {
         guard let uuid = UUID(uuidString: asset.id), let item = itemsByID[uuid] else { return nil }
         return folderURL.appendingPathComponent(item.relativePath)
     }

@@ -62,6 +62,14 @@ public protocol LibrarySource: AnyObject, Observable {
     /// true (the user asked for it), nothing is downloaded: a source whose original is elsewhere
     /// answers with what it knows and sets `isOriginalInCloud`.
     func details(for asset: LibraryAsset, allowingDownload: Bool) async -> AssetDetails
+    /// The file on disk behind a photo, for showing it in the Finder; nil for sources whose files
+    /// belong to another app (the Photos library) or when the photo is gone.
+    func fileURL(for asset: LibraryAsset) -> URL?
+    /// True when `fileURL(for:)` answers for the photos of this source (folders); the same for the
+    /// source's whole life. Views ask this rather than `fileURL(for:)` to decide whether to offer
+    /// the Finder: a cell reading the source's items would be refreshed alone when they change, with
+    /// a row that may no longer exist.
+    var hasFileURLs: Bool { get }
     /// The grid shows the row at `index`: sources may warm the thumbnails around it, as the grid will ask
     /// for them (same size and fit).
     func prefetchThumbnails(around index: Int, pixelSize: CGSize, fit: ThumbnailFit)
@@ -168,6 +176,19 @@ public extension LibrarySource {
 
     func details(for asset: LibraryAsset, allowingDownload _: Bool) async -> AssetDetails {
         AssetDetails(asset)
+    }
+
+    func fileURL(for _: LibraryAsset) -> URL? {
+        nil
+    }
+
+    var hasFileURLs: Bool {
+        false
+    }
+
+    /// The files behind these photos, in the same order, leaving out those without one.
+    func fileURLs(for assets: [LibraryAsset]) -> [URL] {
+        assets.compactMap { fileURL(for: $0) }
     }
 
     func prefetchThumbnails(around _: Int, pixelSize _: CGSize, fit _: ThumbnailFit) {}

@@ -77,6 +77,10 @@ can feed a website one day. Dates are when the feature landed.
   editor's Info tab: drag to move, pinch, scroll or use the zoom buttons, and a button brings
   the map back onto the photo. In Photos it uses the location Photos stores, so it shows even
   when the original is in iCloud (2026-11-06).
+- Show in Finder for photos of a folder: File › Show in Finder (⇧⌘R) for the grid's selection or
+  the photo open in the editor, the thumbnails' context menu (the whole selection, selected in
+  its Finder window), and the ellipsis button next to the file name in the Info panel, next to
+  the grid and in the editor's Info tab (2026-11-12).
 
 ### Organizing
 - Star ratings 0–5, stored natively in Photos and in a sidecar file for folders (2026-10-29/30).

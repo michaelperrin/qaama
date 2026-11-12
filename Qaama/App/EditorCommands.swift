@@ -61,6 +61,27 @@ extension FocusedValues {
     }
 }
 
+/// What File › Show in Finder does in the key window: show the file of the open photo, or the files
+/// of the grid's selection. Nil where the photos aren't files of a folder (Photos).
+struct ShowInFinderAction {
+    let run: () -> Void
+
+    init(_ run: @escaping () -> Void) {
+        self.run = run
+    }
+}
+
+struct FocusedShowInFinderKey: FocusedValueKey {
+    typealias Value = ShowInFinderAction
+}
+
+extension FocusedValues {
+    var showInFinderAction: ShowInFinderAction? {
+        get { self[FocusedShowInFinderKey.self] }
+        set { self[FocusedShowInFinderKey.self] = newValue }
+    }
+}
+
 /// What Image › Adjust Date & Time… does in the key window: open the dialog for the grid's selection,
 /// or for the photo open in the editor.
 struct AdjustDateAction {
@@ -142,7 +163,7 @@ extension FocusedValues {
     }
 }
 
-/// File › New Album…, New Album Folder… and Export…, View › Show Inspector, Zoom In and Out (the
+/// File › New Album…, New Album Folder…, Export… and Show in Finder, View › Show Inspector, Zoom In and Out (the
 /// canvas of the open photo, else the grid), Zoom to Fit and Actual Size, the thumbnail shape (square
 /// or whole photo), Go to Month, and the Image menu:
 /// Adjust Date & Time, Rating, Flag, the albums (Add to Album, Add to the last album, Remove from
@@ -159,6 +180,7 @@ struct EditorCommands: Commands {
     @FocusedValue(\.adjustDateAction) private var adjustDateAction
     @FocusedValue(\.decisionsAction) private var decisions
     @FocusedValue(\.exportAction) private var exportAction
+    @FocusedValue(\.showInFinderAction) private var showInFinderAction
     @FocusedValue(\.albumsCommand) private var albumsCommand
     @FocusedValue(\.newAlbumAction) private var newAlbumAction
     @FocusedValue(\.goToMonthAction) private var goToMonthAction
@@ -230,6 +252,10 @@ struct EditorCommands: Commands {
             Button("Export…") { exportAction?.run() }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(exportAction == nil)
+            // ⇧⌘R, as in Music and Xcode.
+            Button("Show in Finder") { showInFinderAction?.run() }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(showInFinderAction == nil)
         }
         CommandMenu("Image") {
             Button("Adjust Date & Time…") { adjustDateAction?.run() }

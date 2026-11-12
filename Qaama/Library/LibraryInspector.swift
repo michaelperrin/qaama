@@ -136,7 +136,8 @@ struct LibraryInspector: View {
         let details = model.details(for: asset)
         Section {
             InfoPanel(summary: InfoSummary([details]), fileName: details.fileName,
-                      onAdjustDate: adjustDate.map { open in { open([asset]) } })
+                      onAdjustDate: adjustDate.map { open in { open([asset]) } },
+                      onShowInFinder: source.fileURL(for: asset).map { url in { FinderReveal.show([url]) } })
         } header: {
             Text("Info")
         } footer: {

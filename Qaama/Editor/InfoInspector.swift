@@ -1,5 +1,6 @@
 import EditorKit
 import ImageIOKit
+import LibraryKit
 import SwiftUI
 
 /// The Info tab: the histogram of the current edit, what the file says about itself, and a map of
@@ -14,7 +15,8 @@ struct InfoInspector: View {
                     .listRowInsets(EdgeInsets())
             }
             Section("Info") {
-                InfoPanel(summary: InfoSummary(metadata: model.metadata), fileName: model.baseName)
+                InfoPanel(summary: InfoSummary(metadata: model.metadata), fileName: model.baseName,
+                          onShowInFinder: model.asset.flatMap(model.source.fileURL(for:)).map { url in { FinderReveal.show([url]) } })
             }
             if let location = model.metadata?.location {
                 Section("Location") {
