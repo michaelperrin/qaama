@@ -44,9 +44,29 @@ public nonisolated enum RenderPipeline {
         return current
     }
 
+    /// The part of a recipe that makes the image a layer's color mixer works on: the layers before
+    /// it, then its own adjustments up to the mixer, on the whole image. Rendering it shows the
+    /// hues the mixer can act on, whatever comes after (black and white, grain, vignette, later
+    /// layers). Follows the order of `apply(_:to:frame:)`.
+    public static func colorMixerUpstream(of recipe: EditRecipe, layerIndex: Int) -> EditRecipe {
+        guard recipe.layers.indices.contains(layerIndex) else { return recipe }
+        var adjustments = recipe.layers[layerIndex].adjustments
+        adjustments.hsl = nil
+        adjustments.monochrome = nil
+        adjustments.grain = nil
+        adjustments.vignette = nil
+        var upstream = recipe
+        // The same layer, without its mask: equal recipes must give equal upstream recipes.
+        let layer = recipe.layers[layerIndex]
+        upstream.layers = Array(recipe.layers.prefix(layerIndex)) + [AdjustmentLayer(id: layer.id, isEnabled: layer.isEnabled, adjustments: adjustments)]
+        return upstream
+    }
+
     /// One layer's adjustments. `frame` is the part of the image that will be kept, for the
     /// adjustments that depend on the final frame (the vignette); nil means the whole image.
     public static func apply(_ adjustments: AdjustmentSet, to image: CIImage, frame: CGRect? = nil) -> CIImage {
+        // Without the groups that are switched off: their values stay in the recipe, unused.
+        let adjustments = adjustments.effective
         var output = image
 
         let temperature = adjustments.temperature ?? 0
@@ -158,7 +178,7 @@ public nonisolated enum RenderPipeline {
             output = ColorCube.apply(ColorCube.data(for: hsl), to: output)
         }
 
-        if let monochrome = adjustments.monochrome {
+        if let monochrome = adjustments.monochrome, monochrome.isEnabled {
             let weights = monochrome.weights
             let mix = CIVector(x: weights.red, y: weights.green, z: weights.blue, w: 0)
             let matrix = CIFilter.colorMatrix()

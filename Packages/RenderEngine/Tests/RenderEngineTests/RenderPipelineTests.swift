@@ -145,6 +145,33 @@ struct RenderPipelineTests {
         #expect(redFiltered.r > gray.r + 0.1, "a red filter brightens red subjects")
     }
 
+    @Test func monochromeSwitchedOffKeepsTheColors() {
+        let set = AdjustmentSet(monochrome: Monochrome(isEnabled: false, red: 1))
+        let output = color(of: RenderPipeline.apply(EditRecipe(adjustments: set), to: red))
+        let original = color(of: red)
+        #expect(abs(output.r - original.r) < 0.01 && abs(output.g - original.g) < 0.01 && abs(output.b - original.b) < 0.01)
+    }
+
+    @Test func aGroupSwitchedOffIsNotApplied() {
+        var set = AdjustmentSet(exposure: 1, saturation: -1)
+        let original = color(of: red)
+        let both = color(of: RenderPipeline.apply(EditRecipe(adjustments: set), to: red))
+        #expect(abs(both.r - both.g) < 0.02 && both.g > original.g + 0.1, "brighter and gray")
+
+        set.setEnabled(false, for: .light)
+        let colorOnly = color(of: RenderPipeline.apply(EditRecipe(adjustments: set), to: red))
+        #expect(abs(colorOnly.r - colorOnly.g) < 0.02 && colorOnly.g < both.g - 0.1, "still gray, no longer brighter")
+
+        set.setEnabled(false, for: .color)
+        let none = color(of: RenderPipeline.apply(EditRecipe(adjustments: set), to: red))
+        #expect(abs(none.r - original.r) < 0.01 && abs(none.g - original.g) < 0.01 && abs(none.b - original.b) < 0.01)
+
+        set.setEnabled(true, for: .light)
+        set.setEnabled(true, for: .color)
+        let again = color(of: RenderPipeline.apply(EditRecipe(adjustments: set), to: red))
+        #expect(abs(again.r - both.r) < 0.001 && abs(again.g - both.g) < 0.001, "back on, the same render")
+    }
+
     @Test func grainAddsTextureWithoutChangingTheExtent() throws {
         let flat = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5)).cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
         let output = RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(grain: 1)), to: flat)
@@ -182,6 +209,130 @@ struct RenderPipelineTests {
         #expect(RenderPipeline.contrastFactor(0) == 1)
         #expect(RenderPipeline.saturationFactor(0) == 1)
         #expect(RenderPipeline.saturationFactor(-1) == 0)
+    }
+}
+
+struct HueHistogramTests {
+    private func solid(red: CGFloat, green: CGFloat, blue: CGFloat, width: CGFloat = 32) -> CIImage {
+        CIImage(color: CIColor(red: red, green: green, blue: blue)).cropped(to: CGRect(x: 0, y: 0, width: width, height: 32))
+    }
+
+    @Test func aSolidColorPilesUpAtItsHue() throws {
+        let green = try #require(HueHistogramComputer.compute(solid(red: 0, green: 1, blue: 0)))
+        #expect(green.bins[120] == 1 && green.bins.filter { $0 > 0 }.count == 1)
+        let orange = try #require(HueHistogramComputer.compute(solid(red: 1, green: 0.5, blue: 0)))
+        let peak = try #require(orange.bins.firstIndex(of: 1))
+        #expect((28 ... 32).contains(peak))
+    }
+
+    @Test func graysHaveNoHue() throws {
+        let gray = try #require(HueHistogramComputer.compute(solid(red: 0.5, green: 0.5, blue: 0.5)))
+        #expect(gray.bins.allSatisfy { $0 == 0 })
+        #expect(gray.bars(perRange: 9).allSatisfy { $0.height == 0 })
+        #expect(HueHistogramComputer.compute(CIImage.empty()) == nil)
+    }
+
+    @Test func faintColorsCountLessAndVividOnesNoMoreThanPlainOnes() {
+        // As many pixels of each: vivid red, plain green, faint blue.
+        var pixels: [UInt8] = []
+        for _ in 0 ..< 100 {
+            pixels += [255, 0, 0, 255]
+            pixels += [120, 180, 120, 255]
+            pixels += [130, 130, 146, 255]
+        }
+        let histogram = HueHistogramComputer.histogram(ofRGBA: pixels)
+        #expect(histogram.bins[0] == 1 && histogram.bins[120] == 1, "a plainly colored area counts as much as a vivid one")
+        #expect(histogram.bins[240] == 0.5, "a faint color counts in proportion")
+    }
+
+    @Test func barsStandAboveTheRangeOfTheirHue() throws {
+        let perRange = 9
+        for (index, range) in HSL.ColorRange.allCases.enumerated() {
+            var bins = [Float](repeating: 0, count: HueHistogram.binCount)
+            bins[Int(range.hue)] = 1
+            let bars = HueHistogram(bins: bins).bars(perRange: perRange)
+            #expect(bars.count == 8 * perRange)
+            let tallest = try #require(bars.indices.max { bars[$0].height < bars[$1].height })
+            #expect(tallest / perRange == index, "the hue of \(range) shows in the cell of its swatch")
+            #expect(abs(bars[tallest].hue - range.hue) < 8)
+        }
+    }
+
+    @Test func barsAreAveragesSoWideRangesAreNotFavored() {
+        // The same amount of every hue: every bar is as tall, though green's cell spans twice the
+        // degrees of red's.
+        let bars = HueHistogram(bins: [Float](repeating: 1, count: HueHistogram.binCount)).bars(perRange: 9)
+        #expect(bars.allSatisfy { abs($0.height - 1) < 0.0001 })
+    }
+
+    @Test func aDominantColorDoesNotFlattenTheRestAndNothingSaturates() throws {
+        // A broad hump of oranges and yellows, and a sky of a single blue twenty times as tall.
+        var bins = [Float](repeating: 0, count: HueHistogram.binCount)
+        for degree in 10 ... 80 {
+            bins[degree] = 0.05 * Float(exp(-pow(Double(degree - 45) / 18, 2)))
+        }
+        for degree in 226 ... 234 {
+            bins[degree] = 1
+        }
+        let bars = HueHistogram(bins: bins).bars(perRange: 12)
+        let hump = bars.filter { $0.hue > 10 && $0.hue < 80 }.map(\.height)
+        let spike = try #require(bars.filter { $0.hue > 220 && $0.hue < 240 }.map(\.height).max())
+        #expect(spike == 1, "the dominant color sets the scale")
+        let top = try #require(hump.max())
+        #expect(top > 0.3 && top < 0.5, "5 % of the tallest bar is drawn at over a third of the height")
+        #expect(hump.filter { $0 > top - 0.01 }.count <= 5, "the hump keeps a rounded top: no plateau")
+    }
+
+    @Test func countingTheSampleStaysCheap() {
+        var generator = SystemRandomNumberGenerator()
+        let pixels = (0 ..< 160 * 160 * 4).map { _ in UInt8.random(in: 0 ... 255, using: &generator) }
+        let clock = ContinuousClock()
+        var histogram = HueHistogram(bins: [])
+        let duration = clock.measure { histogram = HueHistogramComputer.histogram(ofRGBA: pixels) }
+        print("Hue histogram of 160x160 pixels: \(duration)")
+        #expect(histogram.bins.count == HueHistogram.binCount)
+        #expect(duration < .milliseconds(50))
+    }
+}
+
+struct ColorMixerUpstreamTests {
+    @Test func keepsWhatComesBeforeTheMixerAndDropsTheRest() {
+        var global = AdjustmentSet(exposure: 1, saturation: 0.3, sharpness: 0.2, grain: 0.5, vignette: Vignette(), monochrome: Monochrome())
+        global.hsl = HSL(values: [.red: HSLValue(hue: 0.5)])
+        var recipe = EditRecipe(adjustments: global)
+        recipe.layers.append(AdjustmentLayer(mask: nil, adjustments: AdjustmentSet(exposure: -1)))
+        recipe.geometry = Geometry(angle: 2)
+
+        let upstream = RenderPipeline.colorMixerUpstream(of: recipe, layerIndex: 0)
+        #expect(upstream.layers.count == 1 && upstream.geometry == recipe.geometry)
+        #expect(upstream.global == AdjustmentSet(exposure: 1, saturation: 0.3, sharpness: 0.2))
+    }
+
+    @Test func aLaterLayerSeesTheLayersBeforeIt() {
+        var layerSet = AdjustmentSet(contrast: 0.4, grain: 1)
+        layerSet.hsl = HSL(values: [.blue: HSLValue(saturation: 1)])
+        var recipe = EditRecipe(adjustments: AdjustmentSet(exposure: 1, monochrome: Monochrome()))
+        recipe.layers.append(AdjustmentLayer(adjustments: layerSet))
+
+        let upstream = RenderPipeline.colorMixerUpstream(of: recipe, layerIndex: 1)
+        #expect(upstream.layers.count == 2)
+        #expect(upstream.layers[0] == recipe.layers[0], "the global layer applies in full, its black and white included")
+        #expect(upstream.layers[1].adjustments == AdjustmentSet(contrast: 0.4) && upstream.layers[1].mask == nil)
+    }
+
+    @Test func theMixerDoesNotChangeItsOwnInput() {
+        let red = CIImage(color: CIColor(red: 0.8, green: 0.2, blue: 0.2)).cropped(to: CGRect(x: 0, y: 0, width: 16, height: 16))
+        var set = AdjustmentSet(exposure: 0.5)
+        let before = RenderPipeline.colorMixerUpstream(of: EditRecipe(adjustments: set), layerIndex: 0)
+        set.hsl = HSL(values: [.red: HSLValue(hue: 1, saturation: -1)])
+        set.monochrome = Monochrome()
+        let after = RenderPipeline.colorMixerUpstream(of: EditRecipe(adjustments: set), layerIndex: 0)
+        #expect(before.global == after.global)
+        let recipe = EditRecipe(adjustments: set)
+        #expect(RenderPipeline.colorMixerUpstream(of: recipe, layerIndex: 0) == RenderPipeline.colorMixerUpstream(of: recipe, layerIndex: 0),
+                "the same recipe gives the same upstream recipe, so its histogram is computed once")
+        let histogram = HueHistogramComputer.compute(RenderPipeline.apply(after, to: red, geometry: nil))
+        #expect(histogram?.bins[0] == 1, "still red, though the photo is shown in black and white")
     }
 }
 

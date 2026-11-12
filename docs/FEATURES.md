@@ -146,6 +146,12 @@ can feed a website one day. Dates are when the feature landed.
   on screen are read and decoded ahead, so stepping to them is immediate (2026-11-05).
 
 ### Adjustments
+- A switch on every group (white balance, light, curves, color, color mixer, detail, black and
+  white, effects, vignette): off, the group no longer applies but keeps its values, so a photo
+  can be compared with and without it; undoable, saved with the edit, per mask layer (2026-11-11).
+- Compact sliders: the color ones show on their track what each end does (cooler to warmer,
+  green to magenta, gray to vivid, the hues a color range can turn to, darker to lighter); a
+  value that was changed stands out; double-click a slider or its name to reset it (2026-11-11).
 - White balance: temperature, tint (2026-10-30).
 - Light: exposure, highlights, shadows, black point, contrast (2026-10-29/30).
 - Color: vibrance, saturation (2026-10-29/30).
@@ -153,7 +159,10 @@ can feed a website one day. Dates are when the feature landed.
   clicking, removed by double-clicking, applied in display values (2026-10-30).
 - Detail: sharpness (softening on the negative side), luminance noise reduction (2026-10-30).
 - Color mixer: hue, saturation and luminance per color range (red, orange, yellow, green,
-  aqua, blue, purple, magenta) with smooth blends between ranges (2026-10-30).
+  aqua, blue, purple, magenta) with smooth blends between ranges (2026-10-30). Pick the range
+  with its swatch; a small histogram above the swatches shows which hues the photo holds, each
+  range's hues above its swatch, even when the photo is shown in black and white; a dot in a
+  swatch marks a range already adjusted (2026-11-12).
 - Black and white with a channel mixer (red, green, blue contributions) (2026-10-30).
 - Effects: film-like grain (2026-10-30).
 - Vignette with its own switch, which keeps the settings when off: amount (darker or brighter

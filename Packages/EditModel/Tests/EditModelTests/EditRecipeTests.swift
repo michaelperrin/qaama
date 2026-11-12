@@ -162,6 +162,84 @@ struct MonochromeTests {
         #expect(reloaded.global.monochrome == Monochrome())
         #expect(AdjustmentSet(grain: 2).grain == 1 && AdjustmentSet(grain: -1).grain == nil)
     }
+
+    @Test func monochromeSwitchedOffKeepsItsMix() throws {
+        var set = AdjustmentSet(monochrome: Monochrome(red: 0.5, blue: -0.25))
+        set.monochrome?.isEnabled = false
+        #expect(set.isIdentity, "black and white switched off leaves the photo in color")
+        let reloaded = try EditRecipe(jsonData: EditRecipe(adjustments: AdjustmentSet(exposure: 1, monochrome: set.monochrome)).jsonData())
+        #expect(reloaded.global.monochrome == Monochrome(isEnabled: false, red: 0.5, blue: -0.25))
+    }
+
+    @Test func monochromeWrittenBeforeItsSwitchReadsAsOn() throws {
+        let json = #"{"version":2,"layers":[{"id":"00000000-0000-0000-0000-000000000001","isEnabled":true,"adjustments":{"monochrome":{"red":0.5,"green":0,"blue":0}}}]}"#
+        #expect(try EditRecipe(jsonData: Data(json.utf8)).global.monochrome == Monochrome(red: 0.5))
+    }
+}
+
+struct AdjustmentGroupTests {
+    @Test func everyGroupIsOnUntilSwitchedOff() {
+        let set = AdjustmentSet(exposure: 1)
+        #expect(AdjustmentGroup.allCases.allSatisfy(set.isEnabled))
+        #expect(set.effective == set)
+    }
+
+    @Test func switchingAGroupOffKeepsItsValuesAndStopsApplyingThem() {
+        var set = AdjustmentSet(temperature: 0.3, exposure: 1, contrast: 0.2, saturation: -0.4)
+        set.setEnabled(false, for: .light)
+        #expect(!set.isEnabled(.light) && set.isEnabled(.color))
+        #expect(set.exposure == 1 && set.contrast == 0.2, "the values stay in the recipe")
+        let applied = set.effective
+        #expect(applied.exposure == nil && applied.contrast == nil)
+        #expect(applied.temperature == 0.3 && applied.saturation == -0.4, "the other groups still apply")
+        set.setEnabled(true, for: .light)
+        #expect(set == AdjustmentSet(temperature: 0.3, exposure: 1, contrast: 0.2, saturation: -0.4), "back on, nothing was lost")
+    }
+
+    @Test func everyAdjustmentBelongsToOneGroup() {
+        // A value outside every group could never be switched off.
+        var set = AdjustmentSet(temperature: 0.1, tint: 0.1, exposure: 0.1, highlights: 0.1, shadows: 0.1, blackPoint: 0.1, contrast: 0.1,
+                                vibrance: 0.1, saturation: 0.1, sharpness: 0.1, noiseReduction: 0.1, dehaze: 0.1, grain: 0.1)
+        set.curves = Curves(rgb: ToneCurve(points: [CurvePoint(x: 0, y: 0.2), CurvePoint(x: 1, y: 1)]))
+        set.hsl = HSL(values: [.red: HSLValue(saturation: 0.5)])
+        #expect(!set.isIdentity)
+        for group in AdjustmentGroup.allCases {
+            set.setEnabled(false, for: group)
+        }
+        #expect(set.isIdentity, "with every group off the photo is untouched")
+        #expect(AdjustmentSet.all.allSatisfy { set[keyPath: $0] == 0.1 } && set.curves != nil && set.hsl != nil)
+    }
+
+    @Test func switchesRoundTripInOneOrder() throws {
+        var first = AdjustmentSet(exposure: 1, saturation: 0.5)
+        first.setEnabled(false, for: .color)
+        first.setEnabled(false, for: .whiteBalance)
+        var second = AdjustmentSet(exposure: 1, saturation: 0.5)
+        second.setEnabled(false, for: .whiteBalance)
+        second.setEnabled(false, for: .color)
+        #expect(first == second, "the order of the clicks does not make two documents")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        #expect(try encoder.encode(first) == encoder.encode(second))
+        let reloaded = try EditRecipe(jsonData: EditRecipe(adjustments: first).jsonData())
+        #expect(reloaded.global == first && !reloaded.global.isEnabled(.color) && reloaded.global.saturation == 0.5)
+    }
+
+    @Test func documentsThatSwitchNothingOffDoNotMentionTheSwitches() throws {
+        var set = AdjustmentSet(exposure: 1)
+        set.setEnabled(false, for: .light)
+        set.setEnabled(true, for: .light)
+        let json = try String(decoding: EditRecipe(adjustments: set).jsonData(), as: UTF8.self)
+        #expect(!json.contains("disabledGroups"))
+    }
+
+    @Test func switchesReadFromDiskAreNormalized() throws {
+        let json = #"{"version":2,"layers":[{"id":"00000000-0000-0000-0000-000000000001","isEnabled":true,"adjustments":{"exposure":1,"saturation":0.5,"disabledGroups":["color","light","color"]}}]}"#
+        var expected = AdjustmentSet(exposure: 1, saturation: 0.5)
+        expected.setEnabled(false, for: .light)
+        expected.setEnabled(false, for: .color)
+        #expect(try EditRecipe(jsonData: Data(json.utf8)).global == expected)
+    }
 }
 
 struct HSLTests {
@@ -172,6 +250,17 @@ struct HSLTests {
         #expect(abs(back.red - 0.8) < 0.001 && abs(back.green - 0.2) < 0.001)
         let gray = HSL.rgbToHSL(0.4, 0.4, 0.4)
         #expect(gray.1 == 0)
+    }
+
+    @Test func theStripGivesEveryRangeTheSameWidth() {
+        for (index, range) in HSL.ColorRange.allCases.enumerated() {
+            #expect(abs(HSL.hue(atStripPosition: Double(index) + 0.5) - range.hue) < 0.0001, "each range sits in the middle of its cell")
+        }
+        #expect(abs(HSL.hue(atStripPosition: 1) - 15) < 0.0001, "halfway between red and orange")
+        #expect(abs(HSL.hue(atStripPosition: 3) - 90) < 0.0001, "halfway between yellow and green")
+        // The strip is cut halfway between magenta (315°) and red (360°), and wraps.
+        #expect(abs(HSL.hue(atStripPosition: 0) - 337.5) < 0.0001 && abs(HSL.hue(atStripPosition: 8) - 337.5) < 0.0001)
+        #expect(abs(HSL.hue(atStripPosition: 0.25) - 348.75) < 0.0001)
     }
 
     @Test func weightsBlendBetweenNeighbors() {

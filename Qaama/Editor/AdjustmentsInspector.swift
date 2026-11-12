@@ -9,11 +9,6 @@ import SwiftUI
 struct AdjustmentsInspector: View {
     @Bindable var model: EditorModel
     let presets: PresetStore
-    @State private var hslComponent = HSLComponent.saturation
-
-    enum HSLComponent: Hashable {
-        case hue, saturation, luminance
-    }
 
     var body: some View {
         Form {
@@ -59,68 +54,62 @@ struct AdjustmentsInspector: View {
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(model.selectedLayerID == nil ? .secondary : Color.accentColor)
             }
-            Section("White Balance") {
-                slider("Temperature", \.temperature)
-                slider("Tint", \.tint)
+            group("White Balance", .whiteBalance) {
+                SliderStack {
+                    slider("Temperature", \.temperature, gradient: SliderGradients.temperature)
+                    slider("Tint", \.tint, gradient: SliderGradients.tint)
+                }
             }
-            Section("Light") {
-                slider("Exposure", \.exposure, unit: "EV")
-                slider("Highlights", \.highlights)
-                slider("Shadows", \.shadows)
-                slider("Black Point", \.blackPoint)
-                slider("Contrast", \.contrast)
+            group("Light", .light) {
+                SliderStack {
+                    slider("Exposure", \.exposure, unit: "EV")
+                    slider("Highlights", \.highlights)
+                    slider("Shadows", \.shadows)
+                    slider("Black Point", \.blackPoint)
+                    slider("Contrast", \.contrast)
+                }
             }
-            Section("Curves") {
+            group("Curves", .curves) {
                 CurveEditor(curves: curvesBinding, onEditingEnded: model.commitChange)
+                    .opacity(model.adjustments.isEnabled(.curves) ? 1 : 0.5)
             }
-            Section("Color") {
-                slider("Vibrance", \.vibrance)
-                slider("Saturation", \.saturation)
-            }
-            Section("Color Mixer") {
-                // Short labels on purpose: a segmented control wider than the column makes the Form's
-                // layout oscillate while a slider is dragged.
-                Picker("Component", selection: $hslComponent) {
-                    Text("Hue").tag(HSLComponent.hue)
-                    Text("Sat").tag(HSLComponent.saturation)
-                    Text("Lum").tag(HSLComponent.luminance)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .controlSize(.small)
-                .frame(maxWidth: .infinity)
-                ForEach(HSL.ColorRange.allCases, id: \.self) { range in
-                    AdjustmentSlider(title: LocalizedStringKey(range.rawValue.capitalized), value: hslValue(range, hslComponent),
-                                     range: HSLValue.range, onEditingEnded: model.commitChange)
-                        .tint(rangeColor(range))
-                }
-                if model.adjustments.hsl != nil {
-                    Button("Reset Color Mixer") {
-                        model.adjustments.hsl = nil
-                        model.commitChange()
-                    }
+            group("Color", .color) {
+                SliderStack {
+                    slider("Vibrance", \.vibrance, gradient: SliderGradients.vibrance)
+                    slider("Saturation", \.saturation, gradient: SliderGradients.saturation)
                 }
             }
-            Section("Detail") {
-                slider("Sharpness", \.sharpness)
-                slider("Noise Reduction", \.noiseReduction)
+            group("Color Mixer", .colorMixer) {
+                ColorMixerControls(model: model)
+            }
+            group("Detail", .detail) {
+                SliderStack {
+                    slider("Sharpness", \.sharpness)
+                    slider("Noise Reduction", \.noiseReduction)
+                }
             }
             Section {
                 SectionSwitch("Black & White", isOn: monochromeEnabled)
+                // Hidden until black and white is first switched on; afterwards its mix stays in view.
                 if let monochrome = model.adjustments.monochrome {
-                    AdjustmentSlider(title: "Red", value: mix(\.red, monochrome), range: Monochrome.range, onEditingEnded: model.commitChange)
-                    AdjustmentSlider(title: "Green", value: mix(\.green, monochrome), range: Monochrome.range, onEditingEnded: model.commitChange)
-                    AdjustmentSlider(title: "Blue", value: mix(\.blue, monochrome), range: Monochrome.range, onEditingEnded: model.commitChange)
+                    SliderStack {
+                        mixSlider("Red", \.red, monochrome, hue: 0)
+                        mixSlider("Green", \.green, monochrome, hue: 120)
+                        mixSlider("Blue", \.blue, monochrome, hue: 240)
+                    }
+                    .disabled(!monochrome.isEnabled)
                 }
             }
-            Section("Effects") {
-                slider("Dehaze", \.dehaze)
-                slider("Grain", \.grain)
+            group("Effects", .effects) {
+                SliderStack {
+                    slider("Dehaze", \.dehaze)
+                    slider("Grain", \.grain)
+                }
             }
             Section {
                 SectionSwitch("Vignette", isOn: vignetteEnabled)
                 // The sliders stay in view when the vignette is off: its settings are kept.
-                Group {
+                SliderStack {
                     vignetteSlider("Amount", \.amount, range: Vignette.amountRange)
                     vignetteSlider("Midpoint", \.midpoint, range: Vignette.unitRange)
                     vignetteSlider("Feather", \.feather, range: Vignette.unitRange)
@@ -147,42 +136,42 @@ struct AdjustmentsInspector: View {
         .formStyle(.grouped)
     }
 
-    private func hslValue(_ range: HSL.ColorRange, _ component: HSLComponent) -> Binding<Double> {
-        Binding(
-            get: {
-                let value = model.adjustments.hsl?[range] ?? HSLValue()
-                switch component {
-                case .hue: return value.hue
-                case .saturation: return value.saturation
-                case .luminance: return value.luminance
+    /// One group of adjustments as a card: its title with the switch that turns the whole group off,
+    /// then its controls, which stay in view when the group is off since their values are kept.
+    private func group(_ title: LocalizedStringKey, _ group: AdjustmentGroup, @ViewBuilder content: () -> some View) -> some View {
+        Section {
+            SectionSwitch(title, isOn: Binding(
+                get: { model.adjustments.isEnabled(group) },
+                set: { isEnabled in
+                    model.adjustments.setEnabled(isEnabled, for: group)
+                    model.commitChange()
                 }
-            },
-            set: { newValue in
-                var hsl = model.adjustments.hsl ?? HSL()
-                var value = hsl[range]
-                switch component {
-                case .hue: value.hue = newValue
-                case .saturation: value.saturation = newValue
-                case .luminance: value.luminance = newValue
-                }
-                hsl[range] = value
-                model.adjustments.hsl = hsl.isIdentity ? nil : hsl
-            }
-        )
+            ))
+            content()
+                .disabled(!model.adjustments.isEnabled(group))
+        }
     }
 
-    private func rangeColor(_ range: HSL.ColorRange) -> Color {
-        Color(hue: range.hue / 360, saturation: 0.75, brightness: 0.9)
-    }
-
+    /// Off until black and white is first switched on, with a neutral mix; switching it off
+    /// afterwards keeps the mix.
     private var monochromeEnabled: Binding<Bool> {
         Binding(
-            get: { model.adjustments.monochrome != nil },
+            get: { model.adjustments.monochrome?.isEnabled ?? false },
             set: { enabled in
-                model.adjustments.monochrome = enabled ? (model.adjustments.monochrome ?? Monochrome()) : nil
+                var monochrome = model.adjustments.monochrome ?? Monochrome()
+                monochrome.isEnabled = enabled
+                model.adjustments.monochrome = monochrome
                 model.commitChange()
             }
         )
+    }
+
+    /// A slider on one channel of the black and white mix, its track in that channel's color.
+    private func mixSlider(_ title: LocalizedStringKey, _ keyPath: WritableKeyPath<Monochrome, Double>, _ current: Monochrome,
+                           hue: Double) -> some View
+    {
+        AdjustmentSlider(title: title, value: mix(keyPath, current), range: Monochrome.range, gradient: SliderGradients.tone(hue: hue),
+                         onEditingEnded: model.commitChange)
     }
 
     private func mix(_ keyPath: WritableKeyPath<Monochrome, Double>, _ current: Monochrome) -> Binding<Double> {
@@ -234,9 +223,11 @@ struct AdjustmentsInspector: View {
         )
     }
 
-    private func slider(_ title: LocalizedStringKey, _ keyPath: WritableKeyPath<AdjustmentSet, Double?>, unit: String = "") -> some View {
+    private func slider(_ title: LocalizedStringKey, _ keyPath: WritableKeyPath<AdjustmentSet, Double?>, unit: String = "",
+                        gradient: Gradient? = nil) -> some View
+    {
         AdjustmentSlider(title: title, value: adjustment(keyPath), range: AdjustmentSet.range(of: keyPath), unit: unit,
-                         onEditingEnded: model.commitChange)
+                         gradient: gradient, onEditingEnded: model.commitChange)
     }
 
     /// Slider binding on an optional adjustment of the global layer: absent reads as neutral.

@@ -58,6 +58,23 @@ public struct HSL: Codable, Hashable, Sendable {
         values.isEmpty
     }
 
+    // MARK: - Layout of the ranges
+
+    /// The hue, in degrees, at a position along a strip that gives every color range the same
+    /// width. Positions count in range widths: range `n` is centered on `n + 0.5`, and the hue turns
+    /// evenly from one center to the next, so the strip starts and ends halfway between magenta and
+    /// red. Lets a display line the hues up with one swatch per range.
+    public static func hue(atStripPosition position: Double) -> Double {
+        let count = Double(ColorRange.allCases.count)
+        var offset = (position - 0.5).truncatingRemainder(dividingBy: count)
+        if offset < 0 {
+            offset += count
+        }
+        let index = min(Int(offset), ColorRange.allCases.count - 1)
+        let hue = Evaluator.centers[index] + (offset - Double(index)) * Evaluator.gapsToNext[index]
+        return hue >= 360 ? hue - 360 : hue
+    }
+
     // MARK: - Mapping
 
     /// Weight of each range for a hue, in degrees: 1 at the center, falling to 0 at the neighbors.

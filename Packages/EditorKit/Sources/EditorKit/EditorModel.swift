@@ -59,6 +59,9 @@ public final class EditorModel {
 
     /// Histogram of the current edit, refreshed shortly after each change.
     public private(set) var histogram: Histogram?
+    /// The hues of the photo as the color mixer of the edited layer receives it, before the mixer
+    /// and what follows it (black and white, grain, vignette): what its ranges can act on.
+    public private(set) var hueHistogram: HueHistogram?
     /// While true the canvas shows the original instead of the edit (press-and-hold comparison).
     public var isShowingOriginal = false {
         didSet { renderPreview() }
@@ -482,6 +485,18 @@ public final class EditorModel {
     }
 
     @ObservationIgnored private var histogramTask: Task<Void, Never>?
+    @ObservationIgnored private var hueHistogramTask: Task<Void, Never>?
+    /// What the current hue histogram was computed from (or is being computed from), so moving the
+    /// mixer's own sliders, which leaves it unchanged, costs nothing.
+    @ObservationIgnored private var hueHistogramSource: HueHistogramSource?
+
+    /// Everything the image entering the color mixer depends on.
+    private struct HueHistogramSource: Equatable {
+        let recipe: EditRecipe
+        /// Masks and retouch fills arrive after the recipe that asks for them.
+        let maskIDs: Set<UUID>
+        let fillIDs: Set<UUID>
+    }
 
     /// The edit being made. Sliders write here continuously; call `commitChange()` when a gesture
     /// ends so the undo history gets one entry per gesture, not one per pixel.
@@ -610,6 +625,7 @@ public final class EditorModel {
         maskResolution?.cancel()
         retouchResolution?.cancel()
         histogramTask?.cancel()
+        hueHistogramTask?.cancel()
         undoManager?.removeAllActions(withTarget: self)
         if preparation == nil, let asset {
             source.endEditing(asset)
@@ -698,6 +714,7 @@ public final class EditorModel {
         }
         renderer?.image = showsMaskOverlay ? withMaskOverlay(shown, of: recipe, source: source) : shown
         scheduleHistogram(of: shown)
+        scheduleHueHistogram(of: recipe, source: source)
     }
 
     /// Computes, in the background, the model-based masks the recipe needs and doesn't have yet, then
@@ -759,6 +776,24 @@ public final class EditorModel {
             let computed = await Task.detached(priority: .utility) { HistogramComputer.compute(image) }.value
             guard !Task.isCancelled else { return }
             self?.histogram = computed
+        }
+    }
+
+    /// Recomputes the hue histogram when what enters the color mixer changed, once the sliders
+    /// settle. The draft and the full resolution hold the same hues: either will do.
+    private func scheduleHueHistogram(of recipe: EditRecipe, source: CIImage) {
+        let upstream = RenderPipeline.colorMixerUpstream(of: recipe, layerIndex: selectedLayerIndex ?? 0)
+        let key = HueHistogramSource(recipe: upstream, maskIDs: Set(maskImages.keys), fillIDs: Set(retouchFills.keys))
+        guard key != hueHistogramSource else { return }
+        hueHistogramSource = key
+        let image = RenderPipeline.apply(upstream, to: source, geometry: upstream.geometry, masks: maskImages, fills: retouchFills)
+        hueHistogramTask?.cancel()
+        hueHistogramTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled else { return }
+            let computed = await Task.detached(priority: .utility) { HueHistogramComputer.compute(image) }.value
+            guard !Task.isCancelled else { return }
+            self?.hueHistogram = computed
         }
     }
 

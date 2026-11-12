@@ -148,6 +148,27 @@ struct EditorModelTests {
         #expect(!model.canRedo)
     }
 
+    @Test func switchingAGroupOffIsOneUndoStepAndKeepsItsValues() async throws {
+        let url = try makeImage()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let model = EditorModel(assetID: "stub", source: StubSource(imageURL: url), renderer: nil)
+        await model.open()
+        model.adjustments.exposure = 0.6
+        model.commitChange()
+
+        // What the inspector's switch does.
+        model.adjustments.setEnabled(false, for: .light)
+        model.commitChange()
+        #expect(model.undoStack.count == 2)
+        #expect(model.adjustments.exposure == 0.6 && !model.adjustments.isEnabled(.light))
+        #expect(model.recipe.isIdentity, "with its only group off, the photo shows as the original")
+
+        model.undo()
+        #expect(model.adjustments.isEnabled(.light) && model.adjustments.exposure == 0.6 && !model.recipe.isIdentity)
+        model.redo()
+        #expect(!model.adjustments.isEnabled(.light) && model.adjustments.exposure == 0.6)
+    }
+
     @Test func undoManagerDrivesTheSameHistory() async throws {
         let url = try makeImage()
         defer { try? FileManager.default.removeItem(at: url) }
@@ -183,6 +204,44 @@ struct EditorModelTests {
         }
         let histogram = try #require(model.histogram)
         #expect(histogram.luminance.max() == 1)
+    }
+
+    /// A 32 x 16 image, the left half red and the right half blue.
+    private func makeTwoColorImage() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("editor-\(UUID().uuidString).png")
+        let context = CGContext(data: nil, width: 32, height: 16, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
+        context.setFillColor(CGColor(red: 0, green: 0, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 16, y: 0, width: 16, height: 16))
+        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, context.makeImage()!, nil)
+        #expect(CGImageDestinationFinalize(destination))
+        return url
+    }
+
+    @Test func theHueHistogramShowsWhatEntersTheColorMixer() async throws {
+        let url = try makeTwoColorImage()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let model = EditorModel(assetID: "stub", source: StubSource(imageURL: url), renderer: nil)
+        await model.open()
+        for _ in 0 ..< 100 where model.hueHistogram == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let histogram = try #require(model.hueHistogram)
+        // Wide windows: the untagged test image goes through color management on its way in.
+        func amount(around hue: Int) -> Float {
+            (hue - 20 ... hue + 20).map { histogram.bins[($0 + 360) % 360] }.reduce(0, +)
+        }
+        #expect(amount(around: 0) > 0.5 && amount(around: 240) > 0.5 && amount(around: 120) == 0)
+
+        // Black and white comes after the mixer: the photo turns gray, the mixer still receives colors.
+        model.adjustments.monochrome = Monochrome()
+        model.adjustments.hsl = HSL(values: [.red: HSLValue(luminance: 0.5)])
+        model.commitChange()
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(model.hueHistogram == histogram)
     }
 
     @Test func cropModeKeepsGeometryUntilItIsIdentity() async throws {

@@ -45,8 +45,13 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     public var grain: Double?
     /// Darkened or brightened corners; nil until it is first switched on.
     public var vignette: Vignette?
-    /// Black and white conversion; nil keeps the colors.
+    /// Black and white conversion; nil until it is first switched on.
     public var monochrome: Monochrome?
+
+    /// The groups switched off, in the order of `AdjustmentGroup`; nil when all are on, so documents
+    /// that switch nothing off are what they were before the switches existed. Read and written
+    /// through `isEnabled(_:)` and `setEnabled(_:for:)`.
+    private var disabledGroups: [AdjustmentGroup]?
 
     public static let exposureRange: ClosedRange<Double> = -3 ... 3
     public static let unitRange: ClosedRange<Double> = -1 ... 1
@@ -90,10 +95,42 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
         }
     }
 
-    /// True when every adjustment is absent or neutral.
+    // MARK: - Switches
+
+    public func isEnabled(_ group: AdjustmentGroup) -> Bool {
+        !(disabledGroups ?? []).contains(group)
+    }
+
+    /// Switches a group on or off. Its values are kept either way.
+    public mutating func setEnabled(_ isEnabled: Bool, for group: AdjustmentGroup) {
+        let disabled = AdjustmentGroup.allCases.filter { $0 == group ? !isEnabled : !self.isEnabled($0) }
+        disabledGroups = disabled.isEmpty ? nil : disabled
+    }
+
+    /// What the engine applies: the same set without the values of the groups that are off.
+    public var effective: AdjustmentSet {
+        guard let disabledGroups else { return self }
+        var set = self
+        set.disabledGroups = nil
+        for group in disabledGroups {
+            for keyPath in group.values {
+                set[keyPath: keyPath] = nil
+            }
+            switch group {
+            case .curves: set.curves = nil
+            case .colorMixer: set.hsl = nil
+            default: break
+            }
+        }
+        return set
+    }
+
+    /// True when applying the set would leave the photo unchanged: every adjustment is absent,
+    /// neutral or switched off.
     public var isIdentity: Bool {
-        Self.all.allSatisfy { (self[keyPath: $0] ?? 0) == 0 } && (curves?.isIdentity ?? true) && (hsl?.isIdentity ?? true) && monochrome == nil
-            && (vignette?.isNeutral ?? true)
+        let set = effective
+        return Self.all.allSatisfy { (set[keyPath: $0] ?? 0) == 0 } && (set.curves?.isIdentity ?? true) && (set.hsl?.isIdentity ?? true)
+            && monochrome?.isEnabled != true && (vignette?.isNeutral ?? true)
     }
 
     /// Brings every value back into its range and stores neutral values as absent, so equal edits give
@@ -111,6 +148,11 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
             hsl = nil
         }
         vignette = vignette?.clamped
+        // The switches in their one order, each listed once, as `setEnabled` writes them.
+        if let listed = disabledGroups {
+            let disabled = AdjustmentGroup.allCases.filter(listed.contains)
+            disabledGroups = disabled.isEmpty ? nil : disabled
+        }
     }
 
     /// Kept for call sites written against the first version.

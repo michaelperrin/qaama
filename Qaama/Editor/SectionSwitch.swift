@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// First row of an inspector section that can be switched off: the section's title and its switch.
-/// The section itself has no header, the row stands for it.
+/// The section itself has no header, the row stands for it: the title inside the card saves a
+/// header's height per section.
 struct SectionSwitch: View {
     let title: LocalizedStringKey
     @Binding var isOn: Bool
@@ -16,5 +17,6 @@ struct SectionSwitch: View {
             Text(title).fontWeight(.semibold)
         }
         .toggleStyle(.switch)
+        .controlSize(.mini)
     }
 }

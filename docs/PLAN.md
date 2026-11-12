@@ -962,6 +962,77 @@ Interface
       voisine.
       Restent : le changement d'onglet reconstruit encore le formulaire ; le bouton Close
       abandonne toujours les modifications sans prévenir.
+      Inspecteur des ajustements resserré (11/11/2026, demande de Michaël : « pas très
+      belle », trop haute). Chaque curseur passe de 56 à 36 pt : libellé et valeur sur une
+      ligne, piste fine dessous, pleine largeur (dans un `Form` groupé, le `Slider` système
+      n'occupait que la moitié droite : colonne de libellé vide, levée par `.labelsHidden()`),
+      et les curseurs d'un groupe empilés dans une seule rangée du `Form` (`SliderStack`), sans
+      séparateur ni marge entre eux ; titre du groupe dans la carte (`SectionTitle`), comme
+      Vignette et Black & White. Colonne entière : environ 2 330 pt contre plus de 2 700.
+      Le `Slider` système en taille mini a été écarté après essai par Michaël : remplissage
+      bleu depuis la gauche sur chaque ligne (« trop de traits bleus »), double-clic de remise
+      à zéro inopérant (il ne l'était déjà pas avant : le `Slider` garde le double-clic pour
+      lui), pas de dégradé possible. Curseur dessiné à la main (`SliderTrack`) : piste grise
+      ou en dégradé (`SliderGradients` : température, teinte, vibrance, saturation, les trois
+      composantes du mélangeur de couleurs, les trois canaux du noir et blanc), petit pouce,
+      valeur en couleur de texte principale quand elle a été modifiée. Souris gérée par une
+      `NSView` (`SliderMouseView`) : à côté d'un glissement qui démarre au contact, le double
+      tap de SwiftUI ne se déclenche pas, alors qu'une vue reçoit le nombre de clics. Appui
+      sur le pouce : il part d'où il est ; appui ailleurs sur la piste : il vient sous le
+      pointeur ; double-clic sur la piste ou sur le libellé : valeur par défaut. Vérifié hors
+      écran par des événements souris adressés à la vue (une sonde lancée en arrière-plan
+      n'est pas l'application active : `NSWindow.sendEvent` y avale les appuis simples).
+      Interrupteur par groupe (11/11/2026, demandé par Michaël : éteindre un groupe sans
+      perdre ses valeurs). Recette : `AdjustmentSet` liste les groupes éteints
+      (`AdjustmentGroup` : balance des blancs, lumière, courbes, couleur, mélangeur, détail,
+      effets), dans l'ordre de l'énumération, clé absente du document quand tout est allumé ;
+      le moteur applique `AdjustmentSet.effective`, la copie sans les valeurs des groupes
+      éteints, et `isIdentity` en tient compte. Noir et blanc reçoit son propre `isEnabled`,
+      comme la vignette (éteints par défaut, ils portent leur interrupteur avec leurs
+      réglages) : l'éteindre ne perd plus le mélange ; un document écrit avant se lit comme
+      allumé. Inspecteur : `SectionSwitch` sur chaque carte, contrôles grisés mais visibles
+      quand le groupe est éteint, piste sans dégradé. Annulable (un pas par bascule), par
+      calque de masque comme les autres réglages. Limite assumée, la même que pour la
+      vignette : une photo dont tous les réglages sont éteints est une photo non modifiée ;
+      l'enregistrer retire la recette, donc les valeurs éteintes ne survivent pas à la
+      fermeture dans ce seul cas.
+      Mélangeur de couleurs repensé (12/11/2026, à partir d'une capture de Photomator que
+      Michaël aimait : choix de la couleur et petit histogramme). Huit pastilles, une par plage,
+      et les trois curseurs Hue / Saturation / Luminance de la plage choisie, au lieu de huit
+      curseurs et d'un sélecteur de composante : la carte passe de 11 à 5 rangées. « Luminance »
+      plutôt que « Brightness » : c'est le terme du modèle (`HSLValue.luminance`) et l'usage des
+      mélangeurs HSL. Un point signale une plage déjà réglée, puisqu'une seule plage montre ses
+      curseurs. Histogramme des teintes (`HueHistogram`, 360 cases d'un degré, les gris ne
+      comptent pas) calculé sur l'image telle que
+      le mélangeur la reçoit (`RenderPipeline.colorMixerUpstream` : la recette sans le
+      mélangeur ni ce qui le suit, noir et blanc, grain, vignette, calques suivants) : il reste
+      lisible en noir et blanc et ne bouge pas quand on règle le mélangeur, donc il n'est pas
+      recalculé (clé : recette amont, masques et retouches disponibles). Échantillon de 160 px,
+      comptage en Swift pur : 1,9 ms en Debug pour 25 600 pixels. Affichage : chaque plage a la
+      même largeur (`HSL.hue(atStripPosition:)`), ses teintes sont donc au-dessus de sa
+      pastille ; barres en moyenne par degré (les plages n'ont pas la même étendue). Première
+      version : hauteur en racine carrée et barres de la plage choisie plus lumineuses, revues
+      ci-dessous.
+      Retour de Michaël le 12/11/2026, sur la même photo que dans Photomator : histogramme
+      « peu lisible », à agrandir et à rendre plus éclatant ; le point sous la pastille décalait
+      la pastille choisie vers le haut dans sa case ; reprendre l'idée d'un conteneur pour les
+      pastilles. Corrigé : histogramme de 68 pt, 96 barres fines aux couleurs franches, toutes
+      à pleine opacité (l'atténuation des plages non choisies ternissait tout quand la plage
+      choisie était absente de la photo : retirée, avec `HSL.weight(of:atHue:)`), ligne de base
+      de toutes les teintes ; échelle fixée par la huitième barre (sur 96) avec compression de
+      ce qui dépasse, à la place de la racine carrée (essai abandonné, voir le second retour).
+      Pastilles dans une bande façon contrôle segmenté, case choisie en relief ; marqueur de
+      modification devenu un point blanc au centre de la pastille, sans effet sur la mise en
+      page.
+      Second retour le même jour, sur `DSCF2760.jpeg` : les barres « vont trop haut », l'affichage
+      « sature facilement ». Mesuré sur cette photo : la bosse des orangés ne pèse que 2 à 8 % du
+      pic bleu selon la pondération ; l'échelle au percentile la poussait à 95 % avec trois
+      barres au plafond. Remplacée par une racine cubique de la part de la plus haute barre :
+      seule celle-ci atteint le haut, rien ne plafonne, la bosse est à 42 % de la hauteur.
+      Pondération revue en même temps : un pixel compte en entier dès que sa chroma atteint
+      32/255, en proportion en dessous ; une zone vive ne pèse plus davantage qu'une zone
+      simplement colorée, l'histogramme dit quelle surface chaque teinte couvre.
+      Restent à décider : groupes repliables, valeurs en entiers.
 
 ### Phase 3 — Au-delà du MVP (selon l'envie)
 
