@@ -19,10 +19,7 @@ struct InfoInspector: View {
                           onShowInFinder: model.asset.flatMap(model.source.fileURL(for:)).map { url in { FinderReveal.show([url]) } })
             }
             if let location = model.metadata?.location {
-                Section("Location") {
-                    LocationMap(location: location)
-                        .listRowInsets(EdgeInsets())
-                }
+                LocationSection(location: location)
             }
         }
         .formStyle(.grouped)

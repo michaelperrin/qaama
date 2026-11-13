@@ -146,10 +146,7 @@ struct LibraryInspector: View {
             }
         }
         if let location = details.metadata?.location {
-            Section("Location") {
-                LocationMap(location: location)
-                    .listRowInsets(EdgeInsets())
-            }
+            LocationSection(location: location)
         }
     }
 
