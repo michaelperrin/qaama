@@ -95,16 +95,17 @@ nonisolated extension CatalogItem {
         exposureTime = metadata.exposureTime
         aperture = metadata.aperture
         focalLength = metadata.focalLength
+        location = metadata.location
     }
 }
 
 nonisolated extension ImageMetadata {
-    /// The header as the catalog recorded it, without the location, which it doesn't keep; nil until the
-    /// metadata phase has read the file, when the file changed since, and when its header couldn't be read.
+    /// The header as the catalog recorded it; nil until the metadata phase has read the file, when the
+    /// file changed since, and when its header couldn't be read.
     init?(_ item: CatalogItem) {
         guard !item.needsMetadata, let width = item.pixelWidth, let height = item.pixelHeight else { return nil }
         self.init(pixelWidth: width, pixelHeight: height, orientation: item.orientation ?? 1, captureDate: item.captureDate,
                   cameraMake: item.cameraMake, cameraModel: item.cameraModel, lens: item.lens, iso: item.iso,
-                  exposureTime: item.exposureTime, aperture: item.aperture, focalLength: item.focalLength)
+                  exposureTime: item.exposureTime, aperture: item.aperture, focalLength: item.focalLength, location: item.location)
     }
 }

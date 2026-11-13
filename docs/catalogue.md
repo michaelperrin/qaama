@@ -80,6 +80,7 @@ item
   captureDate: Date?
   cameraMake, cameraModel, lens: String?
   iso: Int?  exposureTime, aperture, focalLength: Double?
+  latitude, longitude: Double?   position GPS de l'en-tête (13/11/2026, migration v7), pour la carte
   isRAW: Bool
   metadataRead: Date?            nil = à lire
 

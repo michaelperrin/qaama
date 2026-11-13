@@ -149,6 +149,17 @@ nonisolated enum CatalogSchema {
                 t.add(column: "longitude", .double)
             }
         }
+
+        migrator.registerMigration("v7-folder-location") { db in
+            // Where a folder's photos were taken, for the map: in the header, read with the rest of
+            // it and stale with it, hence columns of `item`. Headers read before are read again in
+            // the background the next time their folder is opened.
+            try db.alter(table: "item") { t in
+                t.add(column: "latitude", .double)
+                t.add(column: "longitude", .double)
+            }
+            try db.execute(sql: "UPDATE item SET metadataRead = NULL")
+        }
         return migrator
     }
 }

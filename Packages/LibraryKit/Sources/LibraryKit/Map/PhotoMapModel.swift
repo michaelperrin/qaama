@@ -42,11 +42,11 @@ public final class PhotoMapModel {
     public private(set) var locatedCount: Int?
     /// The smallest region holding them all, to frame the map the first time.
     public private(set) var extent: GeoRegion?
-    /// The region last shown and whether the view already framed the photos once, kept here for the
-    /// view to come back to the same place after a detour by the grid. Written on every frame of a
-    /// gesture, hence not observed.
+    /// The region last shown and whether the user chose it (moved or zoomed the map), kept here for
+    /// the view to come back to the same place after a detour by the grid. Until the user does, the
+    /// view frames all the photos. Written on every frame of a gesture, hence not observed.
     @ObservationIgnored public var lastRegion: GeoRegion?
-    @ObservationIgnored public var hasFramedPhotos = false
+    @ObservationIgnored public var userMovedMap = false
 
     @ObservationIgnored private var index = PhotoMapIndex()
     @ObservationIgnored private var loaded: Content?

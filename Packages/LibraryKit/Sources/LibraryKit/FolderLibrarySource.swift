@@ -36,12 +36,30 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         [.sortByRating, .sortByFileName, .rating, .flag, .edited, .raw, .pairedJPEGs, .search]
     }
 
-    /// Sorting and filtering, answered by the catalog; changing it restarts the observation.
+    /// Sorting and filtering, answered by the catalog; changing it restarts the observation. A group
+    /// picked on the map (`onlyAssetIDs`) is cut out of what the catalog already delivered instead.
     public var query = LibraryQuery.default {
         didSet {
             guard query != oldValue, observation != nil else { return }
-            startObservation()
+            if query.catalogQuery == oldValue.catalogQuery {
+                apply(delivered)
+            } else {
+                startObservation()
+            }
         }
+    }
+
+    /// The header of every photo is in the catalog, position included.
+    public var hasPlaces: Bool {
+        true
+    }
+
+    /// Bumped when the positions of the listing change: files came or went, headers were read.
+    public private(set) var placesVersion = 0
+
+    /// Already in memory: the catalog's answer for the query, the map's group left aside.
+    public func locatedAssets() async -> [LocatedAsset] {
+        placed
     }
 
     /// Rebuilds the preview of an edited photo when the cache has none. Set by the catalog.
@@ -51,6 +69,12 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     private let store: CatalogStore
     private let previewCache: PreviewCache
     private let hasSecurityScope: Bool
+    /// What the catalog last delivered for the query, whatever group of the map `assets` is cut down to.
+    @ObservationIgnored private var delivered: [CatalogItem] = []
+    /// Those of `delivered` that have a position, for the map.
+    @ObservationIgnored private var placed: [LocatedAsset] = []
+    /// Every delivered item, so a photo outside the map's group can still be looked up (its thumbnail
+    /// stands for a group on the map).
     private var itemsByID: [UUID: CatalogItem] = [:]
     /// Row of each item in `assets`, so finding a photo's place doesn't scan the folder.
     private var rowsByID: [UUID: Int] = [:]
@@ -102,7 +126,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
 
     private func startObservation() {
         observation?.cancel()
-        let stream = store.observeItems(inFolder: id, query: query)
+        let stream = store.observeItems(inFolder: id, query: query.catalogQuery)
         observation = Task { [weak self] in
             do {
                 for try await items in stream {
@@ -152,8 +176,17 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         }
     }
 
-    private func apply(_ items: [CatalogItem]) {
-        itemsByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+    private func apply(_ all: [CatalogItem]) {
+        delivered = all
+        itemsByID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
+        let located = all.compactMap { item in
+            item.location.map { LocatedAsset(id: item.id.uuidString, coordinate: $0, captureDate: item.effectiveCaptureDate) }
+        }
+        if located != placed {
+            placed = located
+            placesVersion += 1
+        }
+        let items = query.onlyAssetIDs.map { only in all.filter { only.contains($0.id.uuidString) } } ?? all
         rowsByID = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.id, $0.offset) })
         assets = AssetCollection(items.map(LibraryAsset.init))
         // The items are in memory: a pass over their dates takes a few milliseconds for a large folder.
@@ -265,8 +298,8 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         AssetResourceInfo(isRAW: asset.isRAW, hasJPEGTwin: asset.pairedAssetID != nil, originalFileName: fileURL(for: asset)?.lastPathComponent)
     }
 
-    /// The header is read on the spot (a few milliseconds): it holds the location, which the catalog
-    /// doesn't keep. The catalog answers when the file can't be reached (its volume is away).
+    /// The header is read on the spot (a few milliseconds), so the panel shows the file as it is now.
+    /// The catalog answers when the file can't be reached (its volume is away).
     public func details(for asset: LibraryAsset, allowingDownload _: Bool) async -> AssetDetails {
         guard let uuid = UUID(uuidString: asset.id), let item = itemsByID[uuid] else { return AssetDetails(asset) }
         let url = folderURL.appendingPathComponent(item.relativePath)
@@ -351,6 +384,16 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
             logger.error("Preview rebuild failed: \(error.localizedDescription, privacy: .public)")
             return false
         }
+    }
+}
+
+private nonisolated extension LibraryQuery {
+    /// What the catalog is asked: the query without the group picked on the map, which is a set of
+    /// identifiers as long as the group is large; the source cuts it out of the answer itself.
+    var catalogQuery: LibraryQuery {
+        var query = self
+        query.onlyAssetIDs = nil
+        return query
     }
 }
 

@@ -852,9 +852,26 @@ Bibliothèque
             5 → 2 groupes au dézoom et 2 → 5 au zoom sans état vide, vignettes présentes à
             chaque instant. Reste hors de portée de la sonde : l'allure sous un vrai pincement
             et avec les vignettes de PhotoKit.
-      - [ ] Étape 3 : dossiers (colonnes de position sur `item`, remplies par
-            `MetadataIndexer`, relecture des en-têtes déjà indexés, `onlyAssetIDs` dans la
-            requête des dossiers), Satellite, nom des lieux (géocodage inverse), Zoom In /
+      - [x] Étape 3a, dossiers (13/11/2026, demandé par Michaël après l'essai de l'étape 2).
+            Colonnes `latitude` / `longitude` de `item` (migration v7), remplies par
+            `MetadataIndexer` avec le reste de l'en-tête ; la migration remet `metadataRead` à
+            nul, donc les en-têtes déjà lus sont relus en arrière-plan à la prochaine ouverture
+            de chaque dossier (dimensions, dates et décisions restent en place entre-temps).
+            `FolderLibrarySource` : `hasPlaces`, `locatedAssets()` tiré des éléments déjà en
+            mémoire, `placesVersion` qui n'avance que si les positions du listage changent
+            (la carte se remplit donc lot par lot pendant la lecture des en-têtes). Le groupe
+            choisi sur la carte (`onlyAssetIDs`) n'entre pas dans le SQL du catalogue, une
+            liste d'identifiants pouvant être longue : la source le découpe dans ce que le
+            catalogue a déjà livré, sans relancer l'observation, et garde tous les éléments
+            pour retrouver la vignette d'une photo hors du groupe. Vaut aussi pour un
+            sous-dossier (`folderPath`). La carte cadre toutes les photos tant que
+            l'utilisateur ne l'a pas déplacée (`userMovedMap`), et non plus une seule fois :
+            un dossier en cours de lecture apporte ses photos par lots.
+            Vérifié par tests (migration, source sur un dossier de JPEG géolocalisés générés,
+            modèle de carte branché dessus). Non vérifié à l'écran. Limite : pendant la
+            relecture des en-têtes, la carte d'un dossier dit « No Photos on the Map » jusqu'au
+            premier lot placé (les dossiers n'exposent pas de progression d'indexation).
+      - [ ] Étape 3b : Satellite, nom des lieux (géocodage inverse), Zoom In /
             Zoom Out du menu View sur la carte. Pour la fusion Photos + dossiers :
             `LocatedAsset` et `PhotoMapIndex` ne connaissent pas la source ; il faudra un
             identifiant qui la porte et une vignette demandée à la bonne source.

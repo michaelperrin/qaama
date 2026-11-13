@@ -38,6 +38,7 @@ public nonisolated struct LibraryQuery: Hashable, Sendable {
     public var includesPairedJPEGs = false
     /// Restricts the listing to these photos: a group picked on the map. A scope like `folderPath`,
     /// not a filter. The sources that put their photos on a map (`LibrarySource.hasPlaces`) honor it.
+    /// The catalog's SQL doesn't: `FolderLibrarySource` applies it to what the catalog delivers.
     public var onlyAssetIDs: Set<LibraryAsset.ID>?
 
     public init() {}

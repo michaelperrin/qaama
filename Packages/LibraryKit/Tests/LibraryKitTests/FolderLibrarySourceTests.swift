@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import ImageIOKit
 @testable import LibraryKit
 import Testing
 import UniformTypeIdentifiers
@@ -113,10 +114,104 @@ struct FolderLibrarySourceTests {
         let source = try makeSource(root: root)
         await source.load()
         await wait { source.assets.count == 1 && source.assets.allSatisfy { $0.pixelWidth == 12 } && !source.isScanning }
-        // Indexed by now: the location still comes, from the file, since the catalog doesn't keep it.
+        // Indexed by now: the panel still reads the file itself.
         let details = try await source.details(for: #require(source.assets.first), allowingDownload: false)
         let location = try #require(details.metadata?.location)
         #expect(abs(location.latitude - 48.8584) < 0.0001 && abs(location.longitude - 2.2945) < 0.0001)
+    }
+
+    /// A folder of three photos: one taken in Paris, one in Lyon, one nowhere the file knows of.
+    private func makePlacedFolder() throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("FolderLibrarySourceTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let places: [(name: String, place: GeoCoordinate?)] = [
+            ("paris.jpg", GeoCoordinate(latitude: 48.8584, longitude: 2.2945)), ("lyon.jpg", GeoCoordinate(latitude: 45.764, longitude: 4.8357)),
+            ("nowhere.jpg", nil),
+        ]
+        for (name, place) in places {
+            let context = try #require(CGContext(data: nil, width: 12, height: 6, bitsPerComponent: 8, bytesPerRow: 0,
+                                                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+            context.fill(CGRect(x: 0, y: 0, width: 12, height: 6))
+            let gps: [CFString: Any] = place.map { [kCGImagePropertyGPSDictionary: [
+                kCGImagePropertyGPSLatitude: $0.latitude, kCGImagePropertyGPSLatitudeRef: "N",
+                kCGImagePropertyGPSLongitude: $0.longitude, kCGImagePropertyGPSLongitudeRef: "E",
+            ]] } ?? [:]
+            let destination = try #require(CGImageDestinationCreateWithURL(root.appendingPathComponent(name) as CFURL, UTType.jpeg.identifier as CFString, 1, nil))
+            try CGImageDestinationAddImage(destination, #require(context.makeImage()), gps as CFDictionary)
+            #expect(CGImageDestinationFinalize(destination))
+        }
+        return root
+    }
+
+    @Test func placesThePhotosWhoseFileHoldsAPosition() async throws {
+        let root = try makePlacedFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try makeSource(root: root)
+        #expect(source.hasPlaces)
+        await source.load()
+        await wait { source.assets.count == 3 && !source.isScanning }
+
+        // Positions come with the headers, read in the background: the version tells the map to load again.
+        #expect(source.placesVersion > 0)
+        let located = await source.locatedAssets()
+        let names = located.compactMap { source.asset(id: $0.id).flatMap { source.fileURL(for: $0)?.lastPathComponent } }
+        #expect(names.sorted() == ["lyon.jpg", "paris.jpg"])
+        let paris = try #require(located.first { source.asset(id: $0.id).flatMap { source.fileURL(for: $0)?.lastPathComponent } == "paris.jpg" })
+        #expect(abs(paris.coordinate.latitude - 48.8584) < 0.0001 && abs(paris.coordinate.longitude - 2.2945) < 0.0001)
+
+        // The map built from them shows two groups once zoomed on France.
+        let model = PhotoMapModel()
+        await model.load(from: source)
+        model.show(region: GeoRegion(south: 41, west: -6, north: 52, east: 9), worldWidth: 20000, spacing: 90)
+        await model.waitUntilSettled()
+        #expect(model.locatedCount == 2 && model.clusters.count == 2)
+        #expect(model.clusters.allSatisfy { model.cover(of: $0) != nil })
+    }
+
+    @Test func aGroupPickedOnTheMapNarrowsTheGridAndLeavesTheMapWhole() async throws {
+        let root = try makePlacedFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try makeSource(root: root)
+        await source.load()
+        await wait { source.assets.count == 3 && !source.isScanning }
+        let located = await source.locatedAssets()
+        let version = source.placesVersion
+        let group = try #require(located.first)
+        let other = try #require(located.last)
+
+        source.query.onlyAssetIDs = [group.id]
+        // Cut out of what the catalog already delivered: no wait.
+        #expect(source.assets.map(\.id) == [group.id])
+        #expect(source.index(of: group.id) == 0 && source.index(of: other.id) == nil)
+        // The map keeps every placed photo, and can still show the thumbnail of one outside the group.
+        #expect(await source.locatedAssets() == located)
+        #expect(source.placesVersion == version)
+        #expect(source.asset(id: other.id) != nil)
+
+        // A decision made in the group stays in the group.
+        try await source.setRating(4, for: #require(source.asset(id: group.id)))
+        await wait { source.assets.first?.rating == 4 }
+        #expect(source.assets.map(\.id) == [group.id] && source.assets.first?.rating == 4)
+
+        source.query.onlyAssetIDs = nil
+        #expect(source.assets.count == 3)
+        #expect(source.placesVersion == version)
+    }
+
+    @Test func theMapFollowsTheFiltersOfTheFolder() async throws {
+        let root = try makePlacedFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try makeSource(root: root)
+        await source.load()
+        await wait { source.assets.count == 3 && !source.isScanning }
+        let version = source.placesVersion
+        let paris = try #require(source.assets.first { source.fileURL(for: $0)?.lastPathComponent == "paris.jpg" })
+        try await source.setRating(5, for: paris)
+
+        source.query.minimumRating = 3
+        await wait { source.assets.count == 1 }
+        #expect(await source.locatedAssets().map(\.id) == [paris.id])
+        #expect(source.placesVersion > version)
     }
 
     @Test func correctingTheCaptureDateWritesTheSidecarAndLeavesTheImageAlone() async throws {

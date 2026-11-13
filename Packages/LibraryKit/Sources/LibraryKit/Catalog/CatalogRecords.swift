@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import ImageIOKit
 
 /// A folder the user added to the library, as stored in the catalog.
 public nonisolated struct CatalogFolder: Codable, Hashable, Sendable, Identifiable {
@@ -58,6 +59,9 @@ public nonisolated struct CatalogItem: Codable, Hashable, Sendable, Identifiable
     public var exposureTime: Double?
     public var aperture: Double?
     public var focalLength: Double?
+    /// Where the photo was taken, in degrees; both nil when the header holds no position.
+    public var latitude: Double?
+    public var longitude: Double?
     public var isRAW: Bool
     public var metadataRead: Date?
 
@@ -106,6 +110,17 @@ public nonisolated struct CatalogItem: Codable, Hashable, Sendable, Identifiable
     /// When the photo was taken as far as the library is concerned: the user's correction, else the header's date.
     public var effectiveCaptureDate: Date? {
         captureDateOverride ?? captureDate
+    }
+
+    public var location: GeoCoordinate? {
+        get {
+            guard let latitude, let longitude else { return nil }
+            return GeoCoordinate(latitude: latitude, longitude: longitude)
+        }
+        set {
+            latitude = newValue?.latitude
+            longitude = newValue?.longitude
+        }
     }
 
     /// True when the header must be (re)read: never read, or the file changed since.

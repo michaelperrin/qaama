@@ -35,7 +35,7 @@ struct PhotoMapView: View {
         _selection = selection
         self.onOpen = onOpen
         // Back from the grid: the map is where it was left.
-        let lastRegion = model.hasFramedPhotos ? model.lastRegion : nil
+        let lastRegion = model.userMovedMap ? model.lastRegion : nil
         _position = State(initialValue: lastRegion.map { .region(MKCoordinateRegion($0)) } ?? .automatic)
     }
 
@@ -51,7 +51,7 @@ struct PhotoMapView: View {
         // Loaded again when the listing or the positions change; a no-op when the map comes back as it was.
         .task(id: PhotoMapModel.Content(source)) {
             await model.load(from: source)
-            frameAllPhotosOnce()
+            frameAllPhotos()
         }
         .onChange(of: displayScale, initial: true) { _, scale in
             model.coverPixelSize = PhotoClusterMarker.requestPixels(displayScale: scale)
@@ -88,6 +88,9 @@ struct PhotoMapView: View {
             }
         }
         .onMapCameraChange(frequency: .continuous) { context in
+            if position.positionedByUser {
+                model.userMovedMap = true
+            }
             show(context.region)
         }
         .accessibilityLabel("Map of where the photos were taken")
@@ -103,10 +106,10 @@ struct PhotoMapView: View {
                    spacing: PhotoClusterMarker.spacing)
     }
 
-    /// The first time photos are there, the map shows them all; afterwards it stays where the user left it.
-    private func frameAllPhotosOnce() {
-        guard !model.hasFramedPhotos, let extent = model.extent else { return }
-        model.hasFramedPhotos = true
+    /// Until the user moves the map, it shows all the photos, including those a folder still being
+    /// read brings in batch after batch; afterwards it stays where the user left it.
+    private func frameAllPhotos() {
+        guard !model.userMovedMap, let extent = model.extent else { return }
         position = .region(MKCoordinateRegion(extent, margin: Self.extentMargin, minimumSpan: Self.minimumExtentSpan))
     }
 
