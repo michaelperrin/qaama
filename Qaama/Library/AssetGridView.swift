@@ -68,13 +68,18 @@ struct AssetGridView: View {
                         // Iterate indices, not elements: ForEach over elements walks the whole collection to compute
                         // identities, which is far too slow for a lazily computed library of tens of thousands of rows.
                         ForEach(section.range, id: \.self) { index in
-                            let asset = source.assets[index]
-                            AssetGridCell(asset: asset, index: index, side: side, fit: thumbnailFit, isSelected: selection.contains(asset.id),
-                                          menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canPaste: canPaste,
-                                                                        canAdjustDate: canAdjustDate,
-                                                                        canShowInFinder: canShowInFinder, albums: albumState),
-                                          source: source, actions: actions)
-                                .equatable()
+                            // A cell reads the listing, so it is asked again when the listing changes, and
+                            // that can come before the months above are: with the row it had, which a
+                            // listing that just shrank (a subfolder opened, a filter set) no longer has.
+                            if source.assets.indices.contains(index) {
+                                let asset = source.assets[index]
+                                AssetGridCell(asset: asset, index: index, side: side, fit: thumbnailFit, isSelected: selection.contains(asset.id),
+                                              menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canPaste: canPaste,
+                                                                            canAdjustDate: canAdjustDate,
+                                                                            canShowInFinder: canShowInFinder, albums: albumState),
+                                              source: source, actions: actions)
+                                    .equatable()
+                            }
                         }
                     } header: {
                         if source.timeline != nil, let title = MonthFormat.title(section.id) {
