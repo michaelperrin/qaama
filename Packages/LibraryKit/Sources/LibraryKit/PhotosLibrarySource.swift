@@ -61,26 +61,76 @@ public final class PhotosLibrarySource: LibrarySource {
     /// every second or two while it analyzes or syncs, and most leave the same photos listed.
     private var membershipVersion = 0
 
-    /// The indexed positions of the photos the query lists. The listing's identifiers are read off the
-    /// main actor; a group picked on the map doesn't narrow them, which costs one more listing then.
+    /// The dates of the listing, read off the main actor (1.3 s measured for 74,000 photos) and kept
+    /// until the listing gains, loses or reorders photos: Photos reports changes every second or two
+    /// while it analyzes or syncs, and most leave every date as it was. Asked twice at once, the
+    /// listing is read once.
+    public func listingDates() async -> [Date?] {
+        guard let fetchResult else { return [] }
+        if let listingDatesCache, listingDatesCache.count == fetchResult.count {
+            return listingDatesCache
+        }
+        if let reading = listingDatesReading, reading.result === fetchResult {
+            return await reading.task.value
+        }
+        let clock = ContinuousClock()
+        let start = clock.now
+        // PhotoKit documents fetch results as safe to read from any thread; this one is only read there.
+        let result = UncheckedSendable(fetchResult)
+        let byModification = query.sort == .modificationDate
+        let task = Task.detached(priority: .userInitiated) {
+            var dates: [Date?] = []
+            dates.reserveCapacity(result.value.count)
+            PhotosFetchEnumeration.forEachAsset(in: result.value) { dates.append(byModification ? $0.modificationDate : $0.creationDate) }
+            return dates
+        }
+        listingDatesReading = (fetchResult, task)
+        let dates = await task.value
+        // The listing moved on meanwhile: these dates are another listing's.
+        if self.fetchResult === fetchResult {
+            listingDatesCache = dates
+        }
+        if listingDatesReading?.result === fetchResult {
+            listingDatesReading = nil
+        }
+        logger.notice("Listing dates: \(dates.count) read in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
+        return dates
+    }
+
+    /// The answer of `listingDates()` for the current listing, while it holds, and the reading under way.
+    @ObservationIgnored private var listingDatesCache: [Date?]?
+    @ObservationIgnored private var listingDatesReading: (result: PHFetchResult<PHAsset>, task: Task<[Date?], Never>)?
+
+    /// The indexed positions of the photos the query lists.
+    ///
+    /// The whole library without a filter lists every indexed photo but the hidden JPEG twins: the
+    /// index alone answers. Otherwise the listing's identifiers are read off the main actor and the
+    /// positions kept are theirs (1.5 s measured for 74,000 photos, nearly all of it PhotoKit handing
+    /// out identifiers); a group picked on the map doesn't narrow them, which costs one more listing.
     public func locatedAssets() async -> [LocatedAsset] {
         guard let index, let fetchResult else { return [] }
         let clock = ContinuousClock()
         let start = clock.now
-        // PhotoKit documents fetch results as safe to read from any thread; this one is only read there.
-        let current = UncheckedSendable(fetchResult)
-        var whole: PhotosListing?
-        if query.onlyAssetIDs != nil {
-            whole = listing(searchMatches: search?.matches)
-            whole?.query.onlyAssetIDs = nil
-        }
         do {
             let located = try await index.locatedAssets()
-            let (shown, listedCount) = await Task.detached(priority: .userInitiated) { [whole] in
-                let listed = Set(PhotoKitIndexLibrary.identifiers(of: whole?.fetch() ?? current.value))
-                return (located.filter { listed.contains($0.id) }, listed.count)
-            }.value
-            logger.notice("Places: \(shown.count) of \(listedCount) listed photos have a position (\(located.count) in the index), read in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
+            let shown: [LocatedAsset]
+            if album == nil, search == nil, query.isUnfiltered {
+                let hidden = query.includesPairedJPEGs ? [] : listedSnapshot.twinIDs
+                shown = hidden.isEmpty ? located : await Task.detached(priority: .userInitiated) { located.filter { !hidden.contains($0.id) } }.value
+            } else {
+                // PhotoKit documents fetch results as safe to read from any thread; this one is only read there.
+                let current = UncheckedSendable(fetchResult)
+                var whole: PhotosListing?
+                if query.onlyAssetIDs != nil {
+                    whole = listing(searchMatches: search?.matches)
+                    whole?.query.onlyAssetIDs = nil
+                }
+                shown = await Task.detached(priority: .userInitiated) { [whole] in
+                    let listed = Set(PhotoKitIndexLibrary.identifiers(of: whole?.fetch() ?? current.value))
+                    return located.filter { listed.contains($0.id) }
+                }.value
+            }
+            logger.notice("Places: \(shown.count) listed photos have a position (\(located.count) in the index), read in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
             return shown
         } catch {
             logger.error("Couldn't read the positions: \(error.localizedDescription, privacy: .public)")
@@ -454,6 +504,10 @@ public final class PhotosLibrarySource: LibrarySource {
             materialized[removed.localIdentifier] = nil
         }
         let timelineIsOutdated = outdatesTimeline(details)
+        // Modification dates move with any change; capture dates with the ones the timeline cares about.
+        if timelineIsOutdated || query.sort != .captureDate {
+            listingDatesCache = nil
+        }
         if !details.hasIncrementalChanges || !details.insertedObjects.isEmpty || !details.removedObjects.isEmpty {
             membershipVersion += 1
         }
@@ -581,6 +635,7 @@ public final class PhotosLibrarySource: LibrarySource {
 
     private func apply(_ result: PHFetchResult<PHAsset>, for listing: PhotosListing) {
         listedSnapshot = listing.index ?? PhotosIndexSnapshot()
+        listingDatesCache = nil
         membershipVersion += 1
         apply(fetchResult: result)
         rebuildTimeline(showingFirstRows: true)

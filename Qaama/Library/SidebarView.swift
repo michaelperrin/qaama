@@ -1,8 +1,9 @@
 import LibraryKit
 import SwiftUI
 
-/// Lists the Apple Photos library with its album hierarchy, and the folders the user added with their
-/// subdirectories. Both sections are outlines over `SidebarItem`, so every row selects the same way.
+/// Lists the map of every photo, then the Apple Photos library with its album hierarchy, and the
+/// folders the user added with their subdirectories. Both sections are outlines over `SidebarItem`,
+/// so every row selects the same way.
 ///
 /// Albums are managed from here: the context menus create albums and folders and delete albums, and
 /// photos dragged from the grid onto an album are added to it.
@@ -20,6 +21,10 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: $selection) {
+            // Above the sections: it shows what both of them list.
+            Label("Map", systemImage: "map")
+                .help("Every photo of the Photos library and of the folders, where it was taken")
+                .tag(LibrarySelection.map)
             Section("Apple Photos") {
                 OutlineGroup(photosItems, children: \.children) { item in
                     row(item)

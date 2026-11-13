@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 
 /// Which library the sidebar shows in the detail column.
 enum LibrarySelection: Hashable {
+    /// The map of the Photos library and every folder together.
+    case map
     case photos
     case photosAlbum(PhotosAlbum.ID)
     case folder(FolderLibrarySource.ID)
@@ -45,6 +47,8 @@ struct MainWindowView: View {
     @ViewBuilder
     private var detail: some View {
         switch selection {
+        case .map:
+            MapLibraryView(source: catalog.everywhere, maps: maps)
         case .photos:
             PhotosLibraryView(source: catalog.photos, albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor, maps: maps)
         case let .photosAlbum(id):

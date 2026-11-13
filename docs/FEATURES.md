@@ -12,6 +12,11 @@ can feed a website one day. Dates are when the feature landed.
   appear as a tree in the sidebar (2026-10-29, subfolders 2026-10-30).
 - Live folder watching: changes made in the Finder or by an import show up within seconds
   (2026-10-30).
+- Map, at the top of the sidebar: the photos of the Photos library and of every folder on one
+  map, whichever library holds them. A double click on a group lists its photos in a grid,
+  woven by date whatever library they come from, where they can be rated, tagged, re-dated and
+  edited; each change goes to the library the photo belongs to, and is undoable. Search and the
+  filters both kinds of library know (rating, RAW, JPEG twins) narrow the map (2026-11-13).
 
 ### Browsing
 - Thumbnail grid that stays fast on very large libraries (74,000 photos listed in well under a
@@ -75,7 +80,8 @@ can feed a website one day. Dates are when the feature landed.
   camera details: selecting a photo never downloads anything by itself (2026-11-06).
 - Map of where a geotagged photo was taken, under the Info panel, next to the grid and in the
   editor's Info tab: drag to move, pinch, scroll or use the zoom buttons, and a button brings
-  the map back onto the photo. In Photos it uses the location Photos stores, so it shows even
+  the map back onto the photo. The name of the place ("Étretat, France") shows under the map,
+  from Apple's geocoding service (2026-11-13). In Photos it uses the location Photos stores, so it shows even
   when the original is in iCloud (2026-11-06).
 - Map of a library: the toolbar's Grid / Map switch (View › as Grid, as Map) replaces the
   thumbnails with a map of where the photos were taken, in the Photos library or one of its
@@ -84,7 +90,8 @@ can feed a website one day. Dates are when the feature landed.
   out merges them. The map follows the search and the filters, and the window's subtitle says
   how many of the listed photos have a location. A click selects the photos of a group (the
   Info panel and the Image menu then act on them), a double click lists them in the grid, with
-  a Back button to the map where it was left. A toolbar button and View › Satellite switch the
+  a Back button to the map where it was left. View › Zoom In and Zoom Out (⌘+, ⌘-) zoom
+  the map as they zoom the grid. A toolbar button and View › Satellite switch the
   map to satellite imagery, with the names of places and the roads over it (2026-11-13). In Photos, locations come from Photos' database,
   so photos whose original is in iCloud are on the map too; in folders, from the files'
   headers, read in the background (2026-11-13).

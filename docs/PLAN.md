@@ -895,10 +895,110 @@ Bibliothèque
             cadrée sur les photos, retour sur la première carte au lieu et au zoom laissés, sans
             passage par un état sans carte. Coût : chaque bibliothèque vue en carte garde son
             index et jusqu'à 400 vignettes (26 Mo au plus) pour la durée de la fenêtre.
-      - [ ] Étape 3b : nom des lieux (géocodage inverse), Zoom In /
-            Zoom Out du menu View sur la carte. Pour la fusion Photos + dossiers :
-            `LocatedAsset` et `PhotoMapIndex` ne connaissent pas la source ; il faudra un
-            identifiant qui la porte et une vignette demandée à la bonne source.
+      - [x] View › Zoom In / Zoom Out sur la carte (13/11/2026) : valeur de focus
+            `mapZoomAction` posée par `PhotoMapCanvas`, prioritaire sur la mosaïque et après le
+            canevas de l'éditeur ; double ou divise par deux ce que la carte montre, autour du
+            même centre, et compte comme un déplacement de l'utilisateur (plus de recadrage
+            automatique). Compilé, non vérifié à l'écran : la sonde n'a pas le menu de l'appli.
+      - [x] Nom du lieu dans le panneau Info (13/11/2026, accord de Michaël après évaluation).
+            `PlaceNames` (LibraryKit, sans MapKit) : une question par lieu, la position arrondie
+            au millième de degré (une centaine de mètres) servant de clé de cache et étant ce
+            qui est envoyé ; une recherche en cours est partagée, un échec (réseau, débit) est
+            redemandé, un lieu sans nom est retenu. La recherche elle-même est injectée :
+            `PlaceNames.apple` (appli) passe par `MKReverseGeocodingRequest` (`CLGeocoder`
+            est déprécié depuis macOS 26) et compose « ville, pays » (`cityName`,
+            `regionName`, à défaut le nom rendu : un océan, un massif). Essai sur des lieux
+            publics : « Paris » + « France », « Étretat » + « France », « Courmayeur » +
+            « Italy », « North Atlantic Ocean ». `LocationSection` remplace la section des
+            deux panneaux Info : le nom est le pied de section, la carte ne bouge donc pas
+            quand il arrive. Vérifié par tests et par sonde (« Étretat, France » sous la carte).
+            Cache en mémoire seulement, le temps d'une session. Pas fait, et pas simple : nommer
+            les groupes de la carte ou chercher par lieu, qui demanderaient un index des lieux
+            construit lentement, Apple limitant le débit des requêtes.
+      - [x] Bibliothèque fusionnée « All Photos », premier temps (13/11/2026 ; réduite le
+            même jour à la carte de tout, voir plus bas). Décidé avec
+            Michaël : une entrée « All Photos » en tête de la barre latérale, les sections
+            « Apple Photos » et « Folders » inchangées dessous, et une bibliothèque complète
+            (mosaïque et carte) plutôt qu'une carte seule, qui aurait été une impasse dès
+            qu'on ouvre un groupe mêlant les deux origines.
+            `CombinedLibrarySource` ne tient aucune photo : chaque membre liste les siennes sous
+            la même requête, leurs listages sont tissés par date (`ListingMerge` : fusion de
+            listes triées, hors du fil principal, qui donne pour chaque rang la ligne de quel
+            membre, l'inverse, et les mois), et tout ce qu'on demande sur une photo va au
+            membre qui la tient. Les identifiants restent ceux des membres : une photo est la
+            même ici et dans sa bibliothèque. Les vues ne changent pas, elles ne voient qu'une
+            `any LibrarySource` ; la carte, le panneau Info, l'éditeur et l'annulation suivent
+            sans code particulier.
+            Les membres sont des instances propres à « All Photos », puisqu'elle règle leur
+            requête : un second `PhotosLibrarySource` sur le même index, et pour chaque dossier
+            une seconde vue qui suit le catalogue sans analyser (`scans: false`) ; ouvrir « All
+            Photos » lance l'analyse des dossiers par leur source habituelle (`prepare`).
+            Filtrer « All Photos » ne touche donc pas à ce que montrent Photos et les dossiers.
+            Nouveau dans `LibrarySource` : `listingDates()`, la date par laquelle chaque ligne
+            est listée. Photos les lit hors du fil principal et les garde tant que le listage
+            ne gagne, ne perd ni ne déplace de photo (Photos signale des changements toutes
+            les une à deux secondes pendant ses analyses) ; les dossiers les ont en mémoire, et
+            rendent nul pour une photo sans date de prise de vue, listée en dernier.
+            Limites de ce premier temps : seuls les tris par date (prise de vue, modification)
+            sont proposés, les listages triés par note ou par nom ne se tissant pas ; seules
+            les capacités communes sont offertes, donc ni drapeaux (dossiers seulement), ni
+            favoris, ni albums, ni Show in Finder dans « All Photos » ; chaque changement d'un
+            membre retisse tout (dates en cache, donc quelques dizaines de ms hors du fil
+            principal, mais la mosaïque est redessinée). La première ouverture attend la
+            lecture des dates de Photos (une à deux secondes pour 74 000 photos, à mesurer :
+            journaux `PhotosLibrarySource` « Listing dates » et `CombinedLibrarySource`).
+            Vérifié : tests du tissage, de la source combinée (ordre, filtres, décisions,
+            retouches, carte, membres qui changent, dossier et sa seconde vue sur un catalogue
+            partagé), sonde sur deux bibliothèques d'exemple (barre latérale, mosaïque de 50
+            photos tissées avec ses mois, carte de 5 groupes mêlant les deux). Non vérifié :
+            tout ce qui touche la vraie photothèque et de vrais dossiers.
+      - [x] Plantage à l'ouverture d'un sous-dossier (13/11/2026, signalé par Michaël). Rapport
+            de crash : `assets[index]` hors limites dans le `ForEach` de la mosaïque
+            (`ForEachChild.updateValue`). Reproduit par sonde sur un dossier de 40 PNG datés
+            sur plusieurs mois dont 3 dans un sous-dossier, que le dossier soit déjà à l'écran
+            ou listé d'avance ; pas avec des photos toutes du même mois, ce qui explique que
+            l'essai du 12/11 (62 photos, sous-dossier de 2) ne l'ait pas vu. Rejoué sur le
+            code d'avant cette session (commit 857f1c7) : le plantage y est déjà, depuis la
+            navigation par mois. Cause : une cellule ne lit que `assets[index]`, mais elle peut
+            être recalculée avant les sections de mois qui la portent quand le listage
+            rétrécit ; elle demande alors une ligne qui n'existe plus. Corrigé par une
+            vérification des bornes dans la cellule (leçon ajoutée à AGENTS.md). Sonde après
+            correction : les quatre scénarios passent.
+      - [x] Mesures sur la photothèque de Michaël (journaux du 13/11/2026, 74 051 photos, un
+            dossier de 25 fichiers) : premier listage de Photos 1 304 ms, le second (membre
+            d'« All Photos ») 103 ms ; dates du listage 1 300 ms, lues deux fois en même temps
+            par deux tissages ; tissage de 74 075 photos 1 361 ms, lecture des dates comprise ;
+            positions pour la carte 1 480 ms (47 601 photos placées), presque tout dans
+            l'énumération des identifiants par PhotoKit ; index de la carte 120 ms.
+            Corrigé dans la foulée : une lecture des dates en cours est partagée
+            (`listingDatesReading`) ; les positions de la photothèque entière sans filtre
+            viennent de l'index seul, moins les jumeaux JPEG masqués, sans énumérer le listage.
+            À remesurer à l'écran.
+      - [x] « All Photos » réduite à la carte de tout (13/11/2026). Question de Michaël après
+            essai : la pertinence d'une mosaïque fusionnée, vu qu'elle n'offre que les
+            capacités communes et vu son coût. Décision, sur ma recommandation : on garde la
+            carte fusionnée, qui était le besoin de départ, et on abandonne la mosaïque de
+            tout. Raisons : Photos et les dossiers n'ont pas les mêmes fonctions (drapeaux d'un
+            côté ; favoris et albums de l'autre), donc la mosaïque commune est toujours en
+            retrait de chacune, et chaque fonction à venir aurait dû être pensée pour le cas
+            mixte ; elle coûtait la lecture des dates de toute la photothèque à chaque
+            ouverture et à chaque changement (1,3 s mesurés). Le nombre de photos des dossiers
+            n'entre pas dans le raisonnement : le dossier de Michaël n'était qu'un essai.
+            Ce qui change : l'entrée s'appelle « Map » (`LibrarySelection.map`,
+            `MapLibraryView`, `LibraryCatalog.everywhere`) et montre toujours la carte, sans
+            sélecteur Grille / Carte (`LibraryContentView.showsOnlyMap`).
+            `CombinedLibrarySource` ne liste rien tant qu'aucun groupe n'est ouvert : pas de
+            lecture de dates, pas de tissage ; le double clic sur un groupe tisse les seules
+            photos du groupe (quelques ms). Tout le reste du travail du premier temps sert tel
+            quel : membres propres, tissage, routage par photo, carte commune. View › Map Style
+            est actif dès qu'une carte est à l'écran (elle le dit par son action de zoom).
+            Vérifié : 182 tests de LibraryKit, sonde (carte de 25 photos de deux bibliothèques
+            d'exemple, groupe de 5 ouvert en mosaïque avec ses mois et le bouton de retour,
+            retour à la carte). Limite : dans la mosaïque d'un groupe, seules les capacités
+            communes sont offertes, donc ni drapeaux, ni favoris, ni albums, ni Show in Finder.
+      - [ ] Dans la mosaïque d'un groupe de la carte de tout : offrir photo par photo ce qui
+            n'existe que d'un côté (drapeaux, favoris, Show in Finder), si le besoin s'en fait
+            sentir.
 - [ ] Édition des métadonnées : date de prise de vue, localisation, etc. Cadrage discuté
       avec Michaël le 6/11/2026.
       Date de prise de vue, fait le 6/11/2026 : dialogue Adjust Date & Time (menu Image, en

@@ -13,6 +13,9 @@ struct LibraryContentView: View {
     /// The window's maps, so this library's map is found as it was left when the sidebar comes back
     /// to it; nil (previews) keeps one for as long as this view lives.
     var maps: PhotoMapModels?
+    /// True for the map of every library: there is no grid to switch to, only that of a group
+    /// opened from the map.
+    var showsOnlyMap = false
     /// The stay in the editor, from opening a photo to closing; it moves from photo to photo by itself.
     @State private var editorSession: EditorSession?
     @State private var selection: Set<LibraryAsset.ID> = []
@@ -144,7 +147,7 @@ struct LibraryContentView: View {
                         .help("Back to the map")
                 }
             }
-            if source.hasPlaces {
+            if source.hasPlaces, !showsOnlyMap {
                 ToolbarItem {
                     LibraryDisplayPicker(display: Binding(get: { showsMap ? .map : .grid }, set: show))
                 }
@@ -182,7 +185,7 @@ struct LibraryContentView: View {
     /// The map takes the grid's place when it is asked for and the library has one; a group of the
     /// map being looked at shows in the grid.
     private var showsMap: Bool {
-        display == .map && source.hasPlaces && !isShowingMapGroup
+        (showsOnlyMap || display == .map && source.hasPlaces) && !isShowingMapGroup
     }
 
     /// True while the grid lists the photos of a group opened from the map. Read from the query,
@@ -208,7 +211,7 @@ struct LibraryContentView: View {
 
     /// View › as Grid and as Map; nil (the commands are disabled) in the editor and without a map.
     private var displayAction: LibraryDisplayAction? {
-        guard editorSession == nil, source.hasPlaces else { return nil }
+        guard editorSession == nil, source.hasPlaces, !showsOnlyMap else { return nil }
         return LibraryDisplayAction(current: showsMap ? .map : .grid, show: show)
     }
 
@@ -325,7 +328,8 @@ struct LibraryContentView: View {
     /// Next to the map: how many of the listed photos it shows, the others having no position.
     private var mapSubtitle: String {
         guard let located = map.locatedCount else { return "" }
-        var text = "\(located.formatted()) of \(source.assets.count.formatted()) photos on the map"
+        // The map of every library lists nothing but the group opened from it: no total to compare with.
+        var text = showsOnlyMap ? "\(located.formatted()) photos on the map" : "\(located.formatted()) of \(source.assets.count.formatted()) photos on the map"
         if !selection.isEmpty {
             text += " · \(selection.count.formatted()) selected"
         }

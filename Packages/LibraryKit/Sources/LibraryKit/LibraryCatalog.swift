@@ -7,6 +7,10 @@ import OSLog
 @Observable
 public final class LibraryCatalog {
     public let photos: PhotosLibrarySource
+    /// Every photo of the Photos library and of the folders on one map. It reaches them through
+    /// views of its own (`photosForMap`, `folderViews`), since it sets their query: filtering the
+    /// map leaves the Photos library and the folders as their own entries show them.
+    public let everywhere: CombinedLibrarySource
     public let photosAlbums = PhotosAlbumList()
     /// Creates and deletes the albums of the Photos library and files photos in them.
     public let photosAlbumEditor: PhotosAlbumEditor
@@ -16,13 +20,20 @@ public final class LibraryCatalog {
 
     /// Renders full-size edits for sources that cache previews. Set once by the app.
     public var previewRenderer: PreviewRenderer? {
-        didSet { folders.forEach { $0.previewRenderer = previewRenderer } }
+        didSet {
+            folders.forEach { $0.previewRenderer = previewRenderer }
+            folderViews.values.forEach { $0.previewRenderer = previewRenderer }
+        }
     }
 
     private let store: CatalogStore
     /// One index for the Photos library, shared by the library source and every album source.
     private let photosIndex: PhotosIndex
     private let previewCache: PreviewCache
+    private let photosForMap: PhotosLibrarySource
+    /// A second view of each folder, which follows the catalog without scanning: the folder's own
+    /// source does that.
+    private var folderViews: [UUID: FolderLibrarySource] = [:]
     private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "LibraryCatalog")
 
     public init(store: CatalogStore, previewCache: PreviewCache = PreviewCache()) {
@@ -30,7 +41,15 @@ public final class LibraryCatalog {
         self.previewCache = previewCache
         photosIndex = PhotosIndex(store: PhotosIndexStore(catalog: store), library: PhotoKitIndexLibrary())
         photos = PhotosLibrarySource(index: photosIndex)
+        photosForMap = PhotosLibrarySource(index: photosIndex)
+        everywhere = CombinedLibrarySource(displayName: "Map", members: [photosForMap])
         photosAlbumEditor = PhotosAlbumEditor(library: PhotoKitAlbumLibrary(), list: photosAlbums)
+        // Opening the map of everything scans the folders, as opening each of them does.
+        everywhere.prepare = { [weak self] in
+            for folder in self?.folders ?? [] {
+                await folder.load()
+            }
+        }
     }
 
     /// Restores the folders saved in the catalog. Unresolvable bookmarks are dropped.
@@ -52,6 +71,7 @@ public final class LibraryCatalog {
                 restored.append(source)
             }
             folders = restored
+            refreshEverywhere()
         } catch {
             logger.error("Couldn't restore folders: \(error.localizedDescription, privacy: .public)")
         }
@@ -76,12 +96,20 @@ public final class LibraryCatalog {
         try await store.save(folder)
         let source = makeSource(folder: folder, url: url)
         folders.append(source)
+        refreshEverywhere()
         return source
     }
 
     public func removeFolder(_ folder: FolderLibrarySource) async throws {
         try await store.deleteFolder(id: folder.id)
         folders.removeAll { $0 === folder }
+        folderViews[folder.id] = nil
+        refreshEverywhere()
+    }
+
+    /// The folders first: they answer from memory when asked which source holds a photo.
+    private func refreshEverywhere() {
+        everywhere.setMembers(folders.compactMap { folderViews[$0.id] } + [photosForMap])
     }
 
     /// A source scoped to a Photos album, created on first use and kept for the session.
@@ -97,6 +125,9 @@ public final class LibraryCatalog {
     private func makeSource(folder: CatalogFolder, url: URL) -> FolderLibrarySource {
         let source = FolderLibrarySource(folder: folder, url: url, store: store, previewCache: previewCache)
         source.previewRenderer = previewRenderer
+        let view = FolderLibrarySource(folder: folder, url: url, store: store, previewCache: previewCache, scans: false)
+        view.previewRenderer = previewRenderer
+        folderViews[folder.id] = view
         return source
     }
 }

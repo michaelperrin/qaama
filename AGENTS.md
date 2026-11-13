@@ -46,6 +46,13 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   `MetadataIndexer` (headers in batches, in the background).
 - `LibrarySource` is the protocol every photo source implements; views only see
   `any LibrarySource` and `LibraryAsset`. Keep PhotoKit and file-system types inside LibraryKit.
+- The map of every library (`CombinedLibrarySource`, "Map" in the sidebar) holds no photo and
+  lists none until a group is opened from the map: it then weaves by date the members' listings
+  of that group, and sends everything asked about a photo to the member holding it. Its members
+  are its own instances of the sources (it sets their query, so it can't share the ones the
+  sidebar shows); identifiers are the members' own. Anything a source must tell for that goes
+  into `LibrarySource` (`listingDates()`), never into a cast to a concrete source. One grid of
+  every photo of every library was tried and dropped: see `docs/PLAN.md` before bringing it back.
 - Edits are recipes, never pixels: sidecar `<file>.qaama` next to folder images,
   `PHAdjustmentData` plus a rendered JPEG for Photos. Reset means removing the recipe.
 - Retouches are strokes in the recipe, in the original's coordinates. What fills them is computed
@@ -86,7 +93,9 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
 - Inside the grid's `ForEach`, read nothing observed from the source but `assets[index]`: a cell
   that depends on other state of the source (its items, a per-photo lookup) is refreshed alone
   when it changes, with a row that may no longer exist, and crashes when the listing shrinks.
-  Ask the source once per grid update instead (as `hasFileURLs` does).
+  Ask the source once per grid update instead (as `hasFileURLs` does). And check the row still
+  exists before reading it: even a cell that only reads `assets` can be asked again before the
+  months above it are, when a listing spread over several months shrinks.
 
 ## Code quality
 

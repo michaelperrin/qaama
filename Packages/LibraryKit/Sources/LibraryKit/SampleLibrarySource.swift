@@ -37,7 +37,7 @@ public final class SampleLibrarySource: LibrarySource {
     /// Every other photo was "taken" somewhere, in one of a few French cities in turn: previews show
     /// the Info panel with and without a map, and the map of the library with several groups.
     static func location(of id: LibraryAsset.ID) -> GeoCoordinate? {
-        guard let number = Int(id.dropFirst("sample-".count)), number.isMultiple(of: 2) else { return nil }
+        guard let number = id.split(separator: "-").last.flatMap({ Int($0) }), number.isMultiple(of: 2) else { return nil }
         return places[(number / 2) % places.count]
     }
 
@@ -55,12 +55,13 @@ public final class SampleLibrarySource: LibrarySource {
 
     /// `pairsFirstTwo` makes the first two photos a RAW + JPEG pair stored as two photos. The photos
     /// are "shot" `daysApart` from one another, the first one being the newest: a day by default, more
-    /// to spread them over several months.
-    public init(displayName: String = "Sample", count: Int = 12, pairsFirstTwo: Bool = false, daysApart: Double = 1) {
+    /// to spread them over several months. Identifiers are `idPrefix` and a number: two sources shown
+    /// as one library need different ones.
+    public init(displayName: String = "Sample", count: Int = 12, pairsFirstTwo: Bool = false, daysApart: Double = 1, idPrefix: String = "sample") {
         self.displayName = displayName
         var list: [LibraryAsset] = []
         for index in 0 ..< count {
-            let id = "sample-\(index)"
+            let id = "\(idPrefix)-\(index)"
             let landscape = index % 3 != 0
             let size = landscape ? (width: 600, height: 400) : (width: 400, height: 600)
             var asset = LibraryAsset(
@@ -70,7 +71,7 @@ public final class SampleLibrarySource: LibrarySource {
                 flag: index % 7 == 0 ? .picked : (index % 7 == 1 ? .rejected : .none),
                 keywords: index % 2 == 0 ? ["sample", "even"] : [],
                 modificationDate: .now, hasEdit: index % 4 == 0, isRAW: pairsFirstTwo && index == 0,
-                pairedAssetID: pairsFirstTwo && index < 2 && count >= 2 ? "sample-\(1 - index)" : nil
+                pairedAssetID: pairsFirstTwo && index < 2 && count >= 2 ? "\(idPrefix)-\(1 - index)" : nil
             )
             asset.rating = index % 6
             list.append(asset)

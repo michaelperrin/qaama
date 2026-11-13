@@ -57,6 +57,12 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     /// Bumped when the positions of the listing change: files came or went, headers were read.
     public private(set) var placesVersion = 0
 
+    /// The dates the catalog sorted by: a photo without a capture date has none here, and comes last,
+    /// though the grid shows it under its file's date.
+    public func listingDates() async -> [Date?] {
+        listedDates
+    }
+
     /// Already in memory: the catalog's answer for the query, the map's group left aside.
     public func locatedAssets() async -> [LocatedAsset] {
         placed
@@ -66,11 +72,14 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     public var previewRenderer: PreviewRenderer?
 
     private let folder: CatalogFolder
+    private let scans: Bool
     private let store: CatalogStore
     private let previewCache: PreviewCache
     private let hasSecurityScope: Bool
     /// What the catalog last delivered for the query, whatever group of the map `assets` is cut down to.
     @ObservationIgnored private var delivered: [CatalogItem] = []
+    /// The date each row of `assets` is listed by.
+    @ObservationIgnored private var listedDates: [Date?] = []
     /// Those of `delivered` that have a position, for the map.
     @ObservationIgnored private var placed: [LocatedAsset] = []
     /// Every delivered item, so a photo outside the map's group can still be looked up (its thumbnail
@@ -88,8 +97,12 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     private var previewsInProgress: Set<LibraryAsset.ID> = []
     private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "FolderLibrarySource")
 
-    public init(folder: CatalogFolder, url: URL, store: CatalogStore, previewCache: PreviewCache = PreviewCache()) {
+    /// With `scans` false the source only follows the catalog: for a second view of a folder (the
+    /// map of every library), whose first one already lists the folder, reads its headers and
+    /// watches it.
+    public init(folder: CatalogFolder, url: URL, store: CatalogStore, previewCache: PreviewCache = PreviewCache(), scans: Bool = true) {
         id = folder.id
+        self.scans = scans
         self.folder = folder
         folderURL = url
         displayName = folder.displayName
@@ -117,6 +130,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
             await Task.yield()
             try? await Task.sleep(for: .milliseconds(5))
         }
+        guard scans else { return }
         rescan()
         // From now on the Finder drives rescans: additions, removals, renames and sidecar edits.
         watcher = FolderWatcher(url: folderURL) { [weak self] in
@@ -142,6 +156,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
 
     /// Lists the folder again and reads the headers that are missing. Safe to call while a scan runs.
     public func rescan() {
+        guard scans else { return }
         guard scan == nil else {
             rescanRequested = true
             return
@@ -188,6 +203,8 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         }
         let items = query.onlyAssetIDs.map { only in all.filter { only.contains($0.id.uuidString) } } ?? all
         rowsByID = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.id, $0.offset) })
+        let byModification = query.sort == .modificationDate
+        listedDates = items.map { byModification ? $0.sidecarModified ?? $0.contentModified : $0.effectiveCaptureDate }
         assets = AssetCollection(items.map(LibraryAsset.init))
         // The items are in memory: a pass over their dates takes a few milliseconds for a large folder.
         let timeline = query.sort == .captureDate ? DateTimeline(dates: items.lazy.map(\.effectiveCaptureDate)) : nil

@@ -28,6 +28,24 @@ extension FocusedValues {
     }
 }
 
+/// View › Zoom In and Zoom Out in a window showing the map. The map stops by itself at the ends of
+/// its range, so the commands stay enabled.
+struct MapZoomAction {
+    let zoomIn: () -> Void
+    let zoomOut: () -> Void
+}
+
+struct FocusedMapZoomKey: FocusedValueKey {
+    typealias Value = MapZoomAction
+}
+
+extension FocusedValues {
+    var mapZoomAction: MapZoomAction? {
+        get { self[FocusedMapZoomKey.self] }
+        set { self[FocusedMapZoomKey.self] = newValue }
+    }
+}
+
 /// The toolbar's switch between the grid and the map; the View menu holds the same choice.
 struct LibraryDisplayPicker: View {
     @Binding var display: LibraryDisplay

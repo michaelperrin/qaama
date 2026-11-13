@@ -185,6 +185,7 @@ struct EditorCommands: Commands {
     @FocusedValue(\.newAlbumAction) private var newAlbumAction
     @FocusedValue(\.goToMonthAction) private var goToMonthAction
     @FocusedValue(\.libraryDisplayAction) private var libraryDisplayAction
+    @FocusedValue(\.mapZoomAction) private var mapZoomAction
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
     @AppStorage(GridDisplay.thumbnailSideKey) private var thumbnailSide = GridDisplay.defaultSide
     @AppStorage(GridDisplay.thumbnailFitKey) private var thumbnailFit = ThumbnailFit.fill
@@ -196,26 +197,34 @@ struct EditorCommands: Commands {
                 .keyboardShortcut("i", modifiers: [.command, .option])
                 .disabled(hasInspector != true)
             Divider()
-            // The canvas of the open photo, else the grid's thumbnails; the sliders in the toolbar move
-            // the same settings.
+            // The canvas of the open photo, else the map, else the grid's thumbnails; the sliders in
+            // the toolbar and the map's own buttons move the same settings.
             Button("Zoom In") {
                 if let canvas {
                     canvas.setZoom(canvas.zoom * Self.canvasZoomStep)
+                } else if let mapZoomAction {
+                    mapZoomAction.zoomIn()
                 } else {
                     thumbnailSide = GridDisplay.zoomedIn(thumbnailSide)
                 }
             }
             .keyboardShortcut("+")
-            .disabled(canvas.map { $0.zoom >= $0.zoomRange.upperBound } ?? (hasAssetGrid != true || thumbnailSide >= GridDisplay.sideRange.upperBound))
+            .disabled(canvas.map { $0.zoom >= $0.zoomRange.upperBound }
+                ?? mapZoomAction.map { _ in false }
+                ?? (hasAssetGrid != true || thumbnailSide >= GridDisplay.sideRange.upperBound))
             Button("Zoom Out") {
                 if let canvas {
                     canvas.setZoom(canvas.zoom / Self.canvasZoomStep)
+                } else if let mapZoomAction {
+                    mapZoomAction.zoomOut()
                 } else {
                     thumbnailSide = GridDisplay.zoomedOut(thumbnailSide)
                 }
             }
             .keyboardShortcut("-")
-            .disabled(canvas.map { $0.zoom <= $0.zoomRange.lowerBound } ?? (hasAssetGrid != true || thumbnailSide <= GridDisplay.sideRange.lowerBound))
+            .disabled(canvas.map { $0.zoom <= $0.zoomRange.lowerBound }
+                ?? mapZoomAction.map { _ in false }
+                ?? (hasAssetGrid != true || thumbnailSide <= GridDisplay.sideRange.lowerBound))
             Button("Zoom to Fit") {
                 canvas?.setZoom(1)
                 canvas?.panOffset = .zero
@@ -242,7 +251,8 @@ struct EditorCommands: Commands {
                 Text("Satellite").tag(LibraryMapStyle.satellite)
             }
             .pickerStyle(.inline)
-            .disabled(libraryDisplayAction?.current != .map)
+            // The map tells it is on screen by offering its zoom.
+            .disabled(mapZoomAction == nil)
             Divider()
             Picker("Thumbnails", selection: $thumbnailFit) {
                 Text("Square Thumbnails").tag(ThumbnailFit.fill)

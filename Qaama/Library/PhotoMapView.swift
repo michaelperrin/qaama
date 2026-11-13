@@ -68,6 +68,10 @@ private struct PhotoMapCanvas: View {
     /// Around the photos when the map frames them all, and the least it then shows (in degrees).
     private static let extentMargin = 0.15
     private static let minimumExtentSpan = 0.02
+    /// View › Zoom In and Zoom Out halve and double what the map shows, as its own zoom buttons do,
+    /// between a few houses and the whole world (degrees of longitude).
+    private static let zoomFactor = 2.0
+    private static let zoomSpanRange = 0.001 ... 360.0
 
     init(model: PhotoMapModel, selection: Binding<Set<LibraryAsset.ID>>, onOpen: @escaping ([LibraryAsset.ID]) -> Void) {
         self.model = model
@@ -120,7 +124,20 @@ private struct PhotoMapCanvas: View {
                 selectedCell = nil
             }
         }
+        .focusedSceneValue(\.mapZoomAction, MapZoomAction(zoomIn: { zoom(by: 1 / Self.zoomFactor) }, zoomOut: { zoom(by: Self.zoomFactor) }))
         .accessibilityLabel("Map of where the photos were taken")
+    }
+
+    /// Shows `factor` times as much of the world around the same center.
+    private func zoom(by factor: Double) {
+        guard let shown = model.lastRegion else { return }
+        var region = MKCoordinateRegion(shown)
+        let width = min(max(region.span.longitudeDelta * factor, Self.zoomSpanRange.lowerBound), Self.zoomSpanRange.upperBound)
+        region.span.latitudeDelta = min(region.span.latitudeDelta * width / region.span.longitudeDelta, 170)
+        region.span.longitudeDelta = width
+        // A choice of the user's as much as a pinch: the map no longer goes back to framing every photo.
+        model.userMovedMap = true
+        withAnimation { position = .region(region) }
     }
 
     /// Where the user left the map, in this library, or else all its photos.

@@ -28,6 +28,12 @@ public protocol LibrarySource: AnyObject, Observable {
     /// change of the library is being read: it may then be a few rows off, see `DateTimeline.fitted(to:)`.
     var timeline: DateTimeline? { get }
 
+    /// The date each row of `assets` is listed by, in order: the modification date when the query
+    /// sorts by it, else the capture date; nil for a photo without one. What a library made of
+    /// several sources weaves them together by. May take a moment for a large library: the work is
+    /// done off the main actor.
+    func listingDates() async -> [Date?]
+
     /// Lists the photos. Calling it again once loaded is a no-op.
     func load() async
     /// Thumbnail for a square of `pixelSize` a side (account for the screen's scale factor), with enough
@@ -156,6 +162,12 @@ public extension LibrarySource {
 
     var timeline: DateTimeline? {
         nil
+    }
+
+    /// From the rows themselves; sources whose rows cost something to build override it.
+    func listingDates() async -> [Date?] {
+        let byModification = query.sort == .modificationDate
+        return assets.map { byModification ? $0.modificationDate : $0.creationDate }
     }
 
     func endEditing(_: LibraryAsset) {}
