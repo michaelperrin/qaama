@@ -871,7 +871,31 @@ Bibliothèque
             modèle de carte branché dessus). Non vérifié à l'écran. Limite : pendant la
             relecture des en-têtes, la carte d'un dossier dit « No Photos on the Map » jusqu'au
             premier lot placé (les dossiers n'exposent pas de progression d'indexation).
-      - [ ] Étape 3b : Satellite, nom des lieux (géocodage inverse), Zoom In /
+      - [x] Satellite (13/11/2026, demandé par Michaël) : préférence `libraryMapStyle`
+            (`LibraryMapStyle`), bouton bascule dans la barre d'outils quand la carte est
+            affichée (`SatelliteToggle`, à la place du bouton de forme des vignettes, sur le
+            même modèle) et View › Standard Map / Satellite. Le satellite est le style hybride
+            de MapKit : noms de lieux et routes par-dessus l'imagerie, sans quoi on ne sait
+            plus où est un groupe. Plutôt qu'un troisième segment « Satellite » dans le
+            sélecteur comme chez Apple : Grille / Carte dit ce qu'on regarde, le style dit
+            comment la carte est dessinée, et la barre d'outils de la mosaïque est déjà pleine.
+            Vérifié par sonde : bouton présent, `MKMapView` en configuration hybride. Le rendu
+            de l'imagerie reste à voir à l'écran.
+      - [x] Retour sur une bibliothèque (13/11/2026). Signalé par Michaël : en passant des
+            dossiers à Photos en mode carte, la carte montrait la France vide pendant le
+            chargement, puis sautait sur le monde entier. Deux causes : le modèle de carte
+            vivait dans l'état de `LibraryContentView`, recréé à chaque changement dans la
+            barre latérale, donc tout était relu ; et la `Map` s'affichait avant la lecture des
+            positions, sur la région par défaut du système (le pays de l'utilisateur). Corrigé
+            par `PhotoMapModels`, tenu par la fenêtre (`MainWindowView`) : un modèle par
+            bibliothèque, gardé tant qu'elle vit, donc photos, vignettes, lieu et zoom sont
+            retrouvés tels quels ; et par `PhotoMapView`, qui n'affiche la carte
+            (`PhotoMapCanvas`) qu'une fois les positions lues, déjà cadrée, avec un indicateur
+            d'attente d'ici là. Sonde avec deux bibliothèques : première ouverture directement
+            cadrée sur les photos, retour sur la première carte au lieu et au zoom laissés, sans
+            passage par un état sans carte. Coût : chaque bibliothèque vue en carte garde son
+            index et jusqu'à 400 vignettes (26 Mo au plus) pour la durée de la fenêtre.
+      - [ ] Étape 3b : nom des lieux (géocodage inverse), Zoom In /
             Zoom Out du menu View sur la carte. Pour la fusion Photos + dossiers :
             `LocatedAsset` et `PhotoMapIndex` ne connaissent pas la source ; il faudra un
             identifiant qui la porte et une vignette demandée à la bonne source.

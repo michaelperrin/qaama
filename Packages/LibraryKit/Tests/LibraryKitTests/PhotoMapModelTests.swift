@@ -85,6 +85,31 @@ struct PhotoMapModelTests {
         #expect(model.locatedCount == 3)
     }
 
+    @Test func eachLibraryKeepsItsMapForAsLongAsItLives() async {
+        let maps = PhotoMapModels()
+        let first = SampleLibrarySource(), second = SampleLibrarySource()
+        let model = maps.model(for: first)
+        await model.load(from: first)
+        model.lastRegion = Self.france
+        model.userMovedMap = true
+
+        #expect(maps.model(for: second) !== model)
+        // Back to the first library: its photos and the place it was left at are still there.
+        let again = maps.model(for: first)
+        #expect(again === model && again.locatedCount == 6 && again.lastRegion == Self.france && again.userMovedMap)
+    }
+
+    @Test func theMapOfALibraryThatIsGoneIsDropped() {
+        let maps = PhotoMapModels()
+        weak var dropped: PhotoMapModel?
+        do {
+            let gone = SampleLibrarySource()
+            dropped = maps.model(for: gone)
+        }
+        _ = maps.model(for: SampleLibrarySource())
+        #expect(dropped == nil)
+    }
+
     // MARK: - Thumbnails
 
     /// Hands out thumbnails when told to, so a test decides what is loaded and when.

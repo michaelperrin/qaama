@@ -10,6 +10,9 @@ struct LibraryContentView: View {
     let source: any LibrarySource
     /// The albums the photos can be filed in; nil for libraries without albums (folders).
     var albums: AlbumFiling?
+    /// The window's maps, so this library's map is found as it was left when the sidebar comes back
+    /// to it; nil (previews) keeps one for as long as this view lives.
+    var maps: PhotoMapModels?
     /// The stay in the editor, from opening a photo to closing; it moves from photo to photo by itself.
     @State private var editorSession: EditorSession?
     @State private var selection: Set<LibraryAsset.ID> = []
@@ -27,8 +30,7 @@ struct LibraryContentView: View {
     @State private var navigator = TimelineNavigator()
     /// Grid or map, for every library that has a map.
     @AppStorage(LibraryDisplay.key) private var display = LibraryDisplay.grid
-    /// The map's photos and where it was left; loaded when the map first shows.
-    @State private var map = PhotoMapModel()
+    @State private var ownMaps = PhotoMapModels()
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
@@ -147,7 +149,11 @@ struct LibraryContentView: View {
                     LibraryDisplayPicker(display: Binding(get: { showsMap ? .map : .grid }, set: show))
                 }
             }
-            if !showsMap {
+            if showsMap {
+                ToolbarItem {
+                    SatelliteToggle()
+                }
+            } else {
                 ToolbarItem {
                     MonthButton(navigator: navigator, timeline: source.timeline)
                 }
@@ -166,6 +172,11 @@ struct LibraryContentView: View {
         }
         .searchable(text: searchText, placement: .toolbar, prompt: "Search names and keywords")
         .searchSuggestions {}
+    }
+
+    /// The map's photos and where it was left; loaded when the map first shows.
+    private var map: PhotoMapModel {
+        (maps ?? ownMaps).model(for: source)
     }
 
     /// The map takes the grid's place when it is asked for and the library has one; a group of the

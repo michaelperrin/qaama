@@ -188,6 +188,7 @@ struct EditorCommands: Commands {
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
     @AppStorage(GridDisplay.thumbnailSideKey) private var thumbnailSide = GridDisplay.defaultSide
     @AppStorage(GridDisplay.thumbnailFitKey) private var thumbnailFit = ThumbnailFit.fill
+    @AppStorage(LibraryMapStyle.key) private var mapStyle = LibraryMapStyle.standard
 
     var body: some Commands {
         CommandGroup(after: .sidebar) {
@@ -236,6 +237,12 @@ struct EditorCommands: Commands {
             }
             .pickerStyle(.inline)
             .disabled(libraryDisplayAction == nil)
+            Picker("Map Style", selection: $mapStyle) {
+                Text("Standard Map").tag(LibraryMapStyle.standard)
+                Text("Satellite").tag(LibraryMapStyle.satellite)
+            }
+            .pickerStyle(.inline)
+            .disabled(libraryDisplayAction?.current != .map)
             Divider()
             Picker("Thumbnails", selection: $thumbnailFit) {
                 Text("Square Thumbnails").tag(ThumbnailFit.fill)

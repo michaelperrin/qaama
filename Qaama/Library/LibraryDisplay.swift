@@ -45,3 +45,27 @@ struct LibraryDisplayPicker: View {
         .help("Show the photos as a grid or on a map")
     }
 }
+
+/// How the map of a library is drawn: Apple's standard map, or satellite imagery with the names of
+/// places over it. In the preferences under `key`, shared by the map, its toolbar button and the
+/// View menu.
+enum LibraryMapStyle: String, CaseIterable {
+    case standard
+    case satellite
+
+    static let key = "libraryMapStyle"
+}
+
+/// The toolbar's satellite button, next to the map; the same preference as View › Map Style.
+struct SatelliteToggle: View {
+    @AppStorage(LibraryMapStyle.key) private var style = LibraryMapStyle.standard
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { style == .satellite }, set: { style = $0 ? .satellite : .standard })) {
+            Label("Satellite", systemImage: "globe.europe.africa")
+                .labelStyle(.iconOnly)
+        }
+        .toggleStyle(.button)
+        .help(style == .satellite ? "Show the standard map" : "Show satellite imagery")
+    }
+}

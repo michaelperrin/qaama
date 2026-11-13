@@ -84,7 +84,8 @@ can feed a website one day. Dates are when the feature landed.
   out merges them. The map follows the search and the filters, and the window's subtitle says
   how many of the listed photos have a location. A click selects the photos of a group (the
   Info panel and the Image menu then act on them), a double click lists them in the grid, with
-  a Back button to the map where it was left. In Photos, locations come from Photos' database,
+  a Back button to the map where it was left. A toolbar button and View › Satellite switch the
+  map to satellite imagery, with the names of places and the roads over it (2026-11-13). In Photos, locations come from Photos' database,
   so photos whose original is in iCloud are on the map too; in folders, from the files'
   headers, read in the background (2026-11-13).
 - Show in Finder for photos of a folder: File › Show in Finder (⇧⌘R) for the grid's selection or

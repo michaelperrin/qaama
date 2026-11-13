@@ -17,6 +17,8 @@ struct MainWindowView: View {
     @State private var selection: LibrarySelection? = .photos
     @State private var isPickingFolder = false
     @State private var folderError: String?
+    /// The map of each library shown on one, kept while the sidebar goes elsewhere.
+    @State private var maps = PhotoMapModels()
 
     var body: some View {
         NavigationSplitView {
@@ -44,10 +46,11 @@ struct MainWindowView: View {
     private var detail: some View {
         switch selection {
         case .photos:
-            PhotosLibraryView(source: catalog.photos, albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor)
+            PhotosLibraryView(source: catalog.photos, albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor, maps: maps)
         case let .photosAlbum(id):
             if let album = catalog.photosAlbums.album(id: id) {
-                PhotosLibraryView(source: catalog.photosSource(for: album), albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor)
+                PhotosLibraryView(source: catalog.photosSource(for: album), albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor,
+                                  maps: maps)
                     .id(album.id)
             } else {
                 ContentUnavailableView("Album Removed", systemImage: "rectangle.stack.badge.minus")
@@ -65,7 +68,7 @@ struct MainWindowView: View {
     @ViewBuilder
     private func folderView(id: FolderLibrarySource.ID, path: String?) -> some View {
         if let folder = catalog.folders.first(where: { $0.id == id }) {
-            FolderLibraryView(source: folder, path: path)
+            FolderLibraryView(source: folder, path: path, maps: maps)
                 .id(folder.id)
         } else {
             ContentUnavailableView("Folder Removed", systemImage: "folder.badge.minus")

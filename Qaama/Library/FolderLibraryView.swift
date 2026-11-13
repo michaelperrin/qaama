@@ -6,6 +6,7 @@ struct FolderLibraryView: View {
     let source: FolderLibrarySource
     /// Subdirectory to show, or nil for the whole folder.
     var path: String?
+    var maps: PhotoMapModels?
 
     var body: some View {
         Group {
@@ -20,7 +21,7 @@ struct FolderLibraryView: View {
             } else if !source.isLoaded {
                 ProgressView("Scanning “\(source.displayName)”…")
             } else {
-                LibraryContentView(source: source)
+                LibraryContentView(source: source, maps: maps)
             }
         }
         .task { await source.load() }

@@ -7,6 +7,7 @@ struct PhotosLibraryView: View {
     /// Album list, loaded once access is granted; the sidebar shows it, the grid files photos in it.
     let albums: PhotosAlbumList
     let albumEditor: PhotosAlbumEditor
+    var maps: PhotoMapModels?
 
     var body: some View {
         Group {
@@ -17,8 +18,9 @@ struct PhotosLibraryView: View {
                 ProgressView("Requesting access to your photo library…")
             case .authorized, .limited:
                 // Photos can only be taken out of an album of the user's: Favorites is a smart album.
-                LibraryContentView(source: source, albums: AlbumFiling(list: albums, editor: albumEditor,
-                                                                       current: source.album?.kind == .user ? source.album : nil))
+                LibraryContentView(source: source,
+                                   albums: AlbumFiling(list: albums, editor: albumEditor, current: source.album?.kind == .user ? source.album : nil),
+                                   maps: maps)
             }
         }
         .task {
