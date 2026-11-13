@@ -1,4 +1,5 @@
 import Foundation
+import ImageIOKit
 @testable import LibraryKit
 import Testing
 
@@ -147,6 +148,22 @@ struct PhotosIndexStoreTests {
         try await store.save([entry("a", "a.jpg")])
         #expect(try await store.search("") == nil)
         #expect(try await store.search("   ") == nil)
+    }
+
+    @Test func listsOnlyTheAssetsWithAPosition() async throws {
+        let store = try makeStore()
+        let paris = GeoCoordinate(latitude: 48.8566, longitude: 2.3522), sydney = GeoCoordinate(latitude: -33.8688, longitude: 151.2093)
+        try await store.save([
+            PhotosAssetEntry(id: "a", fileName: "a.jpg", captureDate: Date(timeIntervalSince1970: 100), isRAW: false, location: paris),
+            PhotosAssetEntry(id: "b", fileName: "b.jpg", captureDate: nil, isRAW: false, location: sydney),
+            entry("c", "c.jpg"),
+        ])
+
+        let located = try await store.locatedAssets().sorted { $0.id < $1.id }
+        #expect(located == [
+            LocatedAsset(id: "a", coordinate: paris, captureDate: Date(timeIntervalSince1970: 100)),
+            LocatedAsset(id: "b", coordinate: sydney, captureDate: nil),
+        ])
     }
 
     @Test func keepsTheChangeTokenUntilReset() async throws {

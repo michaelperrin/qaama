@@ -776,6 +776,88 @@ Bibliothèque
       pas livrer de vrais gestes à MapKit ni capturer la carte interactive : glisser, zoom et
       recentrage restent à essayer à l'écran.
       Reste : nom du lieu (géocodage inverse).
+- [ ] Carte de la bibliothèque, façon Apple Photos : les photos là où elles ont été prises,
+      regroupées et dégroupées au zoom. Demandé par Michaël le 13/11/2026, qui a validé
+      l'emplacement (mode Grille / Carte de la source courante, pas une entrée à part dans la
+      barre latérale), une carte par source en gardant en tête une fusion possible de Photos
+      et des dossiers, et l'ordre en trois étapes.
+      - [x] Étape 1, preuve de faisabilité (13/11/2026). Position dans l'index Photos :
+            `PHAsset.location` lue dans la passe de `PhotosIndexer` (`PhotosAssetReading.location`),
+            colonnes `latitude` / `longitude` de `photosAsset` (migration v6, qui vide l'index :
+            il se reconstruit au prochain lancement), `PhotosIndexStore.locatedAssets()`.
+            Regroupement en Swift pur dans LibraryKit (`PhotoMapIndex`), pas le clustering de
+            MapKit, qui aurait reçu 74 000 annotations : positions projetées une fois en Web
+            Mercator sur une grille 2³² × 2³², triées le long d'une courbe en Z (bits de x et y
+            entrelacés) ; les photos d'un carré de n'importe quelle subdivision en puissances de
+            deux sont alors voisines dans le tableau, et regrouper à un niveau est un seul
+            parcours qui compare les bits de tête, sans dictionnaire ni allocation par photo.
+            Les carrés sont liés au monde, pas à la vue : déplacer la carte ne regroupe rien.
+            Chaque groupe : nombre, barycentre, photo la plus récente, étendue, plage de ses
+            photos dans le tableau. Mesuré sur 74 000 points (400 lieux en Europe) : index
+            construit en 188 ms en Debug (8 ms en Release), un regroupement en 2 ms en Debug
+            (0,2 ms en Release) tant qu'il rend quelques centaines de groupes, 5 à 15 ms en
+            Debug s'il en rend des dizaines de milliers (cas qu'un écran ne montre pas). Bien
+            sous une image : pas besoin d'une cible compilée en `-O`.
+            Leçon : dans une migration GRDB les clés étrangères sont coupées, la suppression
+            en cascade ne joue pas ; vider `photosAsset` sans vider `photosAssetKeyword` faisait
+            échouer la migration (trouvé par le test de migration).
+      - [x] Étape 2, MVP pour Photos (13/11/2026). Côté paquet : `LibrarySource.hasPlaces`,
+            `locatedAssets()` (positions des photos du listage courant) et `placesVersion` ;
+            `PhotoMapModel` (observable, sans MapKit : la vue lui donne la région montrée et
+            la largeur du monde en points, il rend les groupes et leurs vignettes, et ne les
+            réaffecte que s'ils changent) ; `LibraryQuery.onlyAssetIDs`, portée comme `folderPath`, qui restreint
+            le listage aux photos d'un groupe (`PhotosFetchPredicate` la combine aux autres
+            listes d'identifiants). Côté appli : sélecteur segmenté Grille / Carte dans la barre
+            d'outils (`LibraryDisplayPicker`, préférence `libraryDisplay`) et View › as Grid /
+            as Map ; `PhotoMapView` (`Map` SwiftUI, une `Annotation` par groupe) ;
+            `PhotoClusterMarker` (vignette de 64 points, nombre en bas à gauche, `Equatable`).
+            Clic : sélectionne les photos du groupe, comme dans la mosaïque (le panneau Info et
+            le menu Image agissent dessus) ; double clic : la mosaïque liste le groupe, bouton
+            Retour vers la carte là où elle était. La carte suit la recherche et les filtres ;
+            le sous-titre dit combien de photos listées ont une position. Fonctionne aussi dans
+            un album.
+            Écart avec ce qui était annoncé (clic = ouvrir, double clic = zoomer) : repris la
+            convention de la mosaïque, qui laisse le clic immédiat ; le zoom reste aux gestes
+            de la carte et aux boutons.
+            Vérifié : 154 tests de LibraryKit (index, migration, regroupement, modèle,
+            prédicat), compilation de l'appli, et sonde hors écran sur la source d'exemple
+            (barre d'outils, cinq groupes cadrés, aller-retour carte → groupe → carte). La
+            sonde ne capture pas le fond de carte (Metal) ni ne livre de gestes : glisser,
+            zoom, clic et double clic sur un groupe restent à essayer à l'écran, ainsi que
+            tout ce qui touche la vraie photothèque (durée de la réindexation, nombre de photos
+            placées, durée de `locatedAssets()` : voir les journaux `PhotosIndexer`,
+            `PhotosLibrarySource` « Places » et `PhotoMapModel`).
+            Limites connues : la carte ne se remplit qu'à la fin de la réindexation (bandeau
+            pendant ce temps) ; deux groupes de carrés voisins peuvent se chevaucher (comme
+            chez Apple) ; pas de regroupement à travers l'antiméridien ; ouvrir un groupe de
+            dizaines de milliers de photos passe par une liste d'identifiants que PhotoKit met
+            100 à 200 ms à traiter, sur le fil principal ; revenir de la mosaïque à la carte
+            perd le défilement de la mosaïque, et inversement ; chaque passe d'index qui lit
+            des photos recharge la carte, même si aucune position n'a changé.
+            Clignotement au zoom, signalé par Michaël à l'essai le 13/11/2026 (« un tout petit
+            moment où aucune vignette n'est affichée ») et corrigé le même jour. Deux causes,
+            vues dans la sonde en pilotant la `MKMapView` par `setRegion` et en comptant les
+            vues d'annotation à chaque tour de boucle : (1) chaque marqueur chargeait sa
+            vignette lui-même, donc repartait vide ; (2) l'identité des groupes était leur
+            carré, qui change à chaque niveau : la carte retirait toutes les annotations puis
+            ajoutait les nouvelles un instant plus tard (état « 0 marqueur » observé). Corrigé
+            par : (1) `PhotoMapModel` charge les vignettes (`cover(of:)`) et garde les groupes
+            affichés tant que celles des nouveaux ne sont pas là, 300 ms au plus (`patience`,
+            compté depuis le premier retard, pas repoussé par les mouvements suivants) ; les
+            vignettes déjà vues restent en cache (400 au plus), revenir en arrière est
+            immédiat ; (2) `PhotoCluster.id` est la photo de couverture : la plus récente d'une
+            fusion est celle d'un des groupes fusionnés, et un des morceaux d'une scission
+            garde celle du groupe, donc ce marqueur-là est déplacé au lieu d'être recréé. La
+            sélection, elle, reste repérée par le carré (`cell`). Sonde après correction :
+            5 → 2 groupes au dézoom et 2 → 5 au zoom sans état vide, vignettes présentes à
+            chaque instant. Reste hors de portée de la sonde : l'allure sous un vrai pincement
+            et avec les vignettes de PhotoKit.
+      - [ ] Étape 3 : dossiers (colonnes de position sur `item`, remplies par
+            `MetadataIndexer`, relecture des en-têtes déjà indexés, `onlyAssetIDs` dans la
+            requête des dossiers), Satellite, nom des lieux (géocodage inverse), Zoom In /
+            Zoom Out du menu View sur la carte. Pour la fusion Photos + dossiers :
+            `LocatedAsset` et `PhotoMapIndex` ne connaissent pas la source ; il faudra un
+            identifiant qui la porte et une vignette demandée à la bonne source.
 - [ ] Édition des métadonnées : date de prise de vue, localisation, etc. Cadrage discuté
       avec Michaël le 6/11/2026.
       Date de prise de vue, fait le 6/11/2026 : dialogue Adjust Date & Time (menu Image, en

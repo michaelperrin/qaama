@@ -212,6 +212,7 @@ photosAsset
   foldedName: String             nom sans casse ni accents, pour la recherche
   captureSecond: Int?            date de prise de vue, en secondes entières
   isRAW: Bool                    copie de l'album intelligent RAW, pour la jointure des paires
+  latitude, longitude: Double?   position (`PHAsset.location`), nulle sans position ; pour la carte
 
 photosAssetKeyword               une ligne par photo et mot-clé, supprimée avec la photo
   assetID: String
@@ -225,6 +226,13 @@ photosIndexState                 une seule ligne
 Index : `(nameStem, captureSecond)` et `isRAW`. Même fichier SQLite que le reste du catalogue,
 derrière `PhotosIndexStore` : tout y est dérivé de PhotoKit, donc reconstructible, et supprimer
 le catalogue ne coûte qu'une demi-minute de réindexation en arrière-plan.
+
+**Position (13/11/2026, migration v6).** Lue dans la même passe que le nom, depuis la base de
+Photos (donc aussi pour les originaux dans iCloud), 0°/0° écarté : deux colonnes de `photosAsset`
+plutôt qu'une table à part, puisque même lecture et même péremption. La migration vide l'index,
+qui se reconstruit. `PhotosIndexStore.locatedAssets()` rend toutes les photos placées en un seul
+parcours de la table ; le regroupement pour la carte se fait en mémoire (`PhotoMapIndex`), sans
+requête par région.
 
 **Pour la suite : une table par source de données, pas une table qui s'élargit.** `photosAsset`
 garde ce qui est lu ensemble dans la même passe et périmé ensemble. Ce qui a plusieurs valeurs

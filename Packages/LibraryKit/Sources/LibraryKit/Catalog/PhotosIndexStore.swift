@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import ImageIOKit
 
 /// What the index keeps about one asset of the Apple Photos library: the facts PhotoKit can't query.
 public nonisolated struct PhotosAssetEntry: Codable, Hashable, Sendable, Identifiable {
@@ -15,14 +16,24 @@ public nonisolated struct PhotosAssetEntry: Codable, Hashable, Sendable, Identif
     /// Capture date in whole seconds since 1970.
     public var captureSecond: Int64?
     public var isRAW: Bool
+    /// Where the photo was taken, in degrees; both nil when the library holds no position for it.
+    public var latitude: Double?
+    public var longitude: Double?
 
-    public init(id: String, fileName: String?, captureDate: Date?, isRAW: Bool) {
+    public init(id: String, fileName: String?, captureDate: Date?, isRAW: Bool, location: GeoCoordinate? = nil) {
         self.id = id
         self.fileName = fileName
         nameStem = Self.stem(of: fileName)
         foldedName = SearchText.fold(fileName ?? "")
         captureSecond = captureDate.map { Int64($0.timeIntervalSince1970.rounded(.down)) }
         self.isRAW = isRAW
+        latitude = location?.latitude
+        longitude = location?.longitude
+    }
+
+    public var location: GeoCoordinate? {
+        guard let latitude, let longitude else { return nil }
+        return GeoCoordinate(latitude: latitude, longitude: longitude)
     }
 
     static func stem(of fileName: String?) -> String {
@@ -161,6 +172,23 @@ public final nonisolated class PhotosIndexStore: Sendable {
         }
         let sql = "SELECT id FROM photosAsset WHERE " + clauses.joined(separator: " AND ")
         return try await writer.read { [arguments] db in try String.fetchAll(db, sql: sql, arguments: arguments) }
+    }
+
+    // MARK: - Places
+
+    /// Every indexed asset that has a position, for the map. One scan of the table: the map clusters
+    /// them in memory (`PhotoMapIndex`), so nothing here depends on the region shown.
+    public func locatedAssets() async throws -> [LocatedAsset] {
+        try await writer.read { db in
+            let rows = try Row.fetchCursor(db, sql: "SELECT id, latitude, longitude, captureSecond FROM photosAsset WHERE latitude IS NOT NULL AND longitude IS NOT NULL")
+            var assets: [LocatedAsset] = []
+            while let row = try rows.next() {
+                let second: Int64? = row[3]
+                assets.append(LocatedAsset(id: row[0], coordinate: GeoCoordinate(latitude: row[1], longitude: row[2]),
+                                           captureDate: second.map { Date(timeIntervalSince1970: TimeInterval($0)) }))
+            }
+            return assets
+        }
     }
 
     // MARK: - Change history

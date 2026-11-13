@@ -1,4 +1,5 @@
 import Foundation
+import ImageIOKit
 @testable import LibraryKit
 import Testing
 
@@ -140,6 +141,26 @@ struct PhotosIndexerTests {
         try await indexer.update(rawIDs: [])
         #expect(try await store.search("lapland") == [])
         #expect(try await store.search("aurora") == ["b"])
+    }
+
+    @Test func indexesPositionsAndFollowsTheirChanges() async throws {
+        let store = try makeStore()
+        let paris = GeoCoordinate(latitude: 48.8566, longitude: 2.3522), lyon = GeoCoordinate(latitude: 45.764, longitude: 4.8357)
+        let library = FakePhotosLibrary([
+            FakePhotosLibrary.reading("a", "DSCF0001.RAF", at: 10, location: paris),
+            FakePhotosLibrary.reading("b", "DSCF0002.RAF"),
+        ])
+        let indexer = PhotosIndexer(store: store, library: library)
+        try await indexer.update(rawIDs: [])
+        #expect(try await store.locatedAssets() == [LocatedAsset(id: "a", coordinate: paris, captureDate: Date(timeIntervalSince1970: 10))])
+
+        // A position set or removed in Photos: the asset comes back as changed.
+        await library.setLocation(lyon, of: "b")
+        await library.setLocation(nil, of: "a")
+        try await indexer.update(rawIDs: [])
+        #expect(try await store.locatedAssets().map(\.id) == ["b"])
+        #expect(try await store.entry(id: "b")?.location == lyon)
+        #expect(try await store.entry(id: "a")?.location == nil)
     }
 
     @Test func reportsNoProgressForASmallChange() async throws {

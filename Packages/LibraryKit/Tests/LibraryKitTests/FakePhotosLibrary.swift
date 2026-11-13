@@ -1,4 +1,5 @@
 import Foundation
+import ImageIOKit
 @testable import LibraryKit
 
 /// A photo library in memory, standing in for PhotoKit: assets in listing order, a RAW set, and a
@@ -23,8 +24,10 @@ actor FakePhotosLibrary: PhotosIndexLibrary {
         (notifications, continuation) = AsyncStream.makeStream()
     }
 
-    static func reading(_ id: String, _ fileName: String?, at second: TimeInterval = 0, keywords: [String] = []) -> PhotosAssetReading {
-        PhotosAssetReading(id: id, fileName: fileName, captureDate: Date(timeIntervalSince1970: second), keywords: keywords)
+    static func reading(_ id: String, _ fileName: String?, at second: TimeInterval = 0, keywords: [String] = [],
+                        location: GeoCoordinate? = nil) -> PhotosAssetReading
+    {
+        PhotosAssetReading(id: id, fileName: fileName, captureDate: Date(timeIntervalSince1970: second), keywords: keywords, location: location)
     }
 
     // MARK: - Changing the library
@@ -46,6 +49,12 @@ actor FakePhotosLibrary: PhotosIndexLibrary {
     func setKeywords(_ keywords: [String], of id: String) {
         guard let index = assets.firstIndex(where: { $0.id == id }) else { return }
         assets[index].keywords = keywords
+        record(upserted: [id])
+    }
+
+    func setLocation(_ location: GeoCoordinate?, of id: String) {
+        guard let index = assets.firstIndex(where: { $0.id == id }) else { return }
+        assets[index].location = location
         record(upserted: [id])
     }
 

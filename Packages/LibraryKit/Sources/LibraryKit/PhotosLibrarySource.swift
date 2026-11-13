@@ -1,5 +1,4 @@
 import CoreGraphics
-import CoreLocation
 import Foundation
 import ImageIOKit
 import ObjCSupport
@@ -48,6 +47,46 @@ public final class PhotosLibrarySource: LibrarySource {
     }
 
     private var nativeCapabilities: Set<QueryCapability> = [.favorite]
+
+    /// Positions come from the index, which reads them from Photos' database.
+    public var hasPlaces: Bool {
+        index != nil
+    }
+
+    public var placesVersion: Int {
+        membershipVersion &+ (index?.contentVersion ?? 0)
+    }
+
+    /// Bumped when the listing gains or loses photos. Not `libraryVersion`: Photos reports changes
+    /// every second or two while it analyzes or syncs, and most leave the same photos listed.
+    private var membershipVersion = 0
+
+    /// The indexed positions of the photos the query lists. The listing's identifiers are read off the
+    /// main actor; a group picked on the map doesn't narrow them, which costs one more listing then.
+    public func locatedAssets() async -> [LocatedAsset] {
+        guard let index, let fetchResult else { return [] }
+        let clock = ContinuousClock()
+        let start = clock.now
+        // PhotoKit documents fetch results as safe to read from any thread; this one is only read there.
+        let current = UncheckedSendable(fetchResult)
+        var whole: PhotosListing?
+        if query.onlyAssetIDs != nil {
+            whole = listing(searchMatches: search?.matches)
+            whole?.query.onlyAssetIDs = nil
+        }
+        do {
+            let located = try await index.locatedAssets()
+            let (shown, listedCount) = await Task.detached(priority: .userInitiated) { [whole] in
+                let listed = Set(PhotoKitIndexLibrary.identifiers(of: whole?.fetch() ?? current.value))
+                return (located.filter { listed.contains($0.id) }, listed.count)
+            }.value
+            logger.notice("Places: \(shown.count) of \(listedCount) listed photos have a position (\(located.count) in the index), read in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
+            return shown
+        } catch {
+            logger.error("Couldn't read the positions: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
+    }
 
     public var indexingProgress: IndexingProgress? {
         index?.progress
@@ -205,8 +244,8 @@ public final class PhotosLibrarySource: LibrarySource {
         if let date = self.phAsset(for: asset.id)?.creationDate {
             details.metadata?.captureDate = date
         }
-        if let place = phAsset.location?.coordinate, CLLocationCoordinate2DIsValid(place) {
-            details.metadata?.location = GeoCoordinate(latitude: place.latitude, longitude: place.longitude)
+        if let place = phAsset.geoCoordinate {
+            details.metadata?.location = place
         }
         let outcome = original.header != nil ? "header read" : (original.isMissing ? "original not on disk" : "no header")
         logger.notice("Details of \(asset.id, privacy: .public)\(allowingDownload ? " with download" : "", privacy: .public): \(outcome, privacy: .public) in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
@@ -415,6 +454,9 @@ public final class PhotosLibrarySource: LibrarySource {
             materialized[removed.localIdentifier] = nil
         }
         let timelineIsOutdated = outdatesTimeline(details)
+        if !details.hasIncrementalChanges || !details.insertedObjects.isEmpty || !details.removedObjects.isEmpty {
+            membershipVersion += 1
+        }
         apply(fetchResult: details.fetchResultAfterChanges)
         if timelineIsOutdated {
             // The months in place stay until the new ones are read: a few rows off for a moment.
@@ -539,6 +581,7 @@ public final class PhotosLibrarySource: LibrarySource {
 
     private func apply(_ result: PHFetchResult<PHAsset>, for listing: PhotosListing) {
         listedSnapshot = listing.index ?? PhotosIndexSnapshot()
+        membershipVersion += 1
         apply(fetchResult: result)
         rebuildTimeline(showingFirstRows: true)
     }

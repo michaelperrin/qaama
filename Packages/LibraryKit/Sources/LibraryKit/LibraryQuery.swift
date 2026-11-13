@@ -36,6 +36,9 @@ public nonisolated struct LibraryQuery: Hashable, Sendable {
     public var folderPath: String?
     /// RAW + JPEG pairs show as one photo (the RAW) unless the JPEG twins are asked for. Not a filter.
     public var includesPairedJPEGs = false
+    /// Restricts the listing to these photos: a group picked on the map. A scope like `folderPath`,
+    /// not a filter. The sources that put their photos on a map (`LibrarySource.hasPlaces`) honor it.
+    public var onlyAssetIDs: Set<LibraryAsset.ID>?
 
     public init() {}
 
@@ -47,8 +50,22 @@ public nonisolated struct LibraryQuery: Hashable, Sendable {
             && searchText.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
+    /// The same listing without its filters: the sort and the scopes stay.
+    public var clearingFilters: LibraryQuery {
+        var cleared = LibraryQuery()
+        cleared.sort = sort
+        cleared.ascending = ascending
+        cleared.folderPath = folderPath
+        cleared.includesPairedJPEGs = includesPairedJPEGs
+        cleared.onlyAssetIDs = onlyAssetIDs
+        return cleared
+    }
+
     /// In-memory evaluation, for sources that hold their assets in an array (and for tests).
     public func matches(_ asset: LibraryAsset, isRAW: Bool = false) -> Bool {
+        if let onlyAssetIDs, !onlyAssetIDs.contains(asset.id) {
+            return false
+        }
         if asset.rating < minimumRating {
             return false
         }

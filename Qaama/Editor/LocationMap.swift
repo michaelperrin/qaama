@@ -25,7 +25,7 @@ struct LocationMap: View {
         // No rotation or tilt: north stays up, so there is nothing to put back but the framing.
         Map(position: $position, interactionModes: [.pan, .zoom]) {
             // No title: the pin alone says where; a caption under it only repeated "Photo".
-            Marker("", coordinate: Self.coordinate(of: location))
+            Marker("", coordinate: CLLocationCoordinate2D(location))
         }
         .mapControls {
             MapZoomStepper()
@@ -48,13 +48,9 @@ struct LocationMap: View {
         .onChange(of: location) { _, new in position = Self.position(for: new) }
     }
 
-    private static func coordinate(of location: GeoCoordinate) -> CLLocationCoordinate2D {
-        CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude)
-    }
-
     /// The framing the map opens on and comes back to: the photo's place at the center.
     private static func position(for location: GeoCoordinate) -> MapCameraPosition {
-        .region(MKCoordinateRegion(center: coordinate(of: location), latitudinalMeters: span, longitudinalMeters: span))
+        .region(MKCoordinateRegion(center: CLLocationCoordinate2D(location), latitudinalMeters: span, longitudinalMeters: span))
     }
 }
 

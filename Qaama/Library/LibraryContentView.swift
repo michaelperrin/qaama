@@ -2,9 +2,10 @@ import EditorKit
 import LibraryKit
 import SwiftUI
 
-/// Detail column of a library: the thumbnail grid, replaced by the editor while a photo is open.
-/// Both keep the window's inspector column on their right: the selected photo's Info panel next to
-/// the grid, the editor's tabs next to the canvas.
+/// Detail column of a library: the thumbnail grid or, for libraries that know where their photos
+/// were taken, the map of them; both replaced by the editor while a photo is open. All keep the
+/// window's inspector column on their right: the selected photos' Info panel next to the grid and
+/// the map, the editor's tabs next to the canvas.
 struct LibraryContentView: View {
     let source: any LibrarySource
     /// The albums the photos can be filed in; nil for libraries without albums (folders).
@@ -24,6 +25,10 @@ struct LibraryContentView: View {
     @State private var albumSearch: AlbumSearchRequest?
     /// The month at the top of the grid and the jumps asked from the toolbar's month button.
     @State private var navigator = TimelineNavigator()
+    /// Grid or map, for every library that has a map.
+    @AppStorage(LibraryDisplay.key) private var display = LibraryDisplay.grid
+    /// The map's photos and where it was left; loaded when the map first shows.
+    @State private var map = PhotoMapModel()
     @Environment(\.undoManager) private var undoManager
 
     var body: some View {
@@ -34,6 +39,7 @@ struct LibraryContentView: View {
             .focusedSceneValue(\.decisionsAction, decisionsAction)
             .focusedSceneValue(\.albumsCommand, albumsCommand)
             .focusedSceneValue(\.goToMonthAction, goToMonthAction)
+            .focusedSceneValue(\.libraryDisplayAction, displayAction)
             .albumDialogs($albumDialog, editor: albums?.editor, error: $decisionError)
             .alert("Couldn't Update the Photos", isPresented: Binding(get: { decisionError != nil }, set: {
                 if !$0 {
@@ -84,28 +90,64 @@ struct LibraryContentView: View {
                     }
                 }
         } else {
-            HStack(spacing: 0) {
-                AssetGridView(source: source, selection: $selection, onOpen: { editorSession = EditorSession(assetID: $0, source: source) },
-                              onAdjustDate: adjustDate, albums: albumsAction, navigator: navigator)
-                    .safeAreaInset(edge: .top, spacing: 0) {
-                        if let notice = source.indexingNotice {
-                            IndexingNoticeView(notice: notice, progress: source.indexingProgress)
+            browser
+        }
+    }
+
+    /// The grid or the map, with the Info panel and the toolbar they share.
+    private var browser: some View {
+        let showsMap = showsMap
+        return HStack(spacing: 0) {
+            Group {
+                if showsMap {
+                    PhotoMapView(source: source, model: map, selection: $selection, onOpen: showMapGroup)
+                        .safeAreaInset(edge: .top, spacing: 0) {
+                            if source.indexingProgress != nil {
+                                IndexingNoticeView(notice: "Still indexing: the map will be complete when it finishes.", progress: source.indexingProgress)
+                            }
                         }
-                    }
-                    // Without it the row settles at the grid's ideal width, one column of thumbnails.
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                // The Info form is light: unlike the editor's, it is simply rebuilt when shown again.
-                if isInspectorVisible {
-                    Divider()
-                    LibraryInspector(source: source, selection: selection, onAdjustDate: adjustDate)
-                        .frame(width: EditorInspector.width)
+                } else {
+                    AssetGridView(source: source, selection: $selection, onOpen: { editorSession = EditorSession(assetID: $0, source: source) },
+                                  onAdjustDate: adjustDate, albums: albumsAction, navigator: navigator)
+                        .safeAreaInset(edge: .top, spacing: 0) {
+                            if let notice = source.indexingNotice {
+                                IndexingNoticeView(notice: notice, progress: source.indexingProgress)
+                            }
+                        }
                 }
             }
-            .navigationTitle(source.displayName)
-            // The subtitle starts with the dates on screen, which change as the grid scrolls: set from
-            // a view of its own, so scrolling doesn't run this body again.
-            .background { GridSubtitle(navigator: navigator, details: subtitle) }
-            .toolbar {
+            // Without it the row settles at the grid's ideal width, one column of thumbnails.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The Info form is light: unlike the editor's, it is simply rebuilt when shown again.
+            if isInspectorVisible {
+                Divider()
+                LibraryInspector(source: source, selection: selection, onAdjustDate: adjustDate)
+                    .frame(width: EditorInspector.width)
+            }
+        }
+        .navigationTitle(source.displayName)
+        // The grid's subtitle starts with the dates on screen, which change as it scrolls: set from
+        // a view of its own, so scrolling doesn't run this body again.
+        .background {
+            if showsMap {
+                Color.clear.navigationSubtitle(mapSubtitle)
+            } else {
+                GridSubtitle(navigator: navigator, details: subtitle)
+            }
+        }
+        .toolbar {
+            if isShowingMapGroup {
+                ToolbarItem(placement: .navigation) {
+                    Button("Back to the Map", systemImage: "chevron.left") { source.query.onlyAssetIDs = nil }
+                        .help("Back to the map")
+                }
+            }
+            if source.hasPlaces {
+                ToolbarItem {
+                    LibraryDisplayPicker(display: Binding(get: { showsMap ? .map : .grid }, set: show))
+                }
+            }
+            if !showsMap {
                 ToolbarItem {
                     MonthButton(navigator: navigator, timeline: source.timeline)
                 }
@@ -115,15 +157,48 @@ struct LibraryContentView: View {
                 ToolbarItem {
                     ThumbnailFitToggle()
                 }
-                LibraryQueryToolbar(source: source)
-                ToolbarSpacer(.fixed, placement: .primaryAction)
-                ToolbarItem(placement: .primaryAction) {
-                    InspectorVisibilityButton(isVisible: $isInspectorVisible)
-                }
             }
-            .searchable(text: searchText, placement: .toolbar, prompt: "Search names and keywords")
-            .searchSuggestions {}
+            LibraryQueryToolbar(source: source, showsSort: !showsMap)
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+            ToolbarItem(placement: .primaryAction) {
+                InspectorVisibilityButton(isVisible: $isInspectorVisible)
+            }
         }
+        .searchable(text: searchText, placement: .toolbar, prompt: "Search names and keywords")
+        .searchSuggestions {}
+    }
+
+    /// The map takes the grid's place when it is asked for and the library has one; a group of the
+    /// map being looked at shows in the grid.
+    private var showsMap: Bool {
+        display == .map && source.hasPlaces && !isShowingMapGroup
+    }
+
+    /// True while the grid lists the photos of a group opened from the map. Read from the query,
+    /// which outlives this view: coming back to the library later still offers the way back.
+    private var isShowingMapGroup: Bool {
+        source.query.onlyAssetIDs != nil
+    }
+
+    /// A double click on a group of the map: the grid lists its photos, until Back.
+    private func showMapGroup(_ assetIDs: [LibraryAsset.ID]) {
+        guard !assetIDs.isEmpty else { return }
+        selection = []
+        source.query.onlyAssetIDs = Set(assetIDs)
+    }
+
+    /// The toolbar's switch and the View menu. Either way, a group of the map is no longer looked at.
+    private func show(_ display: LibraryDisplay) {
+        self.display = display
+        if isShowingMapGroup {
+            source.query.onlyAssetIDs = nil
+        }
+    }
+
+    /// View › as Grid and as Map; nil (the commands are disabled) in the editor and without a map.
+    private var displayAction: LibraryDisplayAction? {
+        guard editorSession == nil, source.hasPlaces else { return nil }
+        return LibraryDisplayAction(current: showsMap ? .map : .grid, show: show)
     }
 
     /// View › Go to Month…: opens the month picker of the grid; nil (the command is disabled) in the
@@ -234,6 +309,16 @@ struct LibraryContentView: View {
 
     private var searchText: Binding<String> {
         Binding(get: { source.query.searchText }, set: { source.query.searchText = $0 })
+    }
+
+    /// Next to the map: how many of the listed photos it shows, the others having no position.
+    private var mapSubtitle: String {
+        guard let located = map.locatedCount else { return "" }
+        var text = "\(located.formatted()) of \(source.assets.count.formatted()) photos on the map"
+        if !selection.isEmpty {
+            text += " · \(selection.count.formatted()) selected"
+        }
+        return text
     }
 
     private var subtitle: String {

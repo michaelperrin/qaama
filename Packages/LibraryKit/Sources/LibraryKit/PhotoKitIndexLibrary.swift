@@ -1,4 +1,6 @@
+import CoreLocation
 import Foundation
+import ImageIOKit
 import OSLog
 import Photos
 
@@ -30,7 +32,8 @@ public nonisolated struct PhotoKitIndexLibrary: PhotosIndexLibrary {
         PhotosFetchEnumeration.forEachAsset(in: result) { asset in
             let metadata = asset.extendedMetadata
             readings.append(PhotosAssetReading(id: asset.localIdentifier, fileName: metadata.originalFilename,
-                                               captureDate: asset.creationDate, keywords: metadata.keywords))
+                                               captureDate: asset.creationDate, keywords: metadata.keywords,
+                                               location: asset.geoCoordinate))
         }
         return readings
     }
@@ -75,11 +78,23 @@ public nonisolated struct PhotoKitIndexLibrary: PhotosIndexLibrary {
         return options
     }
 
-    private static func identifiers(of result: PHFetchResult<PHAsset>) -> [String] {
+    /// Safe off the main actor: PhotoKit documents fetch results as readable from any thread.
+    static func identifiers(of result: PHFetchResult<PHAsset>) -> [String] {
         var ids: [String] = []
         ids.reserveCapacity(result.count)
         PhotosFetchEnumeration.forEachAsset(in: result) { ids.append($0.localIdentifier) }
         return ids
+    }
+}
+
+nonisolated extension PHAsset {
+    /// The position Photos stores for the asset, which doesn't need the original. 0°/0° is what a
+    /// camera without a fix writes, not a place photos are taken at (the header reader drops it too).
+    var geoCoordinate: GeoCoordinate? {
+        guard let place = location?.coordinate, CLLocationCoordinate2DIsValid(place),
+              place.latitude != 0 || place.longitude != 0
+        else { return nil }
+        return GeoCoordinate(latitude: place.latitude, longitude: place.longitude)
     }
 }
 

@@ -184,6 +184,7 @@ struct EditorCommands: Commands {
     @FocusedValue(\.albumsCommand) private var albumsCommand
     @FocusedValue(\.newAlbumAction) private var newAlbumAction
     @FocusedValue(\.goToMonthAction) private var goToMonthAction
+    @FocusedValue(\.libraryDisplayAction) private var libraryDisplayAction
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
     @AppStorage(GridDisplay.thumbnailSideKey) private var thumbnailSide = GridDisplay.defaultSide
     @AppStorage(GridDisplay.thumbnailFitKey) private var thumbnailFit = ThumbnailFit.fill
@@ -227,6 +228,14 @@ struct EditorCommands: Commands {
             }
             .keyboardShortcut("1")
             .disabled(canvas?.actualSizeZoom == nil)
+            Divider()
+            // As the Finder's "as Icons": the toolbar's switch makes the same choice.
+            Picker("Show Photos", selection: Binding(get: { libraryDisplayAction?.current ?? .grid }, set: { libraryDisplayAction?.show($0) })) {
+                Text("as Grid").tag(LibraryDisplay.grid)
+                Text("as Map").tag(LibraryDisplay.map)
+            }
+            .pickerStyle(.inline)
+            .disabled(libraryDisplayAction == nil)
             Divider()
             Picker("Thumbnails", selection: $thumbnailFit) {
                 Text("Square Thumbnails").tag(ThumbnailFit.fill)

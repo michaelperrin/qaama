@@ -73,6 +73,16 @@ public protocol LibrarySource: AnyObject, Observable {
     /// The grid shows the row at `index`: sources may warm the thumbnails around it, as the grid will ask
     /// for them (same size and fit).
     func prefetchThumbnails(around index: Int, pixelSize: CGSize, fit: ThumbnailFit)
+    /// True when the source knows where its photos were taken without opening them one by one, so
+    /// they can be shown on a map; the same for the source's whole life.
+    var hasPlaces: Bool { get }
+    /// The photos of the current listing that have a position, `LibraryQuery.onlyAssetIDs` left
+    /// aside: the map shows where the groups it restricts to come from. May take a moment for a
+    /// large library; the work is done off the main actor.
+    func locatedAssets() async -> [LocatedAsset]
+    /// Changes when `locatedAssets()` may answer differently for the same query: photos came or
+    /// went, positions were read or corrected. A map in use is then loaded again.
+    var placesVersion: Int { get }
     /// How far a background index this source's listing relies on is, or nil when none is being built.
     var indexingProgress: IndexingProgress? { get }
     /// A sentence to show with the photos while indexing makes the current listing provisional, or nil
@@ -192,6 +202,18 @@ public extension LibrarySource {
     }
 
     func prefetchThumbnails(around _: Int, pixelSize _: CGSize, fit _: ThumbnailFit) {}
+
+    var hasPlaces: Bool {
+        false
+    }
+
+    func locatedAssets() async -> [LocatedAsset] {
+        []
+    }
+
+    var placesVersion: Int {
+        0
+    }
 
     var indexingProgress: IndexingProgress? {
         nil

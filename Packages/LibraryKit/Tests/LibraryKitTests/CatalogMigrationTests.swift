@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import ImageIOKit
 @testable import LibraryKit
 import Testing
 
@@ -55,6 +56,27 @@ struct CatalogMigrationTests {
             try item.save(db)
             let reloaded = try #require(try CatalogItem.fetchOne(db, key: itemID))
             #expect(reloaded.effectiveCaptureDate == shot.addingTimeInterval(3600) && reloaded.captureDate == shot)
+        }
+    }
+
+    @Test func locationMigrationStartsThePhotosIndexOver() throws {
+        let queue = try DatabaseQueue()
+        try CatalogSchema.migrator.migrate(queue, upTo: "v5-capture-date-override")
+        try queue.write { db in
+            try db.execute(sql: "INSERT INTO photosAsset (id, fileName, nameStem, foldedName) VALUES ('a', 'a.jpg', 'a', 'a.jpg')")
+            try db.execute(sql: "INSERT INTO photosAssetKeyword (assetID, keyword, folded) VALUES ('a', 'Été', 'ete')")
+            try db.execute(sql: "INSERT INTO photosIndexState (id, changeToken) VALUES (1, ?)", arguments: [Data([1])])
+        }
+        try CatalogSchema.migrator.migrate(queue)
+
+        try queue.write { db in
+            // No row knows its position yet: without a token, the next pass reads the whole library again.
+            #expect(try PhotosAssetEntry.fetchCount(db) == 0)
+            #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM photosAssetKeyword") == 0)
+            #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM photosIndexState") == 0)
+            try PhotosAssetEntry(id: "a", fileName: "a.jpg", captureDate: nil, isRAW: false,
+                                 location: GeoCoordinate(latitude: 48.8566, longitude: 2.3522)).save(db)
+            #expect(try PhotosAssetEntry.fetchOne(db, key: "a")?.location?.longitude == 2.3522)
         }
     }
 

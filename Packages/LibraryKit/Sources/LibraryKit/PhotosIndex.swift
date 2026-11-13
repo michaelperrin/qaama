@@ -37,7 +37,8 @@ public final class PhotosIndex {
     public private(set) var snapshot = PhotosIndexSnapshot()
     /// Set while a pass long enough to matter is running.
     public private(set) var progress: IndexingProgress?
-    /// Bumped when a pass changed what `search` reads (names, keywords): searches in use are run again.
+    /// Bumped when a pass changed what `search` and `locatedAssets` read (names, keywords, positions):
+    /// searches and maps in use are run again.
     public private(set) var contentVersion = 0
 
     /// Names come from PhotoKit's own database at the same speed whatever the priority (0.4 ms per
@@ -94,6 +95,11 @@ public final class PhotosIndex {
     /// among those indexed so far; nil when `text` has no word.
     public func search(_ text: String) async throws -> [String]? {
         try await store.search(text)
+    }
+
+    /// The assets indexed so far that have a position (see `PhotosIndexStore.locatedAssets`).
+    public func locatedAssets() async throws -> [LocatedAsset] {
+        try await store.locatedAssets()
     }
 
     /// Runs a pass, or asks for one more when one is already running: the library changed meanwhile.

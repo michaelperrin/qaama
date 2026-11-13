@@ -4,6 +4,8 @@ import SwiftUI
 /// Sort and filter controls for a library, as toolbar items. Controls the source doesn't support are hidden.
 struct LibraryQueryToolbar: ToolbarContent {
     let source: any LibrarySource
+    /// False next to the map, where the order of the photos shows nowhere.
+    var showsSort = true
 
     private var query: Binding<LibraryQuery> {
         Binding(get: { source.query }, set: { source.query = $0 })
@@ -14,25 +16,27 @@ struct LibraryQueryToolbar: ToolbarContent {
     }
 
     var body: some ToolbarContent {
-        ToolbarItem {
-            Menu {
-                Picker("Sort by", selection: query.sort) {
-                    Text("Capture Date").tag(LibraryQuery.Sort.captureDate)
-                    Text("Modification Date").tag(LibraryQuery.Sort.modificationDate)
-                    if supports.contains(.sortByRating) {
-                        Text("Rating").tag(LibraryQuery.Sort.rating)
+        if showsSort {
+            ToolbarItem {
+                Menu {
+                    Picker("Sort by", selection: query.sort) {
+                        Text("Capture Date").tag(LibraryQuery.Sort.captureDate)
+                        Text("Modification Date").tag(LibraryQuery.Sort.modificationDate)
+                        if supports.contains(.sortByRating) {
+                            Text("Rating").tag(LibraryQuery.Sort.rating)
+                        }
+                        if supports.contains(.sortByFileName) {
+                            Text("File Name").tag(LibraryQuery.Sort.fileName)
+                        }
                     }
-                    if supports.contains(.sortByFileName) {
-                        Text("File Name").tag(LibraryQuery.Sort.fileName)
-                    }
+                    .pickerStyle(.inline)
+                    Divider()
+                    Toggle("Ascending", isOn: query.ascending)
+                } label: {
+                    Label("Sort", systemImage: "arrow.up.arrow.down")
                 }
-                .pickerStyle(.inline)
-                Divider()
-                Toggle("Ascending", isOn: query.ascending)
-            } label: {
-                Label("Sort", systemImage: "arrow.up.arrow.down")
+                .help("Sort order")
             }
-            .help("Sort order")
         }
         ToolbarItem {
             Menu {
@@ -72,14 +76,7 @@ struct LibraryQueryToolbar: ToolbarContent {
                 }
                 if !source.query.isUnfiltered {
                     Divider()
-                    Button("Clear Filters") {
-                        var cleared = LibraryQuery()
-                        cleared.sort = source.query.sort
-                        cleared.ascending = source.query.ascending
-                        cleared.folderPath = source.query.folderPath
-                        cleared.includesPairedJPEGs = source.query.includesPairedJPEGs
-                        source.query = cleared
-                    }
+                    Button("Clear Filters") { source.query = source.query.clearingFilters }
                 }
             } label: {
                 Label("Filter", systemImage: source.query.isUnfiltered ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")

@@ -77,6 +77,15 @@ can feed a website one day. Dates are when the feature landed.
   editor's Info tab: drag to move, pinch, scroll or use the zoom buttons, and a button brings
   the map back onto the photo. In Photos it uses the location Photos stores, so it shows even
   when the original is in iCloud (2026-11-06).
+- Map of the Photos library: the toolbar's Grid / Map switch (View › as Grid, as Map) replaces
+  the thumbnails with a map of where the photos were taken, in the whole library or in an
+  album. Neighboring photos are grouped under one thumbnail (the most recent photo) with their
+  number; zooming in splits the groups, zooming out merges them. The map follows the search and
+  the filters, and the window's subtitle says how many of the listed photos have a location. A
+  click selects the photos of a group (the Info panel and the Image menu then act on them), a
+  double click lists them in the grid, with a Back button to the map where it was left.
+  Locations come from Photos' database, so photos whose original is in iCloud are on the map
+  too (2026-11-13).
 - Show in Finder for photos of a folder: File › Show in Finder (⇧⌘R) for the grid's selection or
   the photo open in the editor, the thumbnails' context menu (the whole selection, selected in
   its Finder window), and the ellipsis button next to the file name in the Info panel, next to

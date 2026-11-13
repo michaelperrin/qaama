@@ -86,6 +86,22 @@ struct PhotosFetchPredicateTests {
         #expect(PhotosFetchPredicate.make(query: query, native: [], index: PhotosIndexSnapshot()) == nil)
     }
 
+    @Test func aGroupPickedOnTheMapNarrowsEveryOtherList() {
+        var query = LibraryQuery()
+        query.onlyAssetIDs = ["raw", "jpeg", "pair-jpeg"]
+        // The twin of the group stays hidden like any other.
+        #expect(matches(query, index: index) == ["raw", "jpeg"])
+        // Without an index too: the group doesn't come from it.
+        #expect(matches(query, index: nil) == ["raw", "pair-jpeg", "jpeg"])
+
+        query.rawOnly = true
+        #expect(matches(query, index: index) == ["raw"])
+        query.rawOnly = false
+        query.searchText = "anything"
+        #expect(matches(query, index: index, search: ["jpeg", "pair-raw"]) == ["jpeg"])
+        #expect(PhotosFetchPredicate.make(query: query, native: [], index: index, searchMatches: ["pair-raw"]) == nil)
+    }
+
     @Test func withoutAnIndexOnlyNativeFiltersApply() {
         var query = LibraryQuery()
         query.rawOnly = true

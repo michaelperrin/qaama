@@ -20,6 +20,33 @@ public final class SampleLibrarySource: LibrarySource {
         didSet { refresh() }
     }
 
+    public var hasPlaces: Bool {
+        true
+    }
+
+    public private(set) var placesVersion = 0
+
+    public func locatedAssets() async -> [LocatedAsset] {
+        var listing = query
+        listing.onlyAssetIDs = nil
+        return byID.values.filter { listing.matches($0) }.compactMap { asset in
+            Self.location(of: asset.id).map { LocatedAsset(id: asset.id, coordinate: $0, captureDate: asset.creationDate) }
+        }
+    }
+
+    /// Every other photo was "taken" somewhere, in one of a few French cities in turn: previews show
+    /// the Info panel with and without a map, and the map of the library with several groups.
+    static func location(of id: LibraryAsset.ID) -> GeoCoordinate? {
+        guard let number = Int(id.dropFirst("sample-".count)), number.isMultiple(of: 2) else { return nil }
+        return places[(number / 2) % places.count]
+    }
+
+    private static let places = [
+        GeoCoordinate(latitude: 48.8584, longitude: 2.2945), GeoCoordinate(latitude: 45.7640, longitude: 4.8357),
+        GeoCoordinate(latitude: 43.2965, longitude: 5.3698), GeoCoordinate(latitude: 44.8378, longitude: -0.5792),
+        GeoCoordinate(latitude: 48.3904, longitude: -4.4861),
+    ]
+
     private var byID: [String: LibraryAsset] = [:]
     private var images: [String: CGImage] = [:]
     private var recipes: [String: Data] = [:]
@@ -109,8 +136,7 @@ public final class SampleLibrarySource: LibrarySource {
         return AssetDetails(fileName: "\(asset.id).jpg", metadata: ImageMetadata(
             pixelWidth: asset.pixelWidth, pixelHeight: asset.pixelHeight, captureDate: captureDate(for: asset),
             cameraMake: "Qaama", cameraModel: "Sample", lens: "35mm F2", iso: 200, exposureTime: 1 / 250, aperture: 2.8, focalLength: 35,
-            // Every other photo was "taken" in Paris, so previews show the panel with and without a map.
-            location: (Int(asset.id.dropFirst("sample-".count)) ?? 0).isMultiple(of: 2) ? GeoCoordinate(latitude: 48.8584, longitude: 2.2945) : nil
+            location: Self.location(of: asset.id)
         ))
     }
 
@@ -127,6 +153,8 @@ public final class SampleLibrarySource: LibrarySource {
         guard var asset = byID[id] else { return }
         change(&asset)
         byID[id] = asset
+        // A decision may take the photo in or out of the listing the map shows.
+        placesVersion += 1
         refresh()
     }
 

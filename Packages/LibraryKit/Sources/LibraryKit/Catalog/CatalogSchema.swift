@@ -135,6 +135,20 @@ nonisolated enum CatalogSchema {
                 t.add(column: "captureDateOverride", .datetime)
             }
         }
+
+        migrator.registerMigration("v6-photos-location") { db in
+            // The map needs where every photo was taken. Read with the name in the same pass and stale
+            // with it, hence columns of `photosAsset` rather than a table of their own; the index starts
+            // over to fill them (half a minute in the background for 74,000 photos).
+            // Foreign keys are off during a migration: the keywords don't go with their asset by themselves.
+            try db.execute(sql: "DELETE FROM photosAssetKeyword")
+            try db.execute(sql: "DELETE FROM photosAsset")
+            try db.execute(sql: "DELETE FROM photosIndexState")
+            try db.alter(table: "photosAsset") { t in
+                t.add(column: "latitude", .double)
+                t.add(column: "longitude", .double)
+            }
+        }
         return migrator
     }
 }

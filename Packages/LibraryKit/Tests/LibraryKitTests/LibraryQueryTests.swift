@@ -17,6 +17,21 @@ struct LibraryQueryTests {
         #expect([old, new].sorted(by: query.areInIncreasingOrder).map(\.id) == ["new", "old"])
     }
 
+    @Test func aGroupOfPhotosIsAScopeThatClearingFiltersKeeps() {
+        var query = LibraryQuery()
+        query.onlyAssetIDs = ["a"]
+        query.folderPath = "Trip"
+        query.sort = .rating
+        #expect(query.isUnfiltered)
+        #expect(query.matches(asset("a")) && !query.matches(asset("b")))
+
+        query.minimumRating = 3
+        query.searchText = "sea"
+        #expect(!query.isUnfiltered)
+        let cleared = query.clearingFilters
+        #expect(cleared.isUnfiltered && cleared.onlyAssetIDs == ["a"] && cleared.folderPath == "Trip" && cleared.sort == .rating)
+    }
+
     @Test func filtersInMemory() {
         var query = LibraryQuery()
         query.minimumRating = 3
