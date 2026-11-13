@@ -387,9 +387,61 @@ Bibliothèque
         glisser-déposer (départ depuis la mosaïque à côté des clics de sélection, surbrillance
         et dépôt sur la ligne d'album), le dialogue de nom et la fluidité des menus avec 787
         albums.
+      - Recherche d'un album par son nom, fait le 12/11/2026 à la demande de Michaël (787
+        albums : l'arborescence du menu est longue à parcourir) : Add to Album › Search… en tête
+        du sous-menu (menu contextuel et menu Image, ⌥⌘A) ouvre une feuille avec le champ en
+        haut et les albums trouvés dessous, tous dossiers confondus, le chemin des dossiers en
+        gris à droite (icônes d'album et de dossier de la barre latérale, en gris, ajoutées le
+        jour même : la liste en texte seul était « un peu austère »). Le clavier reste dans le champ : flèches pour déplacer la surbrillance,
+        Retour pour ajouter, clic sur une ligne pour la choisir. L'album affiché est écarté.
+        - Pourquoi pas un champ dans le menu lui-même : un `Menu` SwiftUI n'accepte pas de champ
+          de saisie, et le SDK 27.2 n'ajoute rien à `NSMenu` pour ça. Il faudrait reconstruire le
+          menu contextuel en AppKit (`NSMenuItem.view`) et y perdre ce qui a été réglé le 6/11.
+        - Règle de recherche, celle de `SearchText` (sans casse ni accents, par morceau de mot) :
+          chaque mot tapé doit se trouver dans le titre de l'album ou dans le nom d'un de ses
+          dossiers. Ordre : titre qui commence par la saisie, puis mots en début de mot, puis
+          n'importe où dans le titre, puis trouvé grâce à un dossier ; par titre à rang égal.
+        - Architecture : `PhotosAlbumSearch` (index plié et trié une fois, interrogé à chaque
+          frappe) et `PhotosAlbumPickerModel` (saisie, résultats, surbrillance) dans LibraryKit,
+          `AlbumSearchView` dans l'app. La liste est dessinée à la main (`LazyVStack`) : une
+          `List` prendrait le focus pour montrer sa sélection.
+        - Le champ est le champ de recherche du système (`SearchField`, un `NSSearchField` :
+          SwiftUI ne le propose que par `.searchable`, lié à une barre d'outils). Le premier jet,
+          un `TextField` nu dans un rectangle gris, était une imitation : pas de bouton d'effacement
+          et une couleur à moi, ce que Michaël a relevé. Flèches et Retour passent par le délégué
+          (`doCommandBy`) ; Échap efface d'abord la saisie, puis ferme, comme partout dans macOS.
+        - Bogue vu par Michaël le 13/11/2026 sur sa bibliothèque : des titres tronqués à côté
+          d'un vide. Cause : `frame(maxWidth:)` sur le chemin des dossiers prend toute la largeur
+          permise même quand le chemin est court (mes données de sonde n'avaient que des chemins
+          longs). Remplacé par un `Layout` (`TitleAndDetailLayout`) : le chemin reçoit ce qu'il
+          demande jusqu'à un plafond, le titre le reste, et ce que le titre laisse revient au
+          chemin. Leçon : sonder avec des données de la forme de celles de Michaël (titres longs,
+          chemins courts « 2010 › 05 - Mai »).
+        - Relu les pages Sheets, Lists and tables et Buttons des guidelines le 13/11/2026 :
+          conforme pour la feuille (tâche courte, Cancel et un seul bouton mis en avant, verbe),
+          l'ellipse au milieu des titres et l'icône en tête de ligne. Écart connu : la liste
+          est dessinée à la main (couleurs de sélection du système reprises).
+        - Feuille redimensionnable (la page Sheets le conseille quand le contenu y gagne), sa
+          taille retenue dans les préférences. Sonde : un cadre flexible ne suffit pas (la feuille
+          garde 470 pt de large et n'est pas redimensionnable) ; il faut en plus
+          `.presentationSizing(.fitted)`, et la taille idéale devient la taille d'ouverture
+          (bornes 380 × 280 à 900 × 1000 reprises par la fenêtre de la feuille). Non vérifié à
+          l'écran : le redimensionnement à la souris.
+        - Question de Michaël : réutiliser le champ de recherche du menu Aide ? Non : AppKit ne
+          l'installe que dans le menu Aide (`NSApplication.helpMenu`). On peut seulement y ajouter
+          des résultats (`NSUserInterfaceItemSearching`). En revanche il cherche déjà dans tous
+          les éléments de la barre de menus, donc en principe dans les albums du menu Image ; non
+          essayé.
+        - Mesure (Debug, 888 albums dans 222 dossiers) : index construit en 9 ms, une frappe
+          1 à 2 ms.
+        - Vérifié : 10 tests, et par sonde dans une vraie feuille hors écran : le focus arrive
+          dans le champ, les flèches déplacent la surbrillance, Retour ajoute une seule fois (par
+          le champ comme par le bouton par défaut), Échap efface puis ferme, captures claires et
+          sombres avec titres et dossiers longs. Non vérifié à
+          l'écran : l'élément Search… dans les deux menus et son raccourci.
       - Reste : renommer et déplacer un album ou un dossier, supprimer un dossier, glisser sur
         Favoris, faire suivre le jumeau JPEG d'un RAW ajouté à un album, raccourci pour Remove
-        from Album.
+        from Album, filtrer les albums de la barre latérale par leur nom.
 - [ ] Grille performante (vignettes en cache, prefetch), tri et filtres (date, type,
       RAW, édité/non édité, favoris), recherche simple.
       Fait le 30/10/2026 : tri (dates, note, nom), filtres (note, drapeau, modifié, RAW,

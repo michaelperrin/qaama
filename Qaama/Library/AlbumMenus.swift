@@ -12,14 +12,19 @@ struct AlbumsAction {
     /// when it is the one on screen.
     let lastAlbum: PhotosAlbum?
     let add: (PhotosAlbum, [LibraryAsset.ID]) -> Void
+    /// Asks which album by searching for its name, then adds these photos to it.
+    let search: ([LibraryAsset.ID]) -> Void
     /// Asks for a name, then creates an album holding these photos.
     let create: ([LibraryAsset.ID]) -> Void
     /// Removes photos from the album on screen; nil where there is none to remove them from.
     var remove: (([LibraryAsset.ID]) -> Void)?
 }
 
-/// The album items of a menu: Add to Album with the album hierarchy, Add to the last album, Remove
-/// from Album. The photos they act on are looked up when an item is chosen.
+/// The album items of a menu: Add to Album with a search by name and the album hierarchy, Add to
+/// the last album, Remove from Album. The photos they act on are looked up when an item is chosen.
+///
+/// A menu can't hold a text field in SwiftUI: Search… opens the search in a sheet instead
+/// (`AlbumSearchView`).
 ///
 /// A view of its own on purpose: SwiftUI runs a context menu's closure for every tile on every update
 /// of the grid, but evaluates the body of a view inside it only when the menu opens (measured with
@@ -44,6 +49,8 @@ struct AlbumMenuItems: View {
         let _ = pickTarget.pick = { album in albums?.add(album, targets()) }
         Menu("Add to Album") {
             if let albums {
+                Button("Search…") { albums.search(targets()) }
+                    .keyboardShortcut(isMenuBar ? Self.searchShortcut : nil)
                 Button("New Album…") { albums.create(targets()) }
                 Divider()
                 AlbumTreeItems(nodes: albums.list.tree, disabledAlbumID: albums.currentAlbumID, target: pickTarget)
@@ -69,6 +76,8 @@ struct AlbumMenuItems: View {
 
     /// ⌃⌘A, as in Photos. Held by the menu bar item only: a second holder would fire too.
     private static let addToLastShortcut = KeyboardShortcut("a", modifiers: [.control, .command])
+    /// ⌥⌘A, next to it. Held by the menu bar item only, for the same reason.
+    private static let searchShortcut = KeyboardShortcut("a", modifiers: [.option, .command])
 
     private var isMenuBar: Bool {
         if case .menuBar = placement {

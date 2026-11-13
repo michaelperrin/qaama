@@ -16,6 +16,13 @@ public nonisolated struct PhotosAlbum: Hashable, Sendable, Identifiable {
     public let kind: Kind
     /// PhotoKit's estimate; -1 when unknown.
     public let estimatedCount: Int
+
+    public init(id: String, title: String, kind: Kind, estimatedCount: Int) {
+        self.id = id
+        self.title = title
+        self.kind = kind
+        self.estimatedCount = estimatedCount
+    }
 }
 
 /// A node of the user's album hierarchy: an album, or a folder of albums and folders.

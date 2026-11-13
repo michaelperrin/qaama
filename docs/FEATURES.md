@@ -105,6 +105,12 @@ can feed a website one day. Dates are when the feature landed.
   - Add photos to an album by dragging them from the grid onto the album in the sidebar, or with
     Add to Album in the thumbnails' context menu and in the Image menu, which lists the albums
     in their folders and starts with New Album… to make one from the selection.
+  - Add to Album › Search… (⌥⌘A in the Image menu) finds an album by typing part of its name, or
+    of the name of a folder it is in: every folder is searched at once, without case or accents,
+    and several words narrow the results ("2024 japan"). The best match comes first; Return adds
+    the photos to it, the arrow keys or a click choose another (2026-11-12). The search sheet
+    can be resized to show long names in full, and opens again at the size it was given
+    (2026-11-13).
   - Add to “<album>” (⌃⌘A) sends photos to the album last used, remembered between sessions.
   - Remove from Album, in an album, for the selected photos; they stay in the library.
   - The Image menu items act on the grid's selection or on the photo open in the editor.

@@ -20,6 +20,8 @@ struct LibraryContentView: View {
     @State private var decisionError: String?
     /// The name being asked for a new album made from photos.
     @State private var albumDialog: AlbumDialog?
+    /// The search for the album to add photos to, opened from the Add to Album menus.
+    @State private var albumSearch: AlbumSearchRequest?
     /// The month at the top of the grid and the jumps asked from the toolbar's month button.
     @State private var navigator = TimelineNavigator()
     @Environment(\.undoManager) private var undoManager
@@ -45,6 +47,14 @@ struct LibraryContentView: View {
             // Above both the grid and the editor: the Image menu opens it from either.
             .sheet(item: $dateEdit) { model in
                 CaptureDateEditView(model: model, undoManager: undoManager) { dateEdit = nil }
+            }
+            .sheet(item: $albumSearch) { request in
+                AlbumSearchView(model: request.model, photoCount: request.assetIDs.count, onPick: { album in
+                    // Return can ask twice, through the field and through the Add button.
+                    guard albumSearch?.id == request.id else { return }
+                    albumSearch = nil
+                    add(request.assetIDs, to: album)
+                }, onCancel: { albumSearch = nil })
             }
     }
 
@@ -161,6 +171,7 @@ struct LibraryContentView: View {
         return AlbumsAction(list: albums.list, currentAlbumID: albums.current?.id,
                             lastAlbum: last?.id == albums.current?.id ? nil : last,
                             add: { album, ids in add(ids, to: album) },
+                            search: { ids in searchAlbum(for: ids) },
                             create: { ids in albumDialog = .newAlbum(folderID: nil, assetIDs: ids) },
                             remove: albums.current.map { album in { ids in remove(ids, from: album) } })
     }
@@ -177,6 +188,12 @@ struct LibraryContentView: View {
         }
         guard !selection.isEmpty else { return nil }
         return AlbumsCommand(action: action) { Array(selection) }
+    }
+
+    /// Opens the search by name among the albums as they are now, the one on screen left out.
+    private func searchAlbum(for assetIDs: [LibraryAsset.ID]) {
+        guard let albums, !assetIDs.isEmpty else { return }
+        albumSearch = AlbumSearchRequest(assetIDs: assetIDs, model: PhotosAlbumPickerModel(tree: albums.list.tree, excluding: albums.current?.id))
     }
 
     private func add(_ assetIDs: [LibraryAsset.ID], to album: PhotosAlbum) {
