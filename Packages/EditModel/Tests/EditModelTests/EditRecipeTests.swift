@@ -163,6 +163,29 @@ struct MonochromeTests {
         #expect(AdjustmentSet(grain: 2).grain == 1 && AdjustmentSet(grain: -1).grain == nil)
     }
 
+    @Test func lutCountsTowardIdentityOnlyWithATableAndSomeIntensity() {
+        var set = AdjustmentSet()
+        set.lut = LUT()
+        #expect(set.isIdentity, "a switch on without a table changes nothing")
+        set.lut?.name = "Film"
+        #expect(!set.isIdentity)
+        set.lut?.intensity = 0
+        #expect(set.isIdentity)
+        set.lut?.intensity = 0.5
+        set.lut?.isEnabled = false
+        #expect(set.isIdentity, "switched off, the table is kept but not applied")
+        #expect(LUT(name: "Film", intensity: 3).intensity == 1 && LUT(name: "Film", intensity: -1).intensity == 0)
+    }
+
+    @Test func lutRoundTripsAndIsDroppedWithoutATable() throws {
+        let lut = LUT(isEnabled: false, name: "Kodak 2383", intensity: 0.6)
+        let reloaded = try EditRecipe(jsonData: EditRecipe(adjustments: AdjustmentSet(exposure: 1, lut: lut)).jsonData())
+        #expect(reloaded.global.lut == lut)
+        #expect(AdjustmentSet(lut: LUT()).lut == nil, "a switch left on without a table is stored as absent")
+        let json = #"{"version":2,"layers":[{"id":"00000000-0000-0000-0000-000000000001","isEnabled":true,"adjustments":{"lut":{"isEnabled":true,"name":"Film","intensity":7}}}]}"#
+        #expect(try EditRecipe(jsonData: Data(json.utf8)).global.lut == LUT(name: "Film"))
+    }
+
     @Test func monochromeSwitchedOffKeepsItsMix() throws {
         var set = AdjustmentSet(monochrome: Monochrome(red: 0.5, blue: -0.25))
         set.monochrome?.isEnabled = false

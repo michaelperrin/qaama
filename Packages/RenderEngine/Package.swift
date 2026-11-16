@@ -22,9 +22,18 @@ let package = Package(
                 .enableUpcomingFeature("MemberImportVisibility"),
             ]
         ),
+        // Reading `.cube` LUT files and fitting them to a grid: loops over hundreds of thousands of
+        // numbers, optimized in Debug too for the same reason. Pure Swift, no actor isolation.
+        .target(
+            name: "CubeLUT",
+            swiftSettings: [
+                .unsafeFlags(["-O"], .when(configuration: .debug)),
+                .enableUpcomingFeature("MemberImportVisibility"),
+            ]
+        ),
         .target(
             name: "RenderEngine",
-            dependencies: ["EditModel", "ImageIOKit", "HealingFill"],
+            dependencies: ["EditModel", "ImageIOKit", "HealingFill", "CubeLUT"],
             swiftSettings: [
                 .defaultIsolation(MainActor.self),
                 .enableUpcomingFeature("MemberImportVisibility"),
@@ -33,6 +42,10 @@ let package = Package(
         .testTarget(
             name: "HealingFillTests",
             dependencies: ["HealingFill"]
+        ),
+        .testTarget(
+            name: "CubeLUTTests",
+            dependencies: ["CubeLUT"]
         ),
         .testTarget(
             name: "RenderEngineTests",

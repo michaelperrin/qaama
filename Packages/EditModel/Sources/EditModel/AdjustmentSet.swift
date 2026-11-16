@@ -47,6 +47,9 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     public var vignette: Vignette?
     /// Black and white conversion; nil until it is first switched on.
     public var monochrome: Monochrome?
+    /// A look from the LUT library, after black and white (so a table can tone it) and before grain
+    /// and vignette; nil until it is first switched on or given a table.
+    public var lut: LUT?
 
     /// The groups switched off, in the order of `AdjustmentGroup`; nil when all are on, so documents
     /// that switch nothing off are what they were before the switches existed. Read and written
@@ -59,7 +62,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     public init(temperature: Double? = nil, tint: Double? = nil, exposure: Double? = nil, highlights: Double? = nil,
                 shadows: Double? = nil, blackPoint: Double? = nil, contrast: Double? = nil, vibrance: Double? = nil,
                 saturation: Double? = nil, sharpness: Double? = nil, noiseReduction: Double? = nil, dehaze: Double? = nil,
-                grain: Double? = nil, vignette: Vignette? = nil, monochrome: Monochrome? = nil)
+                grain: Double? = nil, vignette: Vignette? = nil, monochrome: Monochrome? = nil, lut: LUT? = nil)
     {
         self.temperature = temperature
         self.tint = tint
@@ -76,6 +79,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
         self.grain = grain
         self.vignette = vignette
         self.monochrome = monochrome
+        self.lut = lut
         clamp()
     }
 
@@ -130,7 +134,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     public var isIdentity: Bool {
         let set = effective
         return Self.all.allSatisfy { (set[keyPath: $0] ?? 0) == 0 } && (set.curves?.isIdentity ?? true) && (set.hsl?.isIdentity ?? true)
-            && monochrome?.isEnabled != true && (vignette?.isNeutral ?? true)
+            && monochrome?.isEnabled != true && (vignette?.isNeutral ?? true) && (lut?.isNeutral ?? true)
     }
 
     /// Brings every value back into its range and stores neutral values as absent, so equal edits give
@@ -148,6 +152,8 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
             hsl = nil
         }
         vignette = vignette?.clamped
+        // A switch left on without a table is nothing to keep.
+        lut = lut?.name == nil ? nil : lut?.clamped
         // The switches in their one order, each listed once, as `setEnabled` writes them.
         if let listed = disabledGroups {
             let disabled = AdjustmentGroup.allCases.filter(listed.contains)

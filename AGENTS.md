@@ -32,7 +32,8 @@ Packages/
   EditorKit/      EditorModel: editing workflow (open, preview, undo, save, export), testable without views
   ImageIOKit/     ImageIO and Quick Look: headers (EXIF), thumbnails, full-size decoding
   RenderEngine/   Core Image on Metal: decoding (CIRAWFilter for RAW), pipeline, canvas, export,
-                  and the retouch fill (target HealingFill, always optimized)
+                  the retouch fill and the reading of LUT files (targets HealingFill and CubeLUT,
+                  always optimized), and the LUT library
   LibraryKit/     Sources of photos (Photos library, folders), SQLite catalog (GRDB), sidecars, caches
 Experiments/      Throwaway feasibility prototypes, never linked into the app
 ```
@@ -55,6 +56,9 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   every photo of every library was tried and dropped: see `docs/PLAN.md` before bringing it back.
 - Edits are recipes, never pixels: sidecar `<file>.qaama` next to folder images,
   `PHAdjustmentData` plus a rendered JPEG for Photos. Reset means removing the recipe.
+- A LUT is named in the recipe, never copied into it: the `.cube` files live in the app's
+  library (`LUTLibrary`, Application Support), which every render reads by name. A recipe whose
+  table is gone renders without it.
 - Retouches are strokes in the recipe, in the original's coordinates. What fills them is computed
   by `RetouchRenderer` once per stroke, off the main actor, and only composited by the pipeline;
   each fill depends on the retouches before it.
@@ -126,7 +130,8 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   several times slower than Release. Measure with a temporary test before and after.
 - Pure Swift loops over pixels are hundreds of times slower without optimization (measured:
   38 s against 59 ms for one retouch fill). Code of that kind goes into a small target of its
-  own compiled with `-O` in Debug too, as `HealingFill` is in the RenderEngine package.
+  own compiled with `-O` in Debug too, as `HealingFill` and `CubeLUT` are in the RenderEngine
+  package.
 
 ## Tests
 

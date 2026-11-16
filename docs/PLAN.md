@@ -1176,6 +1176,57 @@ Bibliothèque
       Fait le 30/10/2026 : préréglages en fichiers JSON dans Application Support (appliquer,
       enregistrer, supprimer), copier/coller des ajustements entre photos (le recadrage reste
       propre à chaque photo). Reste : import/export de préréglages, dossiers de préréglages.
+- [x] LUT, demandé par Michaël le 16/11/2026 (« un peu comme dans Photomator », avec un aperçu
+      des LUT avant d'en choisir un, et des fichiers importés qui restent dans l'appli).
+      Fait le 16/11/2026.
+      - Recette : `AdjustmentSet.lut` (`LUT` : interrupteur, nom de la table, intensité 0 à 1),
+        donc par calque et masquable comme le reste. La recette porte le **nom** de la table, pas
+        ses couleurs (36 000 à 275 000 triplets : trop pour un sidecar ou `PHAdjustmentData`).
+        Limite assumée : le sidecar n'est plus portable seul, il faut aussi le fichier `.cube`.
+        Une table absente de la bibliothèque laisse la photo telle quelle, le menu l'affiche
+        « (Missing) », et la réimporter sous le même nom rend son rendu à la photo.
+      - Bibliothèque : `LUTLibrary` (RenderEngine) garde les `.cube` d'origine dans
+        `Application Support/LUTs`, un fichier par table, nom du fichier = nom de la table (même
+        principe que les préréglages et les filigranes ; le dossier se complète à la main).
+        L'import lit le fichier en entier pour le refuser tout de suite s'il n'est pas utilisable
+        (erreur typée, affichée telle quelle) ; réimporter le même fichier ne crée pas de
+        doublon, un autre fichier du même nom prend un compteur. Les rendus (canevas, export,
+        vignettes, lots) passent tous par `LUTLibrary.shared` : aucun appelant à modifier, et un
+        paramètre `luts:` pour les tests. Cache mémoire borné à 64 Mo, dernières tables servies.
+      - Format : `.cube` 3D seulement (Resolve, Adobe), avec `DOMAIN_MIN/MAX` et
+        `LUT_3D_INPUT_RANGE` (table réajustée sur 0…1), commentaires, titre, BOM, fins de ligne
+        Windows. Les LUT 1D sont refusés avec un message clair. Autres formats (`.3dl`, images
+        HALD) : à voir si le besoin se présente.
+      - Lecture : cible `CubeLUT` du paquet RenderEngine, Swift pur, compilée en `-O` même en
+        Debug comme `HealingFill`. Mesuré : table de 65 points (275 000 lignes, 6,6 Mo de texte)
+        lue en 14 ms, donnée Core Image comprise 15 ms ; une table de 33 points en 2 ms environ.
+        Assez rapide pour lire la table au premier survol, sans tâche de fond. Au-delà de 65
+        points, la table est rééchantillonnée à 65 (trilinéaire) : `CIColorCube` accepte 128
+        (vérifié sur macOS 27), mais ce serait 34 Mo de flottants par table.
+      - Rendu : `CIColorCubeWithColorSpace` en sRGB (les LUT photo sont faits pour des valeurs
+        d'affichage), puis `CIMix` avec l'image d'avant pour l'intensité : le mélange reste sur
+        le GPU, rien n'est recalculé par mouvement de curseur. Ordre : après le noir et blanc
+        (un LUT peut le virer en sépia), avant le grain et la vignette. Mesuré sur GPU à
+        24 Mpx, cache de Core Image coupé : 4,5 ms sans LUT, 4,7 ms avec une table de 33 points,
+        6,4 ms avec une table de 65 points (dont 2 ms à construire le graphe : Core Image
+        relit les 4,4 Mo de la table).
+      - Interface : interrupteur, menu local, bouton « … » (importer, montrer dans le Finder,
+        supprimer), curseur d'intensité. Le menu est un vrai `NSPopUpButton` plutôt qu'une liste
+        maison : son délégué (`menu(_:willHighlight:)`) dit quel élément est survolé, à la souris
+        comme aux flèches du clavier, et le canevas montre ce LUT en taille réelle avant tout
+        choix (`EditorModel.previewLUT`, hors recette, hors annulation, non observé par les
+        vues). Choisir est une seule étape annulable (`chooseLUT`). Bibliothèque vide : un
+        bouton « Import LUTs… » à la place du menu. Importer un seul fichier l'applique à la
+        photo ; en importer plusieurs les ajoute seulement au menu.
+      - Écarté : des vignettes par LUT dans une liste ou un popover. Le survol du menu donne
+        l'aperçu en grand, sur la vraie photo, sans rien construire de plus ; à rouvrir si la
+        bibliothèque devient trop longue pour un menu (dossiers, recherche, favoris).
+      - Vérifié hors écran (sonde) : mise en page de la section dans une colonne de 280 pt, nom
+        long tronqué sans élargir la colonne, états vide / choisi / manquant, survol puis choix
+        par le délégué. **À vérifier dans l'appli** : l'aperçu pendant que le menu est ouvert
+        (le suivi du menu par le système ne se reproduit pas hors écran).
+      - Reste : renommer une table, ranger par dossiers, exporter les réglages en LUT
+        (inventaire Photomator), glisser-déposer un `.cube` sur la section.
 - [x] Persistance : sidecar JSON pour les fichiers, `PHAdjustmentData` pour Photos (29/10/2026).
 - [x] Zoom du canevas, demandé par Michaël le 8/11/2026 : curseur dans la barre d'outils, au même
       endroit que celui de la mosaïque, logarithmique sur la plage 0,25–16 du canevas, avec deux

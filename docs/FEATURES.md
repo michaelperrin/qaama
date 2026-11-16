@@ -198,6 +198,13 @@ can feed a website one day. Dates are when the feature landed.
   (from a rounded rectangle that follows the frame to the fitted oval to a circle) and highlights
   (bright areas resist the darkening). It follows the crop: the shape is fitted to the final
   frame (2026-11-11).
+- LUT: looks from `.cube` files (3D LUTs, the format of DaVinci Resolve and Adobe), with their
+  own switch and an intensity slider. Open the menu and move over the names, with the pointer or
+  the arrow keys: the photo shows each look at full size before one is chosen. Imported files
+  are copied into the app's library and stay available for every photo; they can be deleted
+  from the same place, or added by hand to the folder the library shows in the Finder. Works
+  inside masks, comes after black and white (a LUT can tone it) and before grain and vignette;
+  a photo whose LUT was deleted says so and shows without it (2026-11-16).
 - Dehaze: removes atmospheric haze estimated from the photo itself (dark channel prior), or adds
   some with negative values; works inside masks like every adjustment (2026-10-30).
 

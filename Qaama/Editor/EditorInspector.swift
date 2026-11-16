@@ -39,6 +39,7 @@ enum InspectorTab: String, CaseIterable, Identifiable {
 struct EditorInspector: View {
     let model: EditorModel
     let presets: PresetStore
+    let luts: LUTStore
     @Binding var tab: InspectorTab
     @AppStorage(InspectorControls.restingTabKey) private var restingTab = InspectorTab.adjustments
 
@@ -52,7 +53,7 @@ struct EditorInspector: View {
             case .info: InfoInspector(model: model)
             case .crop: CropInspector(model: model) { tab = restingTab }
             case .retouch: RetouchInspector(model: model) { tab = restingTab }
-            case .adjustments: AdjustmentsInspector(model: model, presets: presets)
+            case .adjustments: AdjustmentsInspector(model: model, presets: presets, luts: luts)
             }
         }
         .disabled(!model.isOpen)
@@ -156,6 +157,6 @@ struct InspectorTabPicker: View {
 
 #Preview {
     EditorInspector(model: EditorModel(assetID: "sample-1", source: SampleLibrarySource(), renderer: nil), presets: PresetStore(),
-                    tab: .constant(.adjustments))
+                    luts: LUTStore(), tab: .constant(.adjustments))
         .frame(width: EditorInspector.width, height: 500)
 }

@@ -22,6 +22,7 @@ struct EditorView: View {
 
     @State private var exportModel: ExportModel?
     @State private var presets = PresetStore()
+    @State private var luts = LUTStore()
     @State private var inspectorTab = InspectorTab.adjustments
     /// Hiding the inspector gives the whole window to the photo.
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
@@ -53,7 +54,7 @@ struct EditorView: View {
                         if inspectorWasShown, let inspectedModel = session.settledModel {
                             // Dimmed rather than disabled while it lags: disabling would redraw
                             // every control, the very cost the lag is there to avoid.
-                            EditorInspector(model: inspectedModel, presets: presets, tab: $inspectorTab)
+                            EditorInspector(model: inspectedModel, presets: presets, luts: luts, tab: $inspectorTab)
                                 .opacity(isInspectorBehind ? 0.35 : 1)
                                 .allowsHitTesting(!isInspectorBehind)
                         }

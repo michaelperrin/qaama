@@ -6,7 +6,7 @@ import EditModel
 ///
 /// Retouches come first, on the original, then the geometry, then the layers in order; within a layer the adjustments run in the engine's fixed order:
 /// white balance, exposure, dehaze, highlights and shadows, black point, contrast, curves, color,
-/// selective color, detail, black and white, then effects.
+/// selective color, detail, black and white, the LUT, then effects.
 public nonisolated enum RenderPipeline {
     public static func apply(_ recipe: EditRecipe, to image: CIImage) -> CIImage {
         apply(recipe, to: image, geometry: recipe.geometry)
@@ -16,8 +16,9 @@ public nonisolated enum RenderPipeline {
     /// then crop. `geometry` can be overridden (the crop tool shows the straightened image without
     /// its crop); `masks` holds the precomputed images of model-based mask components, by component
     /// id, and `fills` the precomputed fills of the retouches, by retouch id (`RetouchRenderer`).
+    /// `luts` is where the tables the recipe names are read from.
     public static func apply(_ recipe: EditRecipe, to image: CIImage, geometry: Geometry?, masks: [UUID: CIImage] = [:],
-                             fills: [UUID: CIImage] = [:]) -> CIImage
+                             fills: [UUID: CIImage] = [:], luts: LUTLibrary = .shared) -> CIImage
     {
         var current = recipe.retouches.isEmpty ? image : RetouchRenderer.apply(recipe.retouches, fills: fills, to: image)
         if let geometry {
@@ -28,9 +29,9 @@ public nonisolated enum RenderPipeline {
         let frame = geometry.map { GeometryRenderer.cropRect(of: $0, in: reference.extent) }
         for (index, layer) in recipe.layers.enumerated() where layer.isEnabled && !layer.adjustments.isIdentity {
             if index == 0 || layer.mask == nil {
-                current = apply(layer.adjustments, to: current, frame: frame)
+                current = apply(layer.adjustments, to: current, frame: frame, luts: luts)
             } else if let mask = layer.mask, let maskImage = MaskRenderer.render(mask, reference: reference, resolved: masks) {
-                let adjusted = apply(layer.adjustments, to: current, frame: frame)
+                let adjusted = apply(layer.adjustments, to: current, frame: frame, luts: luts)
                 let blend = CIFilter.blendWithMask()
                 blend.inputImage = adjusted
                 blend.backgroundImage = current
@@ -46,13 +47,14 @@ public nonisolated enum RenderPipeline {
 
     /// The part of a recipe that makes the image a layer's color mixer works on: the layers before
     /// it, then its own adjustments up to the mixer, on the whole image. Rendering it shows the
-    /// hues the mixer can act on, whatever comes after (black and white, grain, vignette, later
+    /// hues the mixer can act on, whatever comes after (black and white, LUT, grain, vignette, later
     /// layers). Follows the order of `apply(_:to:frame:)`.
     public static func colorMixerUpstream(of recipe: EditRecipe, layerIndex: Int) -> EditRecipe {
         guard recipe.layers.indices.contains(layerIndex) else { return recipe }
         var adjustments = recipe.layers[layerIndex].adjustments
         adjustments.hsl = nil
         adjustments.monochrome = nil
+        adjustments.lut = nil
         adjustments.grain = nil
         adjustments.vignette = nil
         var upstream = recipe
@@ -64,7 +66,7 @@ public nonisolated enum RenderPipeline {
 
     /// One layer's adjustments. `frame` is the part of the image that will be kept, for the
     /// adjustments that depend on the final frame (the vignette); nil means the whole image.
-    public static func apply(_ adjustments: AdjustmentSet, to image: CIImage, frame: CGRect? = nil) -> CIImage {
+    public static func apply(_ adjustments: AdjustmentSet, to image: CIImage, frame: CGRect? = nil, luts: LUTLibrary = .shared) -> CIImage {
         // Without the groups that are switched off: their values stay in the recipe, unused.
         let adjustments = adjustments.effective
         var output = image
@@ -190,6 +192,11 @@ public nonisolated enum RenderPipeline {
             output = matrix.outputImage ?? output
         }
 
+        // A table the library no longer has leaves the photo as it is.
+        if let lut = adjustments.lut, !lut.isNeutral, let name = lut.name, let table = luts.table(named: name) {
+            output = applyLUT(table, intensity: lut.intensity, to: output)
+        }
+
         if let grain = adjustments.grain, grain > 0 {
             output = applyGrain(grain, to: output)
         }
@@ -198,6 +205,19 @@ public nonisolated enum RenderPipeline {
             output = VignetteRenderer.apply(vignette, to: output, frame: frame ?? output.extent)
         }
         return output
+    }
+
+    /// A look from the LUT library, read in sRGB display values as LUTs for photos are made, then
+    /// mixed with the image it was applied to. The mix is done by the GPU: a table refitted for
+    /// each intensity would cost a million floats per slider move.
+    static func applyLUT(_ table: LUTLibrary.Table, intensity: Double, to image: CIImage) -> CIImage {
+        let graded = ColorCube.apply(table.data, dimension: table.dimension, to: image)
+        guard intensity < 1 else { return graded }
+        let mix = CIFilter.mix()
+        mix.inputImage = graded
+        mix.backgroundImage = image
+        mix.amount = Float(intensity)
+        return mix.outputImage ?? graded
     }
 
     /// Film-like grain: position-based noise (so preview and export match), reduced to gray, centered on

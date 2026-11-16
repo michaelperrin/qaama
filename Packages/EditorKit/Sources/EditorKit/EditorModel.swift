@@ -171,9 +171,14 @@ public final class EditorModel {
         return recipe
     }
 
-    /// What the canvas shows: the recipe, plus the stroke being painted.
+    /// What the canvas shows: the recipe, plus the stroke being painted and the LUT being tried.
     private var previewRecipe: EditRecipe {
-        currentStroke.map { recipe(adding: $0) } ?? recipe
+        var shown = currentStroke.map { recipe(adding: $0) } ?? recipe
+        if let lutPreview, shown.layers.indices.contains(selectedLayerIndex ?? 0) {
+            let index = selectedLayerIndex ?? 0
+            shown.layers[index].adjustments.lut = lutPreview.applied(to: shown.layers[index].adjustments.lut)
+        }
+        return shown
     }
 
     // MARK: - Retouch
@@ -484,6 +489,56 @@ public final class EditorModel {
         commitChange()
     }
 
+    // MARK: - LUT
+
+    /// What the LUT menu offers for the layer being edited: no table, or one of the library's.
+    public enum LUTChoice: Hashable, Sendable {
+        case none
+        case table(String)
+
+        /// The layer's LUT setting once this is chosen: a table is switched on and keeps the
+        /// intensity already set; no table keeps the switch and the intensity for the next one.
+        func applied(to current: LUT?) -> LUT? {
+            switch self {
+            case .none:
+                guard var lut = current else { return nil }
+                lut.name = nil
+                return lut
+            case let .table(name):
+                var lut = current ?? LUT()
+                lut.name = name
+                lut.isEnabled = true
+                return lut
+            }
+        }
+    }
+
+    /// The choice the pointer is on in the LUT menu: the canvas shows it in place of the layer's
+    /// own, and the recipe is left alone. Like the stroke being painted, it stays out of what the
+    /// views observe: trying a look redraws the canvas, not the inspector.
+    @ObservationIgnored private var lutPreview: LUTChoice?
+
+    /// Shows a choice of the LUT menu on the canvas without making it; nil goes back to the recipe.
+    public func previewLUT(_ choice: LUTChoice?) {
+        guard choice != lutPreview else { return }
+        lutPreview = choice
+        renderPreview()
+    }
+
+    /// Gives the layer being edited a table, or none, as one undoable change.
+    public func chooseLUT(_ choice: LUTChoice) {
+        let wasPreviewing = lutPreview != nil
+        lutPreview = nil
+        let chosen = choice.applied(to: adjustments.lut)
+        if chosen != adjustments.lut {
+            adjustments.lut = chosen
+            commitChange(named: choice == .none ? "Remove LUT" : "Apply LUT")
+        } else if wasPreviewing {
+            // Nothing changed in the recipe, so nothing redrew the canvas without the preview.
+            renderPreview()
+        }
+    }
+
     @ObservationIgnored private var histogramTask: Task<Void, Never>?
     @ObservationIgnored private var hueHistogramTask: Task<Void, Never>?
     /// What the current hue histogram was computed from (or is being computed from), so moving the
@@ -522,13 +577,17 @@ public final class EditorModel {
     /// and releases it; without a preparation the model asks the source itself and releases on close.
     private let preparation: Task<PreparedPhoto, Error>?
 
+    /// Where the tables named by the recipe are read from, for the canvas.
+    private let luts: LUTLibrary
+
     public init(assetID: LibraryAsset.ID, source: any LibrarySource, renderer: CanvasRenderer? = CanvasRenderer(),
-                preparation: Task<PreparedPhoto, Error>? = nil)
+                preparation: Task<PreparedPhoto, Error>? = nil, luts: LUTLibrary = .shared)
     {
         self.assetID = assetID
         self.source = source
         self.renderer = renderer
         self.preparation = preparation
+        self.luts = luts
     }
 
     // MARK: - Derived state
@@ -708,9 +767,9 @@ public final class EditorModel {
             source
         } else if isCropping {
             // The crop tool frames the straightened image: show it whole, the frame does the cropping.
-            RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry?.withoutCrop, masks: maskImages, fills: retouchFills)
+            RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry?.withoutCrop, masks: maskImages, fills: retouchFills, luts: luts)
         } else {
-            RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry, masks: maskImages, fills: retouchFills)
+            RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry, masks: maskImages, fills: retouchFills, luts: luts)
         }
         renderer?.image = showsMaskOverlay ? withMaskOverlay(shown, of: recipe, source: source) : shown
         scheduleHistogram(of: shown)

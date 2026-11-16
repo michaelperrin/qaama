@@ -9,6 +9,7 @@ import SwiftUI
 struct AdjustmentsInspector: View {
     @Bindable var model: EditorModel
     let presets: PresetStore
+    let luts: LUTStore
 
     var body: some View {
         Form {
@@ -100,6 +101,7 @@ struct AdjustmentsInspector: View {
                     .disabled(!monochrome.isEnabled)
                 }
             }
+            LUTSection(model: model, luts: luts)
             group("Effects", .effects) {
                 SliderStack {
                     slider("Dehaze", \.dehaze)
@@ -282,6 +284,7 @@ extension View {
 }
 
 #Preview {
-    AdjustmentsInspector(model: EditorModel(assetID: "sample-1", source: SampleLibrarySource(), renderer: nil), presets: PresetStore())
+    AdjustmentsInspector(model: EditorModel(assetID: "sample-1", source: SampleLibrarySource(), renderer: nil), presets: PresetStore(),
+                         luts: LUTStore())
         .frame(width: 260, height: 400)
 }
