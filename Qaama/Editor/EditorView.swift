@@ -42,13 +42,13 @@ struct EditorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                EditorCanvas(model: model)
-                    .frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
-                // Hidden, the inspector stays alive at its full width, clipped out of view: removing
-                // it would rebuild the whole adjustments form on the way back (150 ms measured).
-                HStack(spacing: 0) {
-                    Divider()
+            EditorCanvas(model: model)
+                .frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
+                // The system's inspector, the same floating panel as next to the grid and the map:
+                // the column doesn't change nature when a photo is opened. Around the canvas only,
+                // so the bar below keeps the whole width for its controls. Hidden, the inspector
+                // stays alive (checked: its views survive), so showing it again rebuilds nothing.
+                .inspector(isPresented: $isInspectorVisible) {
                     ZStack {
                         if inspectorWasShown, let inspectedModel = session.settledModel {
                             // Dimmed rather than disabled while it lags: disabling would redraw
@@ -61,14 +61,10 @@ struct EditorView: View {
                             ProgressView().controlSize(.small)
                         }
                     }
-                    .frame(width: EditorInspector.width)
                     .frame(maxHeight: .infinity)
+                    // A fixed width: the adjustments form is laid out for it (see AGENTS.md on the wobble).
+                    .inspectorColumnWidth(EditorInspector.width)
                 }
-                .frame(width: isInspectorVisible ? nil : 0, alignment: .leading)
-                .clipped()
-                .allowsHitTesting(isInspectorVisible)
-                .accessibilityHidden(!isInspectorVisible)
-            }
             Divider()
             EditorBottomBar(model: model, onExport: openExport, onClose: onClose)
         }
@@ -88,7 +84,7 @@ struct EditorView: View {
             // The inspector button stands alone at the far right, as in the grid.
             ToolbarSpacer(.fixed, placement: .primaryAction)
             ToolbarItem(placement: .primaryAction) {
-                InspectorVisibilityButton(isVisible: $isInspectorVisible)
+                InspectorVisibilityToggle(isVisible: $isInspectorVisible)
             }
         }
         .modifier(InspectorControls(model: model, tab: $inspectorTab, isVisible: $isInspectorVisible))

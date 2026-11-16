@@ -21,10 +21,12 @@ struct MainWindowView: View {
     @State private var folderError: String?
     /// The map of each library shown on one, kept while the sidebar goes elsewhere.
     @State private var maps = PhotoMapModels()
+    /// Whether the sidebar is shown, for its toggle to tell.
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
 
     var body: some View {
-        NavigationSplitView {
-            SidebarView(catalog: catalog, selection: $selection, addFolder: { isPickingFolder = true })
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            SidebarView(catalog: catalog, selection: $selection, visibility: $columnVisibility, addFolder: { isPickingFolder = true })
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } detail: {
             detail

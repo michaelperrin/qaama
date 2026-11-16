@@ -137,18 +137,6 @@ struct InspectorControls: ViewModifier {
     }
 }
 
-/// The toolbar button that shows or hides the window's right column, in the editor and in the grid.
-struct InspectorVisibilityButton: View {
-    @Binding var isVisible: Bool
-
-    var body: some View {
-        Button { isVisible.toggle() } label: {
-            Label(isVisible ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.right")
-        }
-        .help(isVisible ? "Hide the inspector" : "Show the inspector")
-    }
-}
-
 /// Icon-only tabs, named by their tooltips; the labels' titles are what assistive technologies read.
 struct InspectorTabPicker: View {
     @Binding var selection: InspectorTab

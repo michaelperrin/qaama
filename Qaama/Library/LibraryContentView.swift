@@ -4,8 +4,8 @@ import SwiftUI
 
 /// Detail column of a library: the thumbnail grid or, for libraries that know where their photos
 /// were taken, the map of them; both replaced by the editor while a photo is open. All keep the
-/// window's inspector column on their right: the selected photos' Info panel next to the grid and
-/// the map, the editor's tabs next to the canvas.
+/// window's inspector on their right (the system's, `inspector(isPresented:)`): the selected
+/// photos' Info panel next to the grid and the map, the editor's tabs next to the canvas.
 struct LibraryContentView: View {
     let source: any LibrarySource
     /// The albums the photos can be filed in; nil for libraries without albums (folders).
@@ -102,7 +102,7 @@ struct LibraryContentView: View {
     /// The grid or the map, with the Info panel and the toolbar they share.
     private var browser: some View {
         let showsMap = showsMap
-        return HStack(spacing: 0) {
+        return Group {
             Group {
                 if showsMap {
                     PhotoMapView(source: source, model: map, selection: $selection, onOpen: showMapGroup)
@@ -123,12 +123,12 @@ struct LibraryContentView: View {
             }
             // Without it the row settles at the grid's ideal width, one column of thumbnails.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // The Info form is light: unlike the editor's, it is simply rebuilt when shown again.
-            if isInspectorVisible {
-                Divider()
-                LibraryInspector(source: source, selection: selection, onAdjustDate: adjustDate)
-                    .frame(width: EditorInspector.width)
-            }
+        }
+        // The system's inspector: the same floating panel as the sidebar, which the map runs beneath.
+        // The Info form is light: unlike the editor's, nothing depends on it staying alive.
+        .inspector(isPresented: $isInspectorVisible) {
+            LibraryInspector(source: source, selection: selection, onAdjustDate: adjustDate)
+                .inspectorColumnWidth(EditorInspector.width)
         }
         .navigationTitle(source.displayName)
         // The grid's subtitle starts with the dates on screen, which change as it scrolls: set from
@@ -170,7 +170,7 @@ struct LibraryContentView: View {
             LibraryQueryToolbar(source: source, showsSort: !showsMap)
             ToolbarSpacer(.fixed, placement: .primaryAction)
             ToolbarItem(placement: .primaryAction) {
-                InspectorVisibilityButton(isVisible: $isInspectorVisible)
+                InspectorVisibilityToggle(isVisible: $isInspectorVisible)
             }
         }
         .searchable(text: searchText, placement: .toolbar, prompt: "Search names and keywords")

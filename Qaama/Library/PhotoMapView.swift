@@ -55,15 +55,18 @@ private struct PhotoMapCanvas: View {
     let onOpen: ([LibraryAsset.ID]) -> Void
 
     @State private var position: MapCameraPosition
-    /// The size of the map, in points: with the region shown, it tells the zoom.
+    /// The size of the part of the map nothing covers, in points: with the region shown, which is
+    /// that part's (measured: MapKit reports the region of the safe area), it tells the zoom.
     @State private var size = CGSize.zero
+    /// How far the map runs beyond that part, under the toolbar and the panels.
+    @State private var covered = EdgeInsets()
     /// The group last clicked, to highlight it, by its square: after a zoom the thumbnail showing the
     /// same photo is another group. The photos themselves are in `selection`.
     @State private var selectedCell: UInt64?
     @AppStorage(LibraryMapStyle.key) private var style = LibraryMapStyle.standard
 
-    /// How much the model looks beyond the edges of the map, as a share of its size: a thumbnail
-    /// centered just outside still reaches in.
+    /// How much the model looks beyond the edges of the map, as a share of its size, on top of what
+    /// the panels cover: a thumbnail centered just outside still reaches in.
     private static let regionMargin = 0.15
     /// Around the photos when the map frames them all, and the least it then shows (in degrees).
     private static let extentMargin = 0.15
@@ -81,6 +84,7 @@ private struct PhotoMapCanvas: View {
     }
 
     var body: some View {
+        // The map runs under the toolbar, the sidebar and the inspector, which all float above it.
         // No rotation or tilt: north stays up, as in the Info panel's map.
         Map(position: $position, interactionModes: [.pan, .zoom]) {
             ForEach(model.clusters) { cluster in
@@ -99,8 +103,9 @@ private struct PhotoMapCanvas: View {
             MapZoomStepper()
             MapScaleView()
         }
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { new in
-            size = new
+        .onGeometryChange(for: MapLayout.self) { MapLayout(size: $0.size, covered: $0.safeAreaInsets) } action: { new in
+            size = new.size
+            covered = new.covered
             // The first camera report may come before the size is known.
             if let region = model.lastRegion {
                 show(MKCoordinateRegion(region))
@@ -153,10 +158,18 @@ private struct PhotoMapCanvas: View {
     /// longitudes are evenly spread across a Mercator map.
     private func show(_ region: MKCoordinateRegion) {
         model.lastRegion = GeoRegion(region)
-        guard size.width > 0, region.span.longitudeDelta > 0 else { return }
-        model.show(region: GeoRegion(region, margin: Self.regionMargin),
+        guard size.width > 0, size.height > 0, region.span.longitudeDelta > 0 else { return }
+        // Groups under the panels show through them: they are asked for too.
+        let sides = max(covered.leading, covered.trailing) / size.width, ends = max(covered.top, covered.bottom) / size.height
+        model.show(region: GeoRegion(region, horizontalMargin: Self.regionMargin + sides, verticalMargin: Self.regionMargin + ends),
                    worldWidth: size.width * 360 / region.span.longitudeDelta,
                    spacing: PhotoClusterMarker.spacing)
+    }
+
+    /// What the map's place in the window says: the size nothing covers and what is covered around it.
+    private nonisolated struct MapLayout: Equatable, Sendable {
+        var size: CGSize
+        var covered: EdgeInsets
     }
 
     private func select(_ cluster: PhotoCluster) {

@@ -12,10 +12,10 @@ extension CLLocationCoordinate2D {
 }
 
 extension GeoRegion {
-    /// What a map shows, widened by `margin` times its size on every side and cut at the poles; the
-    /// whole world when that goes around it.
-    init(_ region: MKCoordinateRegion, margin: Double = 0) {
-        let height = region.span.latitudeDelta * (1 + 2 * margin), width = region.span.longitudeDelta * (1 + 2 * margin)
+    /// What a map shows, widened on every side by these shares of its width and of its height, and
+    /// cut at the poles; the whole world when that goes around it.
+    init(_ region: MKCoordinateRegion, horizontalMargin: Double = 0, verticalMargin: Double = 0) {
+        let height = region.span.latitudeDelta * (1 + 2 * verticalMargin), width = region.span.longitudeDelta * (1 + 2 * horizontalMargin)
         let south = max(region.center.latitude - height / 2, -90), north = min(region.center.latitude + height / 2, 90)
         guard width < 360 else {
             self.init(south: south, west: -180, north: north, east: 180)

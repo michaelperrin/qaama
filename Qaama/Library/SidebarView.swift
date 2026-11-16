@@ -10,6 +10,8 @@ import SwiftUI
 struct SidebarView: View {
     let catalog: LibraryCatalog
     @Binding var selection: LibrarySelection?
+    /// Whether the window shows this sidebar, for the toggle in its header.
+    @Binding var visibility: NavigationSplitViewVisibility
     let addFolder: () -> Void
 
     /// The album question being asked: a name for a new album or folder, or a deletion to confirm.
@@ -48,12 +50,22 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        // Our own toggle instead of the system's: it shows whether the sidebar is there, as the
+        // inspector's does at the other end of the toolbar.
+        .toolbar(removing: .sidebarToggle)
         .toolbar {
+            // At the trailing edge of the sidebar's header, where the system's toggle was. No fixed
+            // spacer to set the toggle apart from Add Folder: with one, the toggle went to the
+            // overflow menu once the sidebar was hidden, out of reach to bring it back.
+            ToolbarSpacer(.flexible)
             ToolbarItem {
                 Button(action: addFolder) {
                     Label("Add Folder…", systemImage: "folder.badge.plus")
                 }
                 .help("Add a folder of photos")
+            }
+            ToolbarItem {
+                SidebarVisibilityToggle(visibility: $visibility)
             }
         }
         // File › New Album… and New Album Folder…, at the top level; nil until the albums are listed.
@@ -239,6 +251,6 @@ private struct SidebarItem: Identifiable {
 
 #Preview {
     @Previewable @State var selection: LibrarySelection? = .photos
-    SidebarView(catalog: LibraryCatalog(store: try! CatalogStore.inMemory()), selection: $selection) {}
+    SidebarView(catalog: LibraryCatalog(store: try! CatalogStore.inMemory()), selection: $selection, visibility: .constant(.all)) {}
         .frame(width: 220, height: 400)
 }
