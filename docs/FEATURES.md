@@ -275,3 +275,7 @@ can feed a website one day. Dates are when the feature landed.
 ## Platform
 - Native macOS app (macOS 27), SwiftUI, Core Image on Metal, sandboxed (2026-10-29).
 - English interface, ready for localization (2026-10-29).
+- A neutral gray accent instead of the system's blue, so the interface stays quiet next to the
+  photos; an accent color chosen in System Settings still wins (2026-11-16).
+- The sidebar and the inspector are the system's floating panels on either side of the content;
+  their toolbar toggles show whether each is there (2026-11-16).

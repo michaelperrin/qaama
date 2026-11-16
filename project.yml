@@ -56,6 +56,10 @@ targets:
         LSApplicationCategoryType: public.app-category.photography
         LSMinimumSystemVersion: "27.0"
         NSPhotoLibraryUsageDescription: Qaama needs access to your photo library to browse and edit your photos.
+        # A neutral gray instead of the system's blue: next to photos, the interface stays out of the
+        # way. The system uses it while the user's accent setting is Multicolor, and their own
+        # color otherwise.
+        NSAccentColorName: AccentColor
         NSHumanReadableCopyright: "© 2026 Michaël Perrin"
         # Photos dragged from the grid to an album of the sidebar, by identifier (see PhotoDrag).
         UTExportedTypeDeclarations:
@@ -69,13 +73,14 @@ targets:
         com.apple.security.personal-information.photos-library: true
         com.apple.security.files.user-selected.read-write: true
         com.apple.security.files.bookmarks.app-scope: true
-        # Outgoing connections, for the map tiles of the Info panel (MapKit). Nothing else uses the network.
+        # Outgoing connections, for MapKit only: the tiles of the maps and the names of places.
         com.apple.security.network.client: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: fr.michaelperrin.qaama
         GENERATE_INFOPLIST_FILE: NO
         COMBINE_HIDPI_IMAGES: YES
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         # The model is loaded by URL from RenderEngine; no generated Swift class needed.
         COREML_CODEGEN_LANGUAGE: None
 

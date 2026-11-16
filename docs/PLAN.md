@@ -996,6 +996,82 @@ Bibliothèque
             d'exemple, groupe de 5 ouvert en mosaïque avec ses mois et le bouton de retour,
             retour à la carte). Limite : dans la mosaïque d'un groupe, seules les capacités
             communes sont offertes, donc ni drapeaux, ni favoris, ni albums, ni Show in Finder.
+      - [x] Carte sous la barre d'outils (13/11/2026, remarque de Michaël sur capture : « le
+            panneau de droite apparaît un peu bizarrement »). La `Map` s'étendait sous la barre
+            d'outils (mesuré par sonde : de 0 à 800 dans une fenêtre de 800), ce que la colonne
+            Info, faite à la main dans un `HStack`, ne fait pas : barre aux couleurs de la carte
+            d'un côté, de la fenêtre de l'autre, champ de recherche à cheval. Corrigé par un
+            filet au-dessus de la carte, qui la tient sous la barre comme les photos de la
+            mosaïque (mesuré après : de 0 à 747). Elle passe toujours sous la barre latérale,
+            qui est en verre.
+      - [x] Inspecteur système (`.inspector(isPresented:)`) à la place de la colonne faite à la
+            main, essayé puis gardé le 16/11/2026 (question de Michaël : le panneau de droite
+            devrait-il avoir le design de celui de gauche ? Oui : barre latérale et inspecteur
+            sont la même couche flottante dans les recommandations d'Apple). Converti pour la
+            mosaïque, la carte et l'éditeur ensemble, pour que le panneau ne change pas de
+            nature quand on ouvre une photo ; largeur fixe de 280 points
+            (`inspectorColumnWidth`), même réglage d'affichage qu'avant.
+            Carte : le filet qui la tenait sous la barre d'outils est retiré, elle repasse sous
+            la barre, la barre latérale et l'inspecteur (sonde : 0 à 1358 en largeur, 0 à 800
+            en hauteur). Mesuré : la région que MapKit annonce et la taille que SwiftUI donne
+            sont celles de la zone que rien ne couvre (878 points de large pour une carte de
+            1358), donc le calcul du zoom reste juste ; les groupes situés sous les panneaux
+            sont demandés en plus (marge élargie de ce que les panneaux couvrent).
+            Éditeur : l'inspecteur est posé sur le canevas seul, la barre du bas garde toute la
+            largeur (posé sur l'ensemble, elle perdait 280 points et tronquait ses boutons).
+            Masqué, il reste vivant : les 214 vues du formulaire sont les mêmes avant, pendant
+            et après (comparaison d'identités), donc pas de reconstruction de 150 ms au retour.
+            Leçon de sonde : un inspecteur système ne se replie pas dans une fenêtre hors
+            écran ; il faut la poser sur un écran, à 1 % d'opacité et sourde à la souris.
+            Bascules à état (16/11/2026, demande de Michaël après essai de l'inspecteur : que
+            le bouton du panneau affiche son état, et celui de la barre latérale aussi). Les
+            recommandations d'Apple (page Toggles, relue) : hors d'une liste, un bouton qui se
+            comporte en bascule, aux états visiblement différents. `ColumnVisibilityToggle`
+            (`Toggle` en style bouton, composant système déjà utilisé pour la forme des
+            vignettes et le satellite) sert aux deux côtés : `InspectorVisibilityToggle` et
+            `SidebarVisibilityToggle`. Pour la barre latérale, le bouton du système, qui ne
+            montre pas d'état, est retiré (`.toolbar(removing: .sidebarToggle)`) et le nôtre
+            suit `columnVisibility` ; View › Show / Hide Sidebar continue de marcher.
+            Essais de placement, par sonde : avec un espace fixe entre Add Folder et la
+            bascule, celle-ci partait dans le menu de débordement une fois la barre latérale
+            masquée (plus moyen de la rouvrir d'un clic) ; en élément de navigation, elle
+            restait visible mais sortait de l'en-tête de la barre latérale. Retenu : espace
+            flexible puis Add Folder et la bascule, au bord droit de l'en-tête comme le bouton
+            du système, tous deux visibles barre masquée ; le système les réunit dans une même
+            capsule. Vérifié par sonde en changeant l'état (volets repliés, infobulles « Show
+            the… », bascule de l'inspecteur surlignée quand il est montré) ; le clic lui-même
+            n'a pas pu être simulé.
+            Couleur d'accent (16/11/2026). À l'écran, Michaël trouve les deux bascules et la
+            sélection « un peu trop bleu » pour un logiciel de photo, et montre Pages, où
+            l'état des boutons d'inspecteur est un gris neutre. Les recommandations d'Apple
+            (page Color, relue) : une appli peut fixer sa couleur d'accent, appliquée aux
+            boutons, à la sélection et aux icônes de barre latérale tant que le réglage du
+            système est « Multicolore » (c'est le cas chez Michaël : aucune clé
+            `AppleAccentColor`), et remplacée par le choix de l'utilisateur sinon. Fait :
+            `AccentColor` dans un catalogue de ressources (`Qaama/Resources/Assets.xcassets`),
+            le gris système (142, 142, 147 en clair ; 152, 152, 157 en sombre), proche de
+            l'accent Graphite de macOS ; `NSAccentColorName` dans l'Info.plist. Vérifié dans le
+            paquet compilé (clé présente, couleur dans `Assets.car`). Pas vu : les captures de
+            la sonde dessinent tout en gris, appli inactive, même en lui faisant croire qu'elle
+            est active ; `.tint` sur une bascule de barre d'outils et `ControlGroup` n'y
+            montraient donc rien de plus. Écart avec Pages : ses deux boutons sont un contrôle
+            segmenté (segment choisi en gris clair, icône sombre), comme notre sélecteur
+            Grille / Carte ; nos bascules seront un disque gris à icône blanche.
+            Sélection (16/11/2026, retour de Michaël après essai du gris : « les photos
+            sélectionnées sur la mosaïque se distinguent peu des autres »). Le liseré suivait
+            l'accent, qu'une photo avale une fois gris. Premier essai : anneau épais de la
+            couleur du texte posé sur le bord de la photo, doublé d'un filet clair (« pas très
+            beau, mais ça marche »). Trois variantes montrées à Michaël, rendues par sonde en
+            clair et en sombre : cet anneau, un anneau détaché, une plaque grise façon Finder.
+            Il préférait la plaque à l'œil, a retenu l'anneau détaché comme plus universel.
+            `SelectionRing` : anneau de 2 points à la couleur du texte autour de la photo, dont
+            une bande de 3 points à la couleur du fond la sépare ; la bande couvre le bord de
+            la photo au lieu de la rétrécir et l'anneau est tracé juste hors de ses limites,
+            donc rien ne bouge quand la sélection change. Sert à la mosaïque (vignettes
+            carrées ou entières), au groupe choisi sur la carte et à la liste d'export. Vu par
+            sonde sur les vraies cellules, en clair et en sombre.
+            Essayé à l'écran par Michaël et gardé (« ça me semble très bien »). Pas mesuré
+            sous un vrai glissement : le tremblement des curseurs de l'éditeur, à surveiller.
       - [ ] Dans la mosaïque d'un groupe de la carte de tout : offrir photo par photo ce qui
             n'existe que d'un côté (drapeaux, favoris, Show in Finder), si le besoin s'en fait
             sentir.

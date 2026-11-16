@@ -60,8 +60,11 @@ struct PhotoClusterMarker: View, Equatable {
         }
         .clipShape(.rect(cornerRadius: Self.cornerRadius))
         .overlay {
-            RoundedRectangle(cornerRadius: Self.cornerRadius)
-                .strokeBorder(isSelected ? Color.accentColor : .white, lineWidth: isSelected ? 3 : 2)
+            if isSelected {
+                SelectionRing(cornerRadius: Self.cornerRadius)
+            } else {
+                RoundedRectangle(cornerRadius: Self.cornerRadius).strokeBorder(.white, lineWidth: 2)
+            }
         }
         .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
         .contentShape(.rect(cornerRadius: Self.cornerRadius))

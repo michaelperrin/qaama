@@ -39,11 +39,11 @@ struct AssetThumbnailView: View {
         .clipShape(.rect(cornerRadius: 6))
         .overlay {
             if isSelected {
-                RoundedRectangle(cornerRadius: 6).strokeBorder(Color.accentColor, lineWidth: 3)
+                SelectionRing(cornerRadius: 6)
             }
         }
-        .padding(2)
-        .background(isSelected ? Color.accentColor.opacity(0.25) : .clear, in: .rect(cornerRadius: 8))
+        // Room for the selection ring, which is drawn around the photo.
+        .padding(SelectionRing.width)
         .opacity(asset.flag == .rejected ? 0.45 : 1)
         .overlay(alignment: .bottom) {
             HStack {

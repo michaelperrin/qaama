@@ -76,6 +76,10 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   non-Sendable framework objects only; say why in a comment.
 - `@Observable` classes for state shown by SwiftUI. Property observers (`didSet`) are fine.
   Views stay thin: behavior goes into an observable model in a package (see `EditorModel`).
+- The app's accent is a neutral gray (`AccentColor` in `Qaama/Resources/Assets.xcassets`): next to
+  photos the interface stays quiet. Color what must stand out with `Color.accentColor` or `.tint`,
+  never with a fixed blue, and keep color for what informs (a gradient on a slider's track). A
+  selected photo is marked with `SelectionRing`, not with the accent, which a photo swallows.
 - Prefer SwiftUI; AppKit only in the app target and only when SwiftUI has no equivalent.
   A Metal layer shows nothing inside a SwiftUI `.sheet` on macOS 27: keep canvases in windows
   or columns.

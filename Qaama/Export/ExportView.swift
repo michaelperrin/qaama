@@ -551,8 +551,9 @@ private struct ExportStripTile: View {
             }
             .frame(width: side, height: side)
             .overlay {
-                RoundedRectangle(cornerRadius: 4)
-                    .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 3)
+                if isSelected {
+                    SelectionRing(cornerRadius: 4)
+                }
             }
             Text(model.outputFileName(for: item) ?? name ?? " ")
                 .font(.caption)
