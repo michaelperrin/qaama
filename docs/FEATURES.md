@@ -130,10 +130,33 @@ can feed a website one day. Dates are when the feature landed.
     can be resized to show long names in full, and opens again at the size it was given
     (2026-11-13).
   - Add to “<album>” (⌃⌘A) sends photos to the album last used, remembered between sessions.
-  - Remove from Album, in an album, for the selected photos; they stay in the library.
+  - Remove from Album, in an album, for the selected photos; they stay in the library. Also for
+    the photo open in the editor, from the Image menu or a secondary click on it: the editor
+    moves on to the next photo, after asking about unsaved edits. The Delete key does it, as in
+    Photos (2026-11-17).
   - The Image menu items act on the grid's selection or on the photo open in the editor.
   - Every one of these is undoable, deleting an album included: it comes back with its name,
     its folder and its photos.
+
+- Delete photos (2026-11-17): Image › Delete Photo, or Delete 3 Photos for a selection, in the
+  thumbnails' context menu and in the one of the photo open in the editor, which then shows the
+  next photo. The Delete key does it; in an album, where that key takes photos out of the album,
+  deleting is ⌘⌫.
+  - In a folder, the file goes to the Trash with its sidecar, after confirmation, and Undo puts
+    both back: the photo returns with its rating, flag, keywords and edit.
+  - In the Apple Photos library, Photos asks for confirmation itself and keeps the photo in
+    Recently Deleted for 30 days; it is restored from Photos, not with Undo.
+  - A RAW + JPEG pair shown as one photo is deleted as one.
+  - Also from the map of every library, each photo being deleted in the library that holds it.
+- Duplicate photos (2026-11-17): Image › Duplicate Photo (⌘D), in the thumbnails' context menu
+  and in the one of the photo open in the editor. The copy keeps the rating, flag, keywords,
+  corrected date and saved edit, which stays editable and revertible on the copy. Undoable.
+  - In a folder, the copy is a file next to the original, named as the Finder names one
+    ("IMG_1 copy.jpg"), with a sidecar of its own; the two halves of a RAW + JPEG pair are copied
+    together and stay a pair.
+  - In the Apple Photos library, the copy is a new photo made from the original files (downloaded
+    from iCloud if needed), with the date, place, favorite, rating and keywords, added to the
+    album being shown. Undo deletes it, which Photos asks to confirm.
 
 ### Data
 - Non-destructive: originals are never modified. Edits live in Photos adjustment data or in a

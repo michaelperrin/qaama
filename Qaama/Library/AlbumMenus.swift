@@ -68,6 +68,7 @@ struct AlbumMenuItems: View {
         }
         if let remove = albums?.remove {
             Button(removeTitle) { remove(targets()) }
+                .keyboardShortcut(isMenuBar ? Self.removeShortcut : nil)
         } else if isMenuBar {
             Button("Remove from Album") {}
                 .disabled(true)
@@ -78,6 +79,11 @@ struct AlbumMenuItems: View {
     private static let addToLastShortcut = KeyboardShortcut("a", modifiers: [.control, .command])
     /// ⌥⌘A, next to it. Held by the menu bar item only, for the same reason.
     private static let searchShortcut = KeyboardShortcut("a", modifiers: [.option, .command])
+
+    /// ⌫, as in Photos: in an album the Delete key takes photos out of the album, which an undo
+    /// reverts, and deleting them from the library takes ⌘⌫ (see `EditorCommands`). Held by the menu
+    /// bar item only.
+    private static let removeShortcut = KeyboardShortcut(.delete, modifiers: [])
 
     private var isMenuBar: Bool {
         if case .menuBar = placement {

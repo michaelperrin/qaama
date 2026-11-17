@@ -357,7 +357,7 @@ struct FolderLibrarySourceTests {
         await source.load()
         await wait { source.assets.count == 2 && !source.isScanning }
         let asset = try #require(source.assets.first)
-        #expect(source.capabilities == [.rating, .flag, .keywords, .captureDate])
+        #expect(source.capabilities == [.rating, .flag, .keywords, .captureDate, .deletion, .duplication])
 
         try await source.setFlag(.rejected, for: asset)
         try await source.setKeywords([" lapland", "", "winter "], for: asset)

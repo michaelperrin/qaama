@@ -8,7 +8,9 @@ import OSLog
 /// changes, while the indexers refresh the catalog from the folder in the background.
 ///
 /// Holds the security-scoped access to the folder for as long as it lives. Decisions (rating, flag,
-/// keywords, recipe) are written to the sidecar first, then mirrored into the catalog.
+/// keywords, recipe) are written to the sidecar first, then mirrored into the catalog. Deleting a
+/// photo moves its file and its sidecar to the Trash, duplicating one copies them: the catalog
+/// follows what the folder then holds.
 @Observable
 public final class FolderLibrarySource: LibrarySource, Identifiable {
     public let id: UUID
@@ -29,7 +31,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     public private(set) var loadError: String?
 
     public var capabilities: Set<LibraryCapability> {
-        [.rating, .flag, .keywords, .captureDate]
+        [.rating, .flag, .keywords, .captureDate, .deletion, .duplication]
     }
 
     public var queryCapabilities: Set<QueryCapability> {
@@ -75,7 +77,14 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     private let scans: Bool
     private let store: CatalogStore
     private let previewCache: PreviewCache
+    private let trash: FileTrash
     private let hasSecurityScope: Bool
+    /// The changes to the folder's files in flight (deletions, copies) and their undos.
+    @ObservationIgnored private lazy var fileSteps = UndoableSteps<FileStep>(category: "FolderLibrarySource") { [weak self] step in
+        guard let self else { throw LibrarySourceError.assetUnavailable }
+        return try await perform(step)
+    }
+
     /// What the catalog last delivered for the query, whatever group of the map `assets` is cut down to.
     @ObservationIgnored private var delivered: [CatalogItem] = []
     /// The date each row of `assets` is listed by.
@@ -99,8 +108,10 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
 
     /// With `scans` false the source only follows the catalog: for a second view of a folder (the
     /// map of every library), whose first one already lists the folder, reads its headers and
-    /// watches it.
-    public init(folder: CatalogFolder, url: URL, store: CatalogStore, previewCache: PreviewCache = PreviewCache(), scans: Bool = true) {
+    /// watches it. `trash` is where deleted files go: the system's, but for tests.
+    public init(folder: CatalogFolder, url: URL, store: CatalogStore, previewCache: PreviewCache = PreviewCache(), scans: Bool = true,
+                trash: FileTrash = .system)
+    {
         id = folder.id
         self.scans = scans
         self.folder = folder
@@ -108,6 +119,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         displayName = folder.displayName
         self.store = store
         self.previewCache = previewCache
+        self.trash = trash
         hasSecurityScope = url.startAccessingSecurityScopedResource()
     }
 
@@ -358,6 +370,113 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
             throw LibrarySourceError.editingFailed(error.localizedDescription)
         }
         logger.notice("Saved recipe of \(asset.id, privacy: .public)")
+    }
+
+    // MARK: - Deleting and duplicating (the files first, the catalog follows)
+
+    /// One change to the files of the folder, described well enough to be made again after an undo.
+    private nonisolated enum FileStep: Sendable {
+        /// Images to move to the Trash, each with its sidecar.
+        case trash([URL])
+        /// Files to move back from the Trash to where they were.
+        case restore([TrashedFile])
+        /// Photos to copy: each is one image, or the images of a pair shown as one photo.
+        case duplicate([[URL]])
+    }
+
+    @discardableResult
+    public func delete(_ assets: [LibraryAsset], undoManager: UndoManager?) async throws -> Bool {
+        let images = await imageFiles(of: assets).flatMap(\.self)
+        guard !images.isEmpty else { throw LibrarySourceError.assetUnavailable }
+        let inverse = try await fileSteps.run(.trash(images))
+        fileSteps.register(inverse, named: assets.count == 1 ? "Delete Photo" : "Delete Photos", with: undoManager)
+        return true
+    }
+
+    public func deletionNotice(for assets: [LibraryAsset]) -> String? {
+        assets.count == 1 ? "Its file will be moved to the Trash." : "Their files will be moved to the Trash."
+    }
+
+    public func duplicate(_ assets: [LibraryAsset], undoManager: UndoManager?) async throws {
+        let photos = await imageFiles(of: assets)
+        guard !photos.isEmpty else { throw LibrarySourceError.assetUnavailable }
+        let inverse = try await fileSteps.run(.duplicate(photos))
+        fileSteps.register(inverse, named: "Duplicate", with: undoManager)
+    }
+
+    /// Makes a change to the files and returns the step that reverts it. The Trash gives a file
+    /// back as it was, sidecar included: a photo deleted then restored is the same photo, with the
+    /// same identifier, since the catalog knows its file again (see `FolderIndexer`).
+    private func perform(_ step: FileStep) async throws -> FileStep? {
+        let trash = trash
+        let clock = ContinuousClock()
+        let start = clock.now
+        switch step {
+        case let .trash(images):
+            let outcome = await Task.detached(priority: .userInitiated) { PhotoFiles.trash(imagesAt: images, into: trash) }.value
+            try report(outcome, as: LibrarySourceError.deletionFailed)
+            // The listing follows at once, without waiting for the folder to be listed again; and a
+            // source that doesn't scan (the map of every library) has no other way to find out.
+            _ = try? await store.markMissing(inFolder: id, relativePaths: outcome.images.compactMap(relativePath))
+            rescan()
+            logger.notice("Moved \(outcome.images.count) photos to the Trash in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
+            return outcome.trashed.isEmpty ? nil : .restore(outcome.trashed)
+        case let .restore(files):
+            let outcome = await Task.detached(priority: .userInitiated) { PhotoFiles.restore(files) }.value
+            try report(outcome, as: LibrarySourceError.editingFailed)
+            rescan()
+            logger.notice("Put \(outcome.images.count) photos back from the Trash")
+            return outcome.images.isEmpty ? nil : .trash(outcome.images)
+        case let .duplicate(photos):
+            let outcome = await Task.detached(priority: .userInitiated) { PhotoFiles.duplicate(photos) }.value
+            try report(outcome, as: LibrarySourceError.duplicationFailed)
+            rescan()
+            logger.notice("Duplicated \(photos.count) photos in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
+            return outcome.images.isEmpty ? nil : .trash(outcome.images)
+        }
+    }
+
+    /// Logs what a change to the files couldn't do, and throws it when it could do nothing at all.
+    private func report(_ outcome: PhotoFiles.Outcome, as failure: (String) -> LibrarySourceError) throws {
+        guard let error = outcome.firstError else { return }
+        logger.error("A change to the files of \(self.displayName, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+        if outcome.images.isEmpty {
+            throw failure(error.localizedDescription)
+        }
+    }
+
+    /// The image files of these photos, one list per photo: a RAW comes with the JPEG shot with it
+    /// when the listing shows the pair as one photo, so the pair is deleted or copied as one. The
+    /// hidden twin isn't among the items delivered: the catalog is asked for it.
+    private func imageFiles(of assets: [LibraryAsset]) async -> [[URL]] {
+        var photos: [[URL]] = []
+        let chosen = Set(assets.map(\.id))
+        for asset in assets {
+            guard let uuid = UUID(uuidString: asset.id), let item = itemsByID[uuid] else { continue }
+            var images = [folderURL.appendingPathComponent(item.relativePath)]
+            if !query.includesPairedJPEGs, item.isRAW, let twinID = item.pairedItemID, !chosen.contains(twinID.uuidString),
+               let twin = try? await store.item(id: twinID), !twin.isMissing
+            {
+                images.append(folderURL.appendingPathComponent(twin.relativePath))
+            }
+            photos.append(images)
+        }
+        return photos
+    }
+
+    /// The path of a file of the folder as the catalog spells it (see `FolderLister`); nil outside
+    /// the folder. Both paths are taken as they are, not standardized: the file may be gone, and a
+    /// path is only relieved of its "/private" for a file that exists.
+    private func relativePath(of url: URL) -> String? {
+        let root = folderURL.path(percentEncoded: false)
+        let path = url.path(percentEncoded: false)
+        guard path.hasPrefix(root) else { return nil }
+        return String(String(path.dropFirst(root.count)).trimmingPrefix("/"))
+    }
+
+    /// Waits for the changes to the files in flight, undos and redos included; for tests.
+    func waitUntilFilesAreIdle() async {
+        await fileSteps.waitUntilIdle()
     }
 
     /// Reads the sidecar (or starts one carrying the item's identifier), lets `change` edit it together

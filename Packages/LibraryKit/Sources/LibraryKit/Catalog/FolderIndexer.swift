@@ -15,6 +15,10 @@ public nonisolated struct IndexResult: Equatable, Sendable {
 /// Each listed file is matched to an existing item by, in order: the sidecar's identifier, the
 /// system file identifier, the relative path, then the fingerprint. Unmatched files become new
 /// items; items no longer on disk are marked missing.
+///
+/// The fingerprint only speaks for an item whose own file is gone: a copy of a photo has its
+/// fingerprint, and "IMG_1 copy.jpg" is listed before "IMG_1.jpg". Matched on it, the copy would
+/// take the original's identity, and the original become a new photo.
 public nonisolated struct FolderIndexer: Sendable {
     private let store: CatalogStore
     private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "FolderIndexer")
@@ -47,6 +51,7 @@ public nonisolated struct FolderIndexer: Sendable {
             }
         }
 
+        let listedPaths = Set(files.map(\.relativePath))
         var result = IndexResult(listed: files.count)
         var toSave: [CatalogItem] = []
         var claimed: Set<UUID> = []
@@ -67,7 +72,7 @@ public nonisolated struct FolderIndexer: Sendable {
             }
 
             let match = resolve(file, sidecar: sidecar, byID: byID, byFileIdentifier: byFileIdentifier,
-                                byPath: byPath, byFingerprint: byFingerprint, claimed: claimed)
+                                byPath: byPath, byFingerprint: byFingerprint, claimed: claimed, listedPaths: listedPaths)
             var item: CatalogItem
             if var found = match {
                 found.relativePath = file.relativePath
@@ -172,7 +177,8 @@ public nonisolated struct FolderIndexer: Sendable {
     }
 
     private func resolve(_ file: ListedFile, sidecar: Sidecar?, byID: [UUID: CatalogItem], byFileIdentifier: [Data: CatalogItem],
-                         byPath: [String: CatalogItem], byFingerprint: [String: CatalogItem], claimed: Set<UUID>) -> CatalogItem?
+                         byPath: [String: CatalogItem], byFingerprint: [String: CatalogItem], claimed: Set<UUID>,
+                         listedPaths: Set<String>) -> CatalogItem?
     {
         let candidates: [CatalogItem?] = [
             sidecar.flatMap { byID[$0.id] },
@@ -182,10 +188,11 @@ public nonisolated struct FolderIndexer: Sendable {
         for case let candidate? in candidates where !claimed.contains(candidate.id) {
             return candidate
         }
-        // Last resort, only when fingerprints are known: a copy from another volume.
+        // Last resort, only when fingerprints are known: a file that came back from another volume.
+        // An item whose file is still where the catalog knows it is that file, not this one.
         if !byFingerprint.isEmpty,
            let fingerprint = try? Fingerprint.compute(for: file.url, fileSize: file.fileSize, contentModified: file.contentModified),
-           let candidate = byFingerprint[fingerprint], !claimed.contains(candidate.id)
+           let candidate = byFingerprint[fingerprint], !claimed.contains(candidate.id), !listedPaths.contains(candidate.relativePath)
         {
             return candidate
         }

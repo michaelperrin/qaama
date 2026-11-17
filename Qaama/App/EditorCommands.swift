@@ -145,6 +145,18 @@ extension FocusedValues {
     }
 }
 
+struct FocusedPhotoFilingKey: FocusedValueKey {
+    typealias Value = PhotoFilingAction
+}
+
+extension FocusedValues {
+    /// Image › Duplicate and Image › Delete in the key window; see `PhotoFilingAction`.
+    var photoFilingAction: PhotoFilingAction? {
+        get { self[FocusedPhotoFilingKey.self] }
+        set { self[FocusedPhotoFilingKey.self] = newValue }
+    }
+}
+
 /// What File › New Album… and File › New Album Folder… do in the key window: ask for a name, then
 /// create it at the top level of the Photos library's albums.
 struct NewAlbumAction {
@@ -167,12 +179,17 @@ extension FocusedValues {
 /// canvas of the open photo, else the grid), Zoom to Fit and Actual Size, the thumbnail shape (square
 /// or whole photo), Go to Month, and the Image menu:
 /// Adjust Date & Time, Rating, Flag, the albums (Add to Album, Add to the last album, Remove from
-/// Album) and Adjustments (copy, paste, create a preset). Act on the key window: its inspector
-/// column, its export, its selection or open photo, its focused editor.
+/// Album), Duplicate, Delete and Adjustments (copy, paste, create a preset). Act on the key window:
+/// its inspector column, its export, its selection or open photo, its focused editor.
 ///
 /// The 0 to 5, P, X and U keys belong to the Rating and Flag items, so they work in the grid and in
 /// the editor alike, and nowhere else: a second holder of the same key would fire too. A key without
-/// a modifier only reaches the menu when no text field took it.
+/// a modifier only reaches the menu when no text field took it. The same goes for the Delete key,
+/// which Photos' conventions share between two items: it deletes the photos, except in an album,
+/// where it takes them out of the album and deleting them is ⌘⌫.
+///
+/// Duplicate and Delete are in the Image menu, as in Photos, with the other things done to the
+/// selected photos; File keeps what makes or sends out files (albums, Export, Show in Finder).
 struct EditorCommands: Commands {
     @FocusedValue(\.editor) private var editor
     @FocusedValue(\.hasInspector) private var hasInspector
@@ -182,6 +199,7 @@ struct EditorCommands: Commands {
     @FocusedValue(\.exportAction) private var exportAction
     @FocusedValue(\.showInFinderAction) private var showInFinderAction
     @FocusedValue(\.albumsCommand) private var albumsCommand
+    @FocusedValue(\.photoFilingAction) private var filing
     @FocusedValue(\.newAlbumAction) private var newAlbumAction
     @FocusedValue(\.goToMonthAction) private var goToMonthAction
     @FocusedValue(\.libraryDisplayAction) private var libraryDisplayAction
@@ -310,6 +328,15 @@ struct EditorCommands: Commands {
             .disabled(decisions?.setFlag == nil)
             Divider()
             AlbumMenuItems(albums: albumsCommand?.action, placement: .menuBar, targets: albumsCommand?.targets ?? { [] })
+            Divider()
+            // ⌘D, as in the Finder and in Photos.
+            Button(PhotoFilingAction.duplicateTitle(count: filing?.count ?? 1)) { filing?.duplicate?() }
+                .keyboardShortcut("d")
+                .disabled(filing?.duplicate == nil)
+            // No ellipsis: the confirmation that follows asks for nothing more to go on.
+            Button(PhotoFilingAction.deleteTitle(count: filing?.count ?? 1)) { filing?.delete?() }
+                .keyboardShortcut(.delete, modifiers: albumsCommand?.action.remove == nil ? [] : [.command])
+                .disabled(filing?.delete == nil)
             Divider()
             Menu("Adjustments") {
                 Button("Copy Adjustments") { editor?.copyAdjustments() }

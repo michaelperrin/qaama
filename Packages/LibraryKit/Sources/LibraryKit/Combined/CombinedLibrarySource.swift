@@ -289,6 +289,45 @@ public final class CombinedLibrarySource: LibrarySource {
         try await source(of: asset).setCaptureDate(date, for: asset)
     }
 
+    /// Each member deletes its own photos, and registers its own undo. False when no member deleted any.
+    @discardableResult
+    public func delete(_ assets: [LibraryAsset], undoManager: UndoManager?) async throws -> Bool {
+        let shares = try shares(of: assets)
+        var deleted = false
+        for share in shares {
+            deleted = try await share.source.delete(share.assets, undoManager: undoManager) || deleted
+        }
+        return deleted
+    }
+
+    /// What the members that need a confirmation say; nil when none does.
+    public func deletionNotice(for assets: [LibraryAsset]) -> String? {
+        var notices: [String] = []
+        for share in (try? shares(of: assets)) ?? [] {
+            if let notice = share.source.deletionNotice(for: share.assets), !notices.contains(notice) {
+                notices.append(notice)
+            }
+        }
+        return notices.isEmpty ? nil : notices.joined(separator: " ")
+    }
+
+    public func duplicate(_ assets: [LibraryAsset], undoManager: UndoManager?) async throws {
+        for share in try shares(of: assets) {
+            try await share.source.duplicate(share.assets, undoManager: undoManager)
+        }
+    }
+
+    /// The photos sorted by the member holding them, in the members' order. Throws when a photo is
+    /// no member's.
+    private func shares(of assets: [LibraryAsset]) throws -> [(source: any LibrarySource, assets: [LibraryAsset])] {
+        var byMember: [Int: [LibraryAsset]] = [:]
+        for asset in assets {
+            guard let owner = owner(of: asset.id) else { throw LibrarySourceError.assetUnavailable }
+            byMember[owner.index, default: []].append(asset)
+        }
+        return byMember.keys.sorted().map { (members[$0], byMember[$0] ?? []) }
+    }
+
     public func editingInput(for asset: LibraryAsset) async throws -> EditingInput {
         try await source(of: asset).editingInput(for: asset)
     }

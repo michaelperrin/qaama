@@ -1,13 +1,12 @@
 import Foundation
 import Observation
-import OSLog
 
 /// Changes the albums of the Photos library: new albums and folders, deleted albums, photos added
 /// to or removed from an album. Every change is one undoable step.
 ///
-/// Changes run one after the other, undos and redos included: a redo may depend on what the undo
-/// before it did. An album or folder created again by an undo gets a new identifier from Photos;
-/// the editor remembers which one replaced which, so earlier steps still find it.
+/// Changes run one after the other, undos and redos included (`UndoableSteps`). An album or folder
+/// created again by an undo gets a new identifier from Photos; the editor remembers which one
+/// replaced which, so earlier steps still find it.
 @Observable
 public final class PhotosAlbumEditor {
     /// The album photos were last added to, offered as a shortcut ("Add to <album>"); kept across launches.
@@ -21,9 +20,10 @@ public final class PhotosAlbumEditor {
     private let defaults: UserDefaults
     /// Identifiers of deleted albums and folders, to the ones that replaced them when an undo created them again.
     @ObservationIgnored private var replacements: [String: String] = [:]
-    /// The last change asked for; the next one waits for it.
-    @ObservationIgnored private var tail: Task<Void, Never>?
-    private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "PhotosAlbumEditor")
+    /// The changes in flight and their undos. The editor lives as long as the app: a safe target.
+    @ObservationIgnored private lazy var steps = UndoableSteps<Step>(category: "PhotosAlbumEditor") { [weak self] step in
+        try await self?.perform(step)
+    }
 
     private static let lastAlbumKey = "PhotosLastAlbumID"
 
@@ -43,38 +43,38 @@ public final class PhotosAlbumEditor {
                             undoManager: UndoManager?) async throws -> String
     {
         let content = PhotosAlbumContent(title: title, folderID: folderID, assetIDs: assetIDs)
-        let inverse = try await chain { try await self.perform(.createAlbum(content, replacing: nil)) }.value
+        let inverse = try await steps.run(.createAlbum(content, replacing: nil))
         guard case let .deleteAlbum(id) = inverse else { throw PhotosAlbumError.changeFailed("no album was created") }
         if !assetIDs.isEmpty {
             lastAlbumID = id
         }
-        register(inverse, named: "New Album", with: undoManager)
+        steps.register(inverse, named: "New Album", with: undoManager)
         return id
     }
 
     /// Creates a folder of albums in another folder (nil: at the top level) and returns its identifier.
     @discardableResult
     public func createFolder(titled title: String, inFolder parentID: String? = nil, undoManager: UndoManager?) async throws -> String {
-        let inverse = try await chain { try await self.perform(.createFolder(title: title, parentID: parentID, replacing: nil)) }.value
+        let inverse = try await steps.run(.createFolder(title: title, parentID: parentID, replacing: nil))
         guard case let .deleteFolder(id, _, _) = inverse else { throw PhotosAlbumError.changeFailed("no folder was created") }
-        register(inverse, named: "New Folder", with: undoManager)
+        steps.register(inverse, named: "New Folder", with: undoManager)
         return id
     }
 
     /// Deletes an album; its photos stay in the library. Undoing creates it again with the same
     /// title, in the same folder, with the same photos.
     public func deleteAlbum(id: String, undoManager: UndoManager?) async throws {
-        let inverse = try await chain { try await self.perform(.deleteAlbum(id: id)) }.value
-        register(inverse, named: "Delete Album", with: undoManager)
+        let inverse = try await steps.run(.deleteAlbum(id: id))
+        steps.register(inverse, named: "Delete Album", with: undoManager)
     }
 
     /// Adds photos to an album, which becomes the last album. Returns the number of photos added:
     /// those already in the album are left alone, and an undo doesn't take them out.
     @discardableResult
     public func add(_ assetIDs: [String], toAlbum id: String, undoManager: UndoManager?) async throws -> Int {
-        let inverse = try await chain { try await self.perform(.add(assetIDs, albumID: id)) }.value
+        let inverse = try await steps.run(.add(assetIDs, albumID: id))
         lastAlbumID = current(id)
-        register(inverse, named: "Add to Album", with: undoManager)
+        steps.register(inverse, named: "Add to Album", with: undoManager)
         if case let .remove(added, _) = inverse {
             return added.count
         }
@@ -85,8 +85,8 @@ public final class PhotosAlbumEditor {
     /// Undoing puts them back at the end of the album.
     @discardableResult
     public func remove(_ assetIDs: [String], fromAlbum id: String, undoManager: UndoManager?) async throws -> Int {
-        let inverse = try await chain { try await self.perform(.remove(assetIDs, albumID: id)) }.value
-        register(inverse, named: "Remove from Album", with: undoManager)
+        let inverse = try await steps.run(.remove(assetIDs, albumID: id))
+        steps.register(inverse, named: "Remove from Album", with: undoManager)
         if case let .add(removed, _) = inverse {
             return removed.count
         }
@@ -95,7 +95,7 @@ public final class PhotosAlbumEditor {
 
     /// Waits for the changes in flight, undos and redos included; for tests.
     func waitUntilIdle() async {
-        await tail?.value
+        await steps.waitUntilIdle()
     }
 
     // MARK: - Steps
@@ -110,16 +110,6 @@ public final class PhotosAlbumEditor {
         case deleteFolder(id: String, title: String, parentID: String?)
         case add([String], albumID: String)
         case remove([String], albumID: String)
-    }
-
-    /// A step that reverts another, known once that other is done: an undo is registered before its
-    /// work has run, and only the work tells what its redo is (a new identifier, the photos really added).
-    private final class PendingStep {
-        var step: Step?
-
-        init(_ step: Step? = nil) {
-            self.step = step
-        }
     }
 
     /// Makes a change and returns the step that reverts it; nil when nothing changed.
@@ -173,46 +163,5 @@ public final class PhotosAlbumEditor {
         if lastAlbumID == old {
             lastAlbumID = new
         }
-    }
-
-    /// Queues a change behind the ones in flight. Synchronous, so changes run in the order they were
-    /// asked for, whatever the order their tasks start in.
-    private func chain<T: Sendable>(_ operation: @escaping @MainActor () async throws -> T) -> Task<T, any Error> {
-        let previous = tail
-        let task = Task { @MainActor in
-            await previous?.value
-            return try await operation()
-        }
-        tail = Task { _ = try? await task.value }
-        return task
-    }
-
-    // MARK: - Undo
-
-    private func register(_ inverse: Step?, named name: String, with undoManager: UndoManager?) {
-        guard let undoManager, let inverse else { return }
-        register(PendingStep(inverse), named: name, with: undoManager)
-    }
-
-    /// Registers an undo that makes `pending`'s step. Performed by the manager, it first registers its
-    /// own inverse (the redo) synchronously, as the manager requires, then queues the work, which
-    /// tells what that inverse is. The editor lives as long as the app: a safe target.
-    private func register(_ pending: PendingStep, named name: String, with undoManager: UndoManager) {
-        undoManager.registerUndo(withTarget: self) { editor in
-            MainActor.assumeIsolated {
-                let inverse = PendingStep()
-                editor.register(inverse, named: name, with: undoManager)
-                _ = editor.chain {
-                    // No step: the change this one reverts failed, so there is nothing to revert.
-                    guard let step = pending.step else { return }
-                    do {
-                        inverse.step = try await editor.perform(step)
-                    } catch {
-                        editor.logger.error("\(name, privacy: .public) not reverted: \(error.localizedDescription, privacy: .public)")
-                    }
-                }
-            }
-        }
-        undoManager.setActionName(name)
     }
 }

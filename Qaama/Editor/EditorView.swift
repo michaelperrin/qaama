@@ -18,6 +18,10 @@ import UniformTypeIdentifiers
 /// alive, hidden or not, and while photos go by it keeps the last photo it showed, dimmed.
 struct EditorView: View {
     let session: EditorSession
+    /// Duplicate and Delete for the photo on screen, in the canvas's context menu; nil leaves them out.
+    var filing: PhotoFilingAction?
+    /// Takes the photo on screen out of the album it is looked at in; nil outside an album.
+    var removeFromAlbum: (() -> Void)?
     let onClose: () -> Void
 
     @State private var exportModel: ExportModel?
@@ -28,8 +32,8 @@ struct EditorView: View {
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
     /// True once the column has been shown in this session: only then is the inspector worth building.
     @State private var inspectorWasShown = false
-    /// The photo to move to once the user has decided what to do with unsaved changes.
-    @State private var pendingNavigation: LibraryAsset.ID?
+    /// The step to another photo waiting for the user to decide what to do with unsaved changes.
+    @State private var pendingLeave: PendingLeave?
     @Environment(\.undoManager) private var undoManager
 
     private var model: EditorModel {
@@ -45,6 +49,7 @@ struct EditorView: View {
         VStack(spacing: 0) {
             EditorCanvas(model: model)
                 .frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
+                .contextMenu { photoMenu }
                 // The system's inspector, the same floating panel as next to the grid and the map:
                 // the column doesn't change nature when a photo is opened. Around the canvas only,
                 // so the bar below keeps the whole width for its controls. Hidden, the inspector
@@ -104,25 +109,7 @@ struct EditorView: View {
         }
         // Moving to another photo restarts this task, and with it the wait before the photo settles.
         .task(id: model.assetID) { await session.followCurrentPhoto() }
-        .confirmationDialog("Save the changes to this photo?", isPresented: Binding(get: { pendingNavigation != nil }, set: {
-            if !$0 {
-                pendingNavigation = nil
-            }
-        }), titleVisibility: .visible, presenting: pendingNavigation) { destination in
-            Button("Save") {
-                let edited = model
-                Task {
-                    await edited.save()
-                    if !edited.hasUnsavedChanges {
-                        session.show(destination)
-                    }
-                }
-            }
-            Button("Discard Changes", role: .destructive) { session.show(destination) }
-            Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text("Moving to another photo discards the edits you haven't saved.")
-        }
+        .unsavedChangesPrompt($pendingLeave)
         .onDisappear { session.close() }
         .sheet(isPresented: Binding(get: { exportModel != nil }, set: {
             if !$0 {
@@ -149,9 +136,25 @@ struct EditorView: View {
     private func navigate(by offset: Int) {
         guard !model.isBusy, let destination = session.neighbor(offset: offset) else { return }
         if model.hasUnsavedChanges {
-            pendingNavigation = destination
+            pendingLeave = PendingLeave(model: model) { session.show(destination) }
         } else {
             session.show(destination)
+        }
+    }
+
+    /// What can be done with the photo itself, on a secondary click: the items of the Image menu
+    /// that the grid's context menu has too. Only what applies is listed.
+    @ViewBuilder
+    private var photoMenu: some View {
+        if let removeFromAlbum {
+            Button("Remove from Album", action: removeFromAlbum)
+        }
+        if let duplicate = filing?.duplicate {
+            Button(PhotoFilingAction.duplicateTitle(count: 1), action: duplicate)
+        }
+        if let delete = filing?.delete {
+            Divider()
+            Button(PhotoFilingAction.deleteTitle(count: 1), role: .destructive, action: delete)
         }
     }
 

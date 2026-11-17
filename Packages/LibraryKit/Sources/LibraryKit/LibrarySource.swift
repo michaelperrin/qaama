@@ -54,6 +54,20 @@ public protocol LibrarySource: AnyObject, Observable {
     /// where the source keeps one apart from the file's own date (folders).
     func setCaptureDate(_ date: Date?, for asset: LibraryAsset) async throws
 
+    /// Deletes photos from the library. The files of a folder go to the Trash, and an undo puts them
+    /// back; the photos of the Photos library go to its Recently Deleted album once the user has
+    /// agreed to the system's own question, and no undo is registered: PhotoKit can't take a photo
+    /// back out of there. The JPEG shot with a RAW goes with it when the listing shows the pair as
+    /// one photo. False when nothing was deleted because the user declined.
+    @discardableResult
+    func delete(_ assets: [LibraryAsset], undoManager: UndoManager?) async throws -> Bool
+    /// What deleting these photos does, to say when asking for confirmation; nil when the source
+    /// needs none asked, because the system asks by itself (Photos).
+    func deletionNotice(for assets: [LibraryAsset]) -> String?
+    /// Makes a copy of each photo in the library, next to it, with its decisions and its saved
+    /// edit. A pair shown as one photo is copied as a pair. Undoing deletes the copies.
+    func duplicate(_ assets: [LibraryAsset], undoManager: UndoManager?) async throws
+
     /// Original pixels and previously saved recipe, to open the photo in the editor.
     func editingInput(for asset: LibraryAsset) async throws -> EditingInput
     /// Stores an edit non-destructively. Passing a recipe equal to the identity reverts the photo.
@@ -192,6 +206,18 @@ public extension LibrarySource {
         throw LibrarySourceError.unsupported(.captureDate)
     }
 
+    func delete(_: [LibraryAsset], undoManager _: UndoManager?) async throws -> Bool {
+        throw LibrarySourceError.unsupported(.deletion)
+    }
+
+    func deletionNotice(for _: [LibraryAsset]) -> String? {
+        nil
+    }
+
+    func duplicate(_: [LibraryAsset], undoManager _: UndoManager?) async throws {
+        throw LibrarySourceError.unsupported(.duplication)
+    }
+
     func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo {
         AssetResourceInfo(asset)
     }
@@ -236,13 +262,17 @@ public extension LibrarySource {
     }
 }
 
-/// Decisions a source can persist about a photo.
+/// What a source can store about a photo, and what it can do with the photo itself.
 public nonisolated enum LibraryCapability: Sendable, Hashable {
     case rating
     case flag
     case keywords
     /// Correcting when a photo was taken.
     case captureDate
+    /// Deleting photos from the library.
+    case deletion
+    /// Making a copy of a photo in the library.
+    case duplication
 }
 
 /// Errors shared by the library sources.
@@ -251,6 +281,8 @@ public nonisolated enum LibrarySourceError: Error, LocalizedError, Sendable {
     case folderUnreadable(URL)
     case assetUnavailable
     case editingFailed(String)
+    case deletionFailed(String)
+    case duplicationFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -260,6 +292,8 @@ public nonisolated enum LibrarySourceError: Error, LocalizedError, Sendable {
             case .flag: "This library doesn't store flags."
             case .keywords: "This library doesn't store keywords."
             case .captureDate: "This library doesn't store corrected dates."
+            case .deletion: "Photos can't be deleted from this library."
+            case .duplication: "Photos can't be duplicated in this library."
             }
         case let .folderUnreadable(url):
             "The folder “\(url.lastPathComponent)” can't be read."
@@ -267,6 +301,10 @@ public nonisolated enum LibrarySourceError: Error, LocalizedError, Sendable {
             "This photo is no longer available."
         case let .editingFailed(reason):
             "The edit couldn't be saved: \(reason)"
+        case let .deletionFailed(reason):
+            "The photos couldn't be deleted: \(reason)"
+        case let .duplicationFailed(reason):
+            "The photos couldn't be duplicated: \(reason)"
         }
     }
 }

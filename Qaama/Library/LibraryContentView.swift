@@ -29,6 +29,10 @@ struct LibraryContentView: View {
     @State private var albumDialog: AlbumDialog?
     /// The search for the album to add photos to, opened from the Add to Album menus.
     @State private var albumSearch: AlbumSearchRequest?
+    /// The photos to delete once the user has confirmed, in libraries that need it asked.
+    @State private var deletion: DeletionRequest?
+    /// Taking the open photo out of its album, waiting for the user to decide about its unsaved edits.
+    @State private var pendingLeave: PendingLeave?
     /// The month at the top of the grid and the jumps asked from the toolbar's month button.
     @State private var navigator = TimelineNavigator()
     /// Grid or map, for every library that has a map.
@@ -43,6 +47,9 @@ struct LibraryContentView: View {
             .focusedSceneValue(\.adjustDateAction, adjustDateAction)
             .focusedSceneValue(\.decisionsAction, decisionsAction)
             .focusedSceneValue(\.albumsCommand, albumsCommand)
+            .focusedSceneValue(\.photoFilingAction, filingAction)
+            .deletionConfirmation($deletion, onConfirm: delete)
+            .unsavedChangesPrompt($pendingLeave)
             .focusedSceneValue(\.goToMonthAction, goToMonthAction)
             .focusedSceneValue(\.libraryDisplayAction, displayAction)
             .albumDialogs($albumDialog, editor: albums?.editor, error: $decisionError)
@@ -84,16 +91,18 @@ struct LibraryContentView: View {
     @ViewBuilder
     private var content: some View {
         if let editorSession {
-            EditorView(session: editorSession) { closeEditor(editorSession) }
-                .navigationTitle(source.displayName)
-                .navigationSubtitle("Editing")
-                .toolbar {
-                    // Icon-only toolbar buttons get the system's round Liquid Glass bezel.
-                    ToolbarItem(placement: .navigation) {
-                        Button("Back", systemImage: "chevron.left") { closeEditor(editorSession) }
-                            .help("Back to the photos")
-                    }
+            EditorView(session: editorSession, filing: filingAction, removeFromAlbum: albumsCommand?.action.remove.map { remove in { remove([]) } }) {
+                closeEditor(editorSession)
+            }
+            .navigationTitle(source.displayName)
+            .navigationSubtitle("Editing")
+            .toolbar {
+                // Icon-only toolbar buttons get the system's round Liquid Glass bezel.
+                ToolbarItem(placement: .navigation) {
+                    Button("Back", systemImage: "chevron.left") { closeEditor(editorSession) }
+                        .help("Back to the photos")
                 }
+            }
         } else {
             browser
         }
@@ -113,7 +122,8 @@ struct LibraryContentView: View {
                         }
                 } else {
                     AssetGridView(source: source, selection: $selection, onOpen: { editorSession = EditorSession(assetID: $0, source: source) },
-                                  onAdjustDate: adjustDate, albums: albumsAction, navigator: navigator)
+                                  onAdjustDate: adjustDate, albums: albumsAction, onDuplicate: duplicate, onDelete: askToDelete,
+                                  navigator: navigator)
                         .safeAreaInset(edge: .top, spacing: 0) {
                             if let notice = source.indexingNotice {
                                 IndexingNoticeView(notice: notice, progress: source.indexingProgress)
@@ -266,12 +276,12 @@ struct LibraryContentView: View {
     }
 
     /// Image › Add to Album and its neighbors: the photo open in the editor, else the grid's
-    /// selection; nil when there is neither. The open photo isn't taken out of the album it is being
-    /// stepped through in: removing is for the grid.
+    /// selection; nil when there is neither. Taken out of the album it is being stepped through in,
+    /// the open photo gives way to the next one.
     private var albumsCommand: AlbumsCommand? {
         guard var action = albumsAction else { return nil }
         if let editorSession {
-            action.remove = nil
+            action.remove = albums?.current.map { album in { _ in removeOpenPhoto(of: editorSession, from: album) } }
             let id = editorSession.model.assetID
             return AlbumsCommand(action: action) { [id] }
         }
@@ -296,15 +306,115 @@ struct LibraryContentView: View {
         }
     }
 
-    private func remove(_ assetIDs: [LibraryAsset.ID], from album: PhotosAlbum) {
+    /// `departure` is run once photos were removed: what the editor does when its photo was one.
+    private func remove(_ assetIDs: [LibraryAsset.ID], from album: PhotosAlbum, then departure: (() -> Void)? = nil) {
         guard let albums, !assetIDs.isEmpty else { return }
         Task {
             do {
-                try await albums.editor.remove(assetIDs, fromAlbum: album.id, undoManager: undoManager)
+                let removed = try await albums.editor.remove(assetIDs, fromAlbum: album.id, undoManager: undoManager)
                 // They leave the grid: a selection of photos no longer shown would still be acted on.
                 selection.subtract(assetIDs)
+                if removed > 0 {
+                    departure?()
+                }
             } catch {
                 decisionError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Takes the photo open in the editor out of the album, then shows the next one. Its unsaved
+    /// edits are asked about first, as when stepping to another photo: the editor leaves it.
+    private func removeOpenPhoto(of session: EditorSession, from album: PhotosAlbum) {
+        let model = session.model
+        guard !model.isBusy else { return }
+        let remove = { remove([model.assetID], from: album, then: departure(from: session)) }
+        if model.hasUnsavedChanges {
+            pendingLeave = PendingLeave(model: model, proceed: remove)
+        } else {
+            remove()
+        }
+    }
+
+    // MARK: - Duplicating and deleting
+
+    /// Image › Duplicate and Delete, and the same in the open photo's context menu: the photo open
+    /// in the editor, else the selection; nil when there is neither, or the library can do neither.
+    private var filingAction: PhotoFilingAction? {
+        let capabilities = source.capabilities
+        guard !capabilities.isDisjoint(with: [.duplication, .deletion]) else { return nil }
+        let count: Int
+        let targets: () -> [LibraryAsset.ID]
+        if let editorSession {
+            let id = editorSession.model.assetID
+            (count, targets) = (1, { [id] })
+        } else if !selection.isEmpty {
+            (count, targets) = (selection.count, { Array(selection) })
+        } else {
+            return nil
+        }
+        return PhotoFilingAction(count: count,
+                                 duplicate: capabilities.contains(.duplication) ? { duplicate(targets()) } : nil,
+                                 delete: capabilities.contains(.deletion) ? { askToDelete(targets()) } : nil)
+    }
+
+    /// Copies photos in the library, as one undoable step. The copy of an edited photo carries the
+    /// edit as it was last saved.
+    private func duplicate(_ assetIDs: [LibraryAsset.ID]) {
+        let assets = source.assets(withIDs: assetIDs)
+        guard !assets.isEmpty else { return }
+        Task {
+            do {
+                try await source.duplicate(assets, undoManager: undoManager)
+            } catch {
+                decisionError = error.localizedDescription
+            }
+        }
+    }
+
+    /// Deletes photos once it is confirmed: by this window's alert, or by the system's own where
+    /// the library has one (Photos), which a second question before it would only double.
+    private func askToDelete(_ assetIDs: [LibraryAsset.ID]) {
+        let assets = assetIDs.compactMap { source.asset(id: $0) }
+        guard !assets.isEmpty, editorSession?.model.isBusy != true else { return }
+        if let notice = source.deletionNotice(for: assets) {
+            deletion = DeletionRequest(assets: assets, notice: notice)
+        } else {
+            delete(assets)
+        }
+    }
+
+    /// Deletes photos, as one step (undoable where the library can put a photo back). The photo
+    /// open in the editor goes with its unsaved edits, and gives way to the next one.
+    private func delete(_ assets: [LibraryAsset]) {
+        let ids = assets.map(\.id)
+        let departure = editorSession.flatMap { session in ids.contains(session.model.assetID) ? departure(from: session) : nil }
+        Task {
+            do {
+                // False: the user said no to the system's question.
+                guard try await source.delete(assets, undoManager: undoManager) else { return }
+                selection.subtract(ids)
+                departure?()
+            } catch {
+                decisionError = error.localizedDescription
+            }
+        }
+    }
+
+    /// What the editor does once its photo has left the listing (deleted, or taken out of the
+    /// album): show the photo that followed it, else the one before, else go back to the grid.
+    /// Asked before the change, while the photo still has neighbors.
+    private func departure(from session: EditorSession) -> () -> Void {
+        let id = session.model.assetID
+        let next = session.neighbor(offset: 1) ?? session.neighbor(offset: -1)
+        return {
+            // The user moved on by themselves while the change was being made.
+            guard editorSession === session, session.model.assetID == id else { return }
+            if let next {
+                session.show(next)
+            } else {
+                selection = []
+                editorSession = nil
             }
         }
     }

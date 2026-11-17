@@ -336,8 +336,8 @@ Bibliothèque
       (arborescence, avec New Album… en tête pour créer depuis la sélection), Add to “<dernier
       album>” (⌃⌘A, comme Photos ; retenu dans les préférences) et Remove from Album, dans le
       menu contextuel des vignettes et dans le menu Image (sélection de la mosaïque ou photo
-      ouverte dans l'éditeur, par la valeur de focus `albumsCommand` ; pas de retrait depuis
-      l'éditeur, où l'on parcourt l'album).
+      ouverte dans l'éditeur, par la valeur de focus `albumsCommand` ; le retrait depuis
+      l'éditeur, d'abord écarté, est venu le 17/11/2026, voir plus bas).
       - Architecture : protocole `PhotosAlbumLibrary` (identifiants seulement),
         `PhotoKitAlbumLibrary` pour PhotoKit (`canPerform` vérifié avant chaque demande, sinon
         la demande de changement est nil et ne fait rien en silence), `PhotosAlbumEditor` par
@@ -440,8 +440,64 @@ Bibliothèque
           sombres avec titres et dossiers longs. Non vérifié à
           l'écran : l'élément Search… dans les deux menus et son raccourci.
       - Reste : renommer et déplacer un album ou un dossier, supprimer un dossier, glisser sur
-        Favoris, faire suivre le jumeau JPEG d'un RAW ajouté à un album, raccourci pour Remove
-        from Album, filtrer les albums de la barre latérale par leur nom.
+        Favoris, faire suivre le jumeau JPEG d'un RAW ajouté à un album, filtrer les albums de
+        la barre latérale par leur nom. (Raccourci pour Remove from Album : ⌫, le 17/11/2026.)
+- [x] Supprimer, dupliquer, retirer de l'album depuis l'éditeur, fait le 17/11/2026 à la demande
+      de Michaël. Image › Duplicate Photo (⌘D) et Delete Photo (« Delete 3 Photos » selon la
+      sélection), dans le menu contextuel des vignettes et dans celui de la photo ouverte (clic
+      secondaire sur le canevas, où figure aussi Remove from Album). Dans l'éditeur, la photo
+      supprimée ou retirée de l'album laisse la place à la suivante (sinon la précédente, sinon
+      retour à la mosaïque) ; le retrait demande d'abord quoi faire des retouches non
+      enregistrées (`UnsavedChangesPrompt`, partagé avec les flèches), la suppression non.
+      - Menu : Image plutôt que File, comme Photos : c'est le menu de ce qu'on fait aux photos
+        sélectionnées, à côté des albums ; File garde ce qui crée ou sort des fichiers. Pas de
+        points de suspension : une confirmation ne demande aucune information de plus (HIG).
+      - Touche ⌫, convention de Photos : supprime, sauf dans un album où elle retire de l'album
+        (annulable, sans question) et où supprimer devient ⌘⌫. À valider par Michaël, qui avait
+        demandé ⌫ pour supprimer.
+      - Confirmation : dans un dossier, alerte de l'appli (« Delete » par défaut, sans style
+        destructif puisque l'action est choisie exprès, HIG). Pour Photos, la question du
+        système ne peut être ni évitée ni reformulée : l'appli n'en ajoute pas une seconde
+        (constaté par Michaël le 17/11 : « Allow “Qaama” to delete this photo? », avec la
+        mention de Recently Deleted pour 30 jours ; une alerte par lot, pas par photo. Pas de
+        contournement par AppleScript : la commande `delete` de Photos ne prend que des albums
+        et des dossiers). Le
+        HIG déconseille l'alerte pour une suppression annulable (cas des dossiers) : gardée à
+        la demande de Michaël, à revoir à l'usage.
+      - Dossiers : le fichier et son sidecar vont à la corbeille (`FileTrash`, un dossier dans
+        les tests) et l'annulation les en ressort. Sonde du 17/11 : une appli sandboxée peut
+        déplacer hors de la corbeille le fichier qu'elle vient d'y mettre (essai dans le
+        conteneur d'une appli de test ; à confirmer sur un dossier ouvert par signet et sur un
+        volume externe). La photo revient sous le même identifiant : le catalogue retrouve son
+        fichier (identifiant système) et son sidecar. La liste suit tout de suite
+        (`CatalogStore.markMissing`), sans attendre le prochain listage du dossier.
+      - Copie d'un dossier : nom du Finder (« IMG_1 copy.jpg », puis « copy 2 »), sidecar
+        recopié sous un nouvel identifiant. Bogue trouvé par les tests : l'indexeur rattachait
+        la copie à l'élément de l'original par l'empreinte (« IMG_1 copy.jpg » est listé avant
+        « IMG_1.jpg »), et l'original devenait une nouvelle photo. L'empreinte ne vaut plus que
+        pour un élément dont le fichier a disparu ; cela vaut aussi pour une copie faite dans
+        le Finder.
+      - Photos : `PHAssetChangeRequest.deleteAssets` (corbeille de Photos, 30 jours). PhotoKit
+        ne sait pas en ressortir une photo : la suppression n'est pas annulable, seule
+        exception à la règle. La copie est une nouvelle photo créée depuis les ressources de
+        l'original (`PHAssetCreationRequest`), avec la version retouchée et les données
+        d'ajustement quand il y en a (`supportsAssetResourceTypes` répond oui pour photo +
+        fullSizePhoto + adjustmentData, sondé le 17/11) ; date, lieu, favori, note et mots-clés
+        sont recopiés, et la copie rejoint l'album affiché. Annuler la copie la supprime, avec
+        la question du système.
+      - Paire RAW + JPEG affichée comme une seule photo : supprimée et copiée d'un bloc, sinon
+        le JPEG resterait et apparaîtrait comme une photo à part.
+      - `UndoableSteps` : la file de changements annulables d'`PhotosAlbumEditor`, extraite pour
+        servir aussi aux fichiers des dossiers et aux copies de Photos. Leçon : la fermeture
+        qu'elle garde doit être typée `@MainActor`, sinon une fermeture synchrone isolée
+        s'exécute hors de l'acteur principal et l'exécution s'arrête sur l'assertion
+        d'isolation.
+      - Non vérifié en conditions réelles (rien n'a été lancé ni supprimé dans la photothèque
+        de Michaël par l'agent ; la suppression dans Photos a été essayée par Michaël) : la
+        copie dans Photos, la copie d'une photo retouchée
+        (la retouche est-elle bien rouverte par Qaama ?), le menu contextuel sur le canevas
+        Metal, la touche ⌫ selon l'endroit où est le focus. Une Live Photo est copiée sans sa
+        vidéo.
 - [ ] Grille performante (vignettes en cache, prefetch), tri et filtres (date, type,
       RAW, édité/non édité, favoris), recherche simple.
       Fait le 30/10/2026 : tri (dates, note, nom), filtres (note, drapeau, modifié, RAW,

@@ -28,7 +28,7 @@ public final class PhotosLibrarySource: LibrarySource {
     }
 
     public var capabilities: Set<LibraryCapability> {
-        [.rating, .keywords, .captureDate]
+        [.rating, .keywords, .captureDate, .deletion, .duplication]
     }
 
     /// Date and favorite are native; rating filter and sort are too on macOS 27, confirmed by a probe at
@@ -488,6 +488,79 @@ public final class PhotosLibrarySource: LibrarySource {
     /// Releases the original file access once the editor closes.
     public func endEditing(_ asset: LibraryAsset) {
         editingInputs[asset.id] = nil
+    }
+
+    // MARK: - Deleting and duplicating
+
+    /// One change to the photos themselves that an undo can revert: copies made, and those copies
+    /// deleted again.
+    private nonisolated enum CopyStep: Sendable {
+        case duplicate([String])
+        /// `originals` are the photos the copies were made from: what making them again takes.
+        case deleteCopies([String], originals: [String])
+    }
+
+    /// The copies in flight and their undos.
+    @ObservationIgnored private lazy var copySteps = UndoableSteps<CopyStep>(category: "PhotosLibrarySource") { [weak self] step in
+        guard let self else { throw LibrarySourceError.assetUnavailable }
+        return try await perform(step)
+    }
+
+    /// Photos asks the user by itself, then keeps the photos in Recently Deleted for thirty days.
+    /// PhotoKit has no way to take them back out, so there is nothing an undo could do: none is
+    /// registered, and Photos is where a deletion is reverted. The list is refreshed through the
+    /// change observer.
+    @discardableResult
+    public func delete(_ assets: [LibraryAsset], undoManager _: UndoManager?) async throws -> Bool {
+        let ids = withHiddenTwins(assets.map(\.id))
+        guard try await PhotoKitAssetChanges.delete(ids) else { return false }
+        for id in ids {
+            materialized[id] = nil
+            resourceInfos[id] = nil
+            editingInputs[id] = nil
+        }
+        return true
+    }
+
+    /// The copy is a new photo made from the original's files, edit included, added to the album
+    /// on screen when there is one. Undoing deletes the copies, which Photos asks the user about.
+    public func duplicate(_ assets: [LibraryAsset], undoManager: UndoManager?) async throws {
+        let inverse = try await copySteps.run(.duplicate(withHiddenTwins(assets.map(\.id))))
+        copySteps.register(inverse, named: "Duplicate", with: undoManager)
+    }
+
+    private func perform(_ step: CopyStep) async throws -> CopyStep? {
+        switch step {
+        case let .duplicate(ids):
+            // Photos can only be added to an album of the user's: Favorites is a smart album.
+            let albumID = album?.kind == .user ? album?.id : nil
+            var copies: [String] = []
+            var firstError: (any Error)?
+            for id in ids {
+                do {
+                    try await copies.append(PhotoKitAssetChanges.duplicate(id, intoAlbum: albumID))
+                } catch {
+                    firstError = firstError ?? error
+                }
+            }
+            if copies.isEmpty, let firstError {
+                throw firstError
+            }
+            return copies.isEmpty ? nil : .deleteCopies(copies, originals: ids)
+        case let .deleteCopies(copies, originals):
+            return try await PhotoKitAssetChanges.delete(copies) ? .duplicate(originals) : nil
+        }
+    }
+
+    /// These photos, each RAW followed by the JPEG shot with it when that twin is a photo of its own
+    /// that the listing hides: a pair shown as one photo is deleted or copied as one.
+    private func withHiddenTwins(_ ids: [String]) -> [String] {
+        guard !query.includesPairedJPEGs else { return ids }
+        var seen = Set(ids)
+        return ids.flatMap { id in
+            guard let twin = listedSnapshot.pairedIDs[id], listedSnapshot.twinIDs.contains(twin), seen.insert(twin).inserted else { return [id] }
+            return [id, twin]
+        }
     }
 
     // MARK: - Private

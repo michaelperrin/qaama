@@ -59,6 +59,11 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
 - A LUT is named in the recipe, never copied into it: the `.cube` files live in the app's
   library (`LUTLibrary`, Application Support), which every render reads by name. A recipe whose
   table is gone renders without it.
+- Deleting and duplicating belong to the source (`LibrarySource.delete`, `duplicate`): a folder
+  moves the image and its sidecar to the Trash (through `FileTrash`, a folder in tests) and
+  copies them under the Finder's name for a copy, the sidecar under a new identifier; Photos
+  deletes after the system's own question and copies the original's resources into a new photo.
+  A RAW + JPEG pair shown as one photo is deleted or copied as one.
 - Retouches are strokes in the recipe, in the original's coordinates. What fills them is computed
   by `RetouchRenderer` once per stroke, off the main actor, and only composited by the pipeline;
   each fill depends on the retouches before it.
@@ -111,7 +116,10 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   pasted adjustments from the grid, rating, flag, keywords, crop, batch actions) registers with
   the window's `UndoManager` under an action name, so the Edit menu can undo and redo it. For
   asynchronous work, capture the previous state before writing, register on a target that lives
-  as long as the window (the library source), and have the undo register its own inverse.
+  as long as the window (the library source), and have the undo register its own inverse. Changes
+  whose inverse is only known once made (a new album's identifier, where the Trash put a file) go
+  through `UndoableSteps`. One exception, imposed by PhotoKit: a photo deleted from the Photos
+  library can't be taken back out of Recently Deleted, so that deletion registers no undo.
 - Small, single-purpose types with a doc comment that says what they are for and any
   non-obvious constraint. Comments explain why, not what.
 - No duplication across sources: shared behavior goes into the protocol, a helper enum or an

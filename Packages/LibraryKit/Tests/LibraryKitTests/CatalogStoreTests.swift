@@ -65,6 +65,26 @@ struct CatalogStoreTests {
         #expect(try await store.item(inFolder: folder.id, relativePath: "nope") == nil)
     }
 
+    @Test func marksTheItemsAtGivenPathsAsMissingWithoutAScan() async throws {
+        let (store, folder) = try makeStore()
+        try await store.save(folder)
+        let kept = item(in: folder, path: "kept.jpg")
+        let trashed = item(in: folder, path: "Trip/trashed.jpg")
+        try await store.save([kept, trashed])
+
+        let now = Date(timeIntervalSince1970: 5000)
+        let marked = try await store.markMissing(inFolder: folder.id, relativePaths: ["Trip/trashed.jpg", "unknown.jpg"], now: now)
+        #expect(marked == [trashed.id])
+        #expect(try await store.items(inFolder: folder.id).map(\.id) == [kept.id])
+        #expect(try await store.item(id: trashed.id)?.missingSince == now)
+        // Already missing: nothing more to mark.
+        #expect(try await store.markMissing(inFolder: folder.id, relativePaths: ["Trip/trashed.jpg"]).isEmpty)
+
+        // The file comes back and a scan finds it: same identity.
+        _ = try await store.reconcile(folderID: folder.id, presentIDs: [kept.id, trashed.id])
+        #expect(try await store.item(id: trashed.id)?.isMissing == false)
+    }
+
     @Test func reconcileMarksMissingAndRestores() async throws {
         let (store, folder) = try makeStore()
         try await store.save(folder)

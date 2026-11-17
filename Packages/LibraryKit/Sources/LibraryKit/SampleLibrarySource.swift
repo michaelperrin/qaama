@@ -11,7 +11,7 @@ public final class SampleLibrarySource: LibrarySource {
     public private(set) var assets: AssetCollection = .empty
     public private(set) var timeline: DateTimeline?
     public private(set) var lastLoadDuration: Duration?
-    public var capabilities: Set<LibraryCapability> = [.rating, .flag, .keywords, .captureDate]
+    public var capabilities: Set<LibraryCapability> = [.rating, .flag, .keywords, .captureDate, .deletion, .duplication]
     public var queryCapabilities: Set<QueryCapability> {
         [.sortByRating, .sortByFileName, .rating, .flag, .edited, .favorite, .search]
     }
@@ -148,6 +148,94 @@ public final class SampleLibrarySource: LibrarySource {
     public func saveEdit(_ output: EditingOutput, for asset: LibraryAsset) async throws {
         recipes[asset.id] = output.isReset ? nil : output.recipeData
         update(asset.id) { $0.hasEdit = !output.isReset }
+    }
+
+    // MARK: - Deleting and duplicating
+
+    /// A photo with everything the source holds about it: what putting it back takes.
+    private nonisolated struct Entry: Sendable {
+        var asset: LibraryAsset
+        var image: CGImage?
+        var recipe: Data?
+        var ownDate: Date?
+    }
+
+    private nonisolated enum Step: Sendable {
+        case remove([String])
+        case insert([Entry])
+        case duplicate([String])
+    }
+
+    @ObservationIgnored private lazy var steps = UndoableSteps<Step>(category: "SampleLibrarySource") { [weak self] step in
+        self?.perform(step)
+    }
+
+    @discardableResult
+    public func delete(_ assets: [LibraryAsset], undoManager: UndoManager?) async throws -> Bool {
+        guard capabilities.contains(.deletion) else { throw LibrarySourceError.unsupported(.deletion) }
+        let inverse = try await steps.run(.remove(assets.map(\.id)))
+        steps.register(inverse, named: assets.count == 1 ? "Delete Photo" : "Delete Photos", with: undoManager)
+        return inverse != nil
+    }
+
+    public func deletionNotice(for _: [LibraryAsset]) -> String? {
+        "Sample photos only exist in memory."
+    }
+
+    public func duplicate(_ assets: [LibraryAsset], undoManager: UndoManager?) async throws {
+        guard capabilities.contains(.duplication) else { throw LibrarySourceError.unsupported(.duplication) }
+        let inverse = try await steps.run(.duplicate(assets.map(\.id)))
+        steps.register(inverse, named: "Duplicate", with: undoManager)
+    }
+
+    private func perform(_ step: Step) -> Step? {
+        defer {
+            placesVersion += 1
+            refresh()
+        }
+        switch step {
+        case let .remove(ids):
+            let entries = ids.compactMap { id in
+                byID.removeValue(forKey: id).map { Entry(asset: $0, image: images.removeValue(forKey: id), recipe: recipes.removeValue(forKey: id), ownDate: ownDates.removeValue(forKey: id)) }
+            }
+            return entries.isEmpty ? nil : .insert(entries)
+        case let .insert(entries):
+            for entry in entries {
+                insert(entry)
+            }
+            return entries.isEmpty ? nil : .remove(entries.map(\.asset.id))
+        case let .duplicate(ids):
+            var copies: [String] = []
+            for id in ids {
+                guard let original = byID[id] else { continue }
+                var number = 1
+                var copyID = "\(id)-copy"
+                while byID[copyID] != nil {
+                    number += 1
+                    copyID = "\(id)-copy-\(number)"
+                }
+                var copy = LibraryAsset(id: copyID, pixelWidth: original.pixelWidth, pixelHeight: original.pixelHeight, creationDate: original.creationDate,
+                                        isFavorite: original.isFavorite, rating: original.rating, flag: original.flag, keywords: original.keywords,
+                                        modificationDate: original.modificationDate, hasEdit: original.hasEdit, isRAW: original.isRAW)
+                copy.modificationDate = .now
+                insert(Entry(asset: copy, image: images[id], recipe: recipes[id], ownDate: ownDates[id]))
+                copies.append(copyID)
+            }
+            return copies.isEmpty ? nil : .remove(copies)
+        }
+    }
+
+    private func insert(_ entry: Entry) {
+        let id = entry.asset.id
+        byID[id] = entry.asset
+        images[id] = entry.image
+        recipes[id] = entry.recipe
+        ownDates[id] = entry.ownDate
+    }
+
+    /// Waits for the deletions and copies in flight, undos and redos included; for tests.
+    public func waitUntilIdle() async {
+        await steps.waitUntilIdle()
     }
 
     private func update(_ id: String, _ change: (inout LibraryAsset) -> Void) {

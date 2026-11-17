@@ -136,6 +136,26 @@ public final nonisolated class CatalogStore: Sendable {
         }
     }
 
+    /// Marks the items at these paths of a folder as missing, without waiting for a scan to find
+    /// out: their files were just moved to the Trash. Returns their identifiers.
+    @discardableResult
+    public func markMissing(inFolder folderID: UUID, relativePaths: [String], now: Date = .now) async throws -> [UUID] {
+        try await writer.write { db in
+            var marked: [UUID] = []
+            for path in relativePaths {
+                let found = try CatalogItem
+                    .filter(CatalogItem.Col.folderID == folderID && CatalogItem.Col.relativePath == path)
+                    .fetchOne(db)
+                guard var item = found, !item.isMissing else { continue }
+                item.isMissing = true
+                item.missingSince = now
+                try item.update(db)
+                marked.append(item.id)
+            }
+            return marked
+        }
+    }
+
     /// Deletes items missing for longer than `retention`.
     public func purgeMissing(olderThan retention: TimeInterval = 30 * 24 * 3600, now: Date = .now) async throws -> Int {
         try await writer.write { db in

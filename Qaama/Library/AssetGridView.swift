@@ -28,6 +28,10 @@ struct AssetGridView: View {
     /// Filing in albums: its items in the context menu, and thumbnails that can be dragged to an
     /// album of the sidebar. Nil for libraries without albums.
     var albums: AlbumsAction?
+    /// Copies these photos in the library; nil leaves the command out.
+    var onDuplicate: (([LibraryAsset.ID]) -> Void)?
+    /// Deletes these photos, after confirmation; nil leaves the command out.
+    var onDelete: (([LibraryAsset.ID]) -> Void)?
     /// Told which month is at the top, and asked to scroll to another; nil for a grid without the toolbar's month button.
     var navigator: TimelineNavigator?
 
@@ -57,6 +61,8 @@ struct AssetGridView: View {
         let canPaste = AdjustmentsClipboard.shared.adjustments != nil
         let canAdjustDate = onAdjustDate != nil && source.capabilities.contains(.captureDate)
         let canShowInFinder = source.hasFileURLs
+        let canDuplicate = onDuplicate != nil && source.capabilities.contains(.duplication)
+        let canDelete = onDelete != nil && source.capabilities.contains(.deletion)
         let albumState = albums.map(AssetGridCell.AlbumState.init)
         let side = CGFloat(thumbnailSide)
         let timeline = sections
@@ -76,7 +82,8 @@ struct AssetGridView: View {
                                 AssetGridCell(asset: asset, index: index, side: side, fit: thumbnailFit, isSelected: selection.contains(asset.id),
                                               menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canPaste: canPaste,
                                                                             canAdjustDate: canAdjustDate,
-                                                                            canShowInFinder: canShowInFinder, albums: albumState),
+                                                                            canShowInFinder: canShowInFinder, canDuplicate: canDuplicate,
+                                                                            canDelete: canDelete, albums: albumState),
                                               source: source, actions: actions)
                                     .equatable()
                             }
@@ -208,6 +215,8 @@ struct AssetGridView: View {
         actions.adjustDate = { asset in onAdjustDate?(targets(for: asset)) }
         actions.export = { asset in export(targets(for: asset)) }
         actions.showInFinder = { asset in showInFinder(Set(targetIDs(for: asset))) }
+        actions.duplicate = { asset in onDuplicate?(targetIDs(for: asset)) }
+        actions.delete = { asset in onDelete?(targetIDs(for: asset)) }
         actions.targetIDs = targetIDs(for:)
         actions.albums = albums
     }
@@ -450,6 +459,8 @@ final class AssetGridActions {
     var adjustDate: (LibraryAsset) -> Void = { _ in }
     var export: (LibraryAsset) -> Void = { _ in }
     var showInFinder: (LibraryAsset) -> Void = { _ in }
+    var duplicate: (LibraryAsset) -> Void = { _ in }
+    var delete: (LibraryAsset) -> Void = { _ in }
     /// The photos a context menu acts on, by identifier: the selection when the photo is part of it.
     var targetIDs: (LibraryAsset) -> [LibraryAsset.ID] = { [$0.id] }
     var albums: AlbumsAction?
@@ -472,6 +483,8 @@ struct AssetGridCell: View, Equatable {
         var canAdjustDate: Bool
         /// The photo is a file of a folder, which the Finder can show.
         var canShowInFinder: Bool
+        var canDuplicate: Bool
+        var canDelete: Bool
         var albums: AlbumState?
     }
 
@@ -547,7 +560,15 @@ struct AssetGridCell: View, Equatable {
             AlbumMenuItems(albums: actions.albums, placement: .contextMenu(count: menu.count)) { actions.targetIDs(asset) }
         }
         Divider()
+        if menu.canDuplicate {
+            Button(PhotoFilingAction.duplicateTitle(count: menu.count)) { actions.duplicate(asset) }
+        }
         Button(menu.count > 1 ? "Export \(menu.count) Photos…" : "Export…") { actions.export(asset) }
+        if menu.canDelete {
+            // Last and apart, as what destroys is in a context menu.
+            Divider()
+            Button(PhotoFilingAction.deleteTitle(count: menu.count), role: .destructive) { actions.delete(asset) }
+        }
     }
 
     nonisolated static func == (lhs: AssetGridCell, rhs: AssetGridCell) -> Bool {

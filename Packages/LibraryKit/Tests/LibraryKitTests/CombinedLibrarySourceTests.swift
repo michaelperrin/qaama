@@ -111,13 +111,40 @@ struct CombinedLibrarySourceTests {
 
     @Test func offersOnlyWhatEveryMemberCanDo() async {
         let (library, a, _) = await makeLibrary()
-        #expect(library.capabilities == [.rating, .flag, .keywords, .captureDate])
+        #expect(library.capabilities == [.rating, .flag, .keywords, .captureDate, .deletion, .duplication])
         // Orders other than by date don't weave.
         #expect(library.queryCapabilities == [.rating, .flag, .edited, .favorite, .search])
 
         a.capabilities = [.rating, .keywords]
         #expect(library.capabilities == [.rating, .keywords])
         #expect(CombinedLibrarySource(displayName: "Empty").capabilities.isEmpty)
+    }
+
+    @Test func deletingAndDuplicatingGoToTheMemberHoldingEachPhoto() async throws {
+        let (library, a, b) = await makeLibrary()
+        let manager = UndoManager()
+        manager.groupsByEvent = false
+        let photos = try [#require(library.asset(id: "a-1")), #require(library.asset(id: "b-0"))]
+        // Sample libraries ask for a confirmation; one notice stands for both.
+        #expect(library.deletionNotice(for: photos) == a.deletionNotice(for: [photos[0]]))
+
+        try await library.duplicate([photos[0]], undoManager: nil)
+        #expect(a.asset(id: "a-1-copy") != nil && b.assets.count == 3)
+
+        manager.beginUndoGrouping()
+        #expect(try await library.delete(photos, undoManager: manager))
+        manager.endUndoGrouping()
+        #expect(a.asset(id: "a-1") == nil && b.asset(id: "b-0") == nil)
+        #expect(a.assets.count == 4 && b.assets.count == 2)
+
+        // Each member registered its own undo, in the group of the one step.
+        manager.undo()
+        await a.waitUntilIdle()
+        await b.waitUntilIdle()
+        #expect(a.asset(id: "a-1") == photos[0] && b.asset(id: "b-0") == photos[1])
+
+        let stranger = LibraryAsset(id: "nobody-1", pixelWidth: 1, pixelHeight: 1, creationDate: nil, isFavorite: false)
+        await #expect(throws: LibrarySourceError.self) { try await library.delete([stranger], undoManager: nil) }
     }
 
     @Test func theMapShowsThePhotosOfEveryMember() async throws {
