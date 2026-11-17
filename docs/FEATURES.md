@@ -138,6 +138,9 @@ can feed a website one day. Dates are when the feature landed.
   - Every one of these is undoable, deleting an album included: it comes back with its name,
     its folder and its photos.
 
+- A secondary click on a photo outside the selection selects it, as in Photos and the Finder:
+  the context menu, the selection ring and the Info panel are about the same photo. On a
+  selected photo, the selection stays and the menu acts on all of it (2026-11-17).
 - Delete photos (2026-11-17): Image › Delete Photo, or Delete 3 Photos for a selection, in the
   thumbnails' context menu and in the one of the photo open in the editor, which then shows the
   next photo. The Delete key does it; in an album, where that key takes photos out of the album,

@@ -492,6 +492,22 @@ Bibliothèque
         qu'elle garde doit être typée `@MainActor`, sinon une fermeture synchrone isolée
         s'exécute hors de l'acteur principal et l'exécution s'arrête sur l'assertion
         d'isolation.
+      - Clic secondaire sur une photo hors sélection (remarque de Michaël le 17/11) : le menu
+        agissait bien sur la photo cliquée, mais l'anneau de sélection et le panneau Info
+        restaient sur l'autre. La photo cliquée est maintenant sélectionnée à l'ouverture du
+        menu, comme dans Photos ; sur une photo déjà sélectionnée, la sélection reste. SwiftUI
+        n'a pas de « ce menu contextuel s'ouvre » : c'est le `body` d'une vue placée dans le
+        menu qui le dit (`ContextMenuOpening`), rapproché du début de suivi d'un menu
+        (`NSMenu.didBeginTrackingNotification`). Mesuré par sonde (vraie mosaïque hors écran,
+        `menu(for:)` puis notifications de suivi) : ce `body` n'est évalué qu'à la
+        construction du menu, jamais lors des mises à jour de la mosaïque, y compris pour un
+        menu déjà ouvert une fois ; il ne l'est pas si la vue n'ajoute aucun élément au menu
+        (`EmptyView`) ; et il ne l'est qu'une fois tant que le contenu du menu ne change pas,
+        d'où un compteur donné à toutes les vignettes à chaque fermeture de menu
+        (`menuGeneration`). Six cas vérifiés : première et deuxième ouverture sur la même
+        photo, clic sur une photo de la sélection, sur une troisième, changement de la
+        photothèque puis ouverture d'un autre menu, autre menu juste après une fermeture.
+        Non vérifié avec un vrai clic à l'écran.
       - Non vérifié en conditions réelles (rien n'a été lancé ni supprimé dans la photothèque
         de Michaël par l'agent ; la suppression dans Photos a été essayée par Michaël) : la
         copie dans Photos, la copie d'une photo retouchée

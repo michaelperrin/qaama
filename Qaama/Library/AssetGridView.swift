@@ -46,6 +46,8 @@ struct AssetGridView: View {
     /// Bumped when a menu opens, so the one rebuild SwiftUI makes of an open menu's items at the first
     /// update of the window happens right then, before a submenu could be open. See `AssetGridCell`.
     @State private var menuNudge = 0
+    /// Bumped when a menu closes, and given to every cell: see `selectPhotoOfOpeningMenu`.
+    @State private var menuGeneration = 0
     /// Where the grid is scrolled and how wide it is, for keeping the top row in place while zooming.
     /// A plain object: it changes on every scroll frame and must not rebuild the grid.
     @State private var viewport = GridViewport()
@@ -83,7 +85,8 @@ struct AssetGridView: View {
                                               menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canPaste: canPaste,
                                                                             canAdjustDate: canAdjustDate,
                                                                             canShowInFinder: canShowInFinder, canDuplicate: canDuplicate,
-                                                                            canDelete: canDelete, albums: albumState),
+                                                                            canDelete: canDelete, albums: albumState,
+                                                                            generation: menuGeneration),
                                               source: source, actions: actions)
                                     .equatable()
                             }
@@ -132,7 +135,11 @@ struct AssetGridView: View {
                 scrollPosition.scrollTo(id: target.item, anchor: target.anchor)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in menuNudge += 1 }
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
+            menuNudge += 1
+            selectPhotoOfOpeningMenu()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in menuGeneration += 1 }
         // View › Zoom In, Zoom Out and the thumbnail shape act on this grid while it is shown.
         .focusedSceneValue(\.hasAssetGrid, true)
         .focusedSceneValue(\.exportAction, selection.isEmpty ? nil : ExportAction { export(source.assets(withIDs: selection)) })
@@ -245,6 +252,21 @@ struct AssetGridView: View {
             selection.insert(id)
             anchorIndex = index
         }
+    }
+
+    /// A secondary click on a photo outside the selection selects that photo, as in Photos and the
+    /// Finder: the menu then acts on what shows as selected, and the Info panel tells about the
+    /// same photo. A click on a selected photo keeps the selection, which the menu acts on.
+    ///
+    /// SwiftUI has no word for "this view's context menu is opening". The cell's menu tells when it
+    /// is built (`ContextMenuOpening`), and a menu that starts being tracked right then is that one;
+    /// the selection changes in the update the grid makes at that moment anyway (`menuNudge`).
+    /// SwiftUI only builds a menu again when its content changed: every cell is given a new
+    /// `menuGeneration` once a menu has closed, so the next one to open tells again.
+    private func selectPhotoOfOpeningMenu() {
+        guard let opening = actions.takeMenuOpening(), !selection.contains(opening.id),
+              source.assets.indices.contains(opening.index), source.assets[opening.index].id == opening.id else { return }
+        select(opening.id, at: opening.index)
     }
 
     private func extend(to index: Int) {
@@ -464,6 +486,40 @@ final class AssetGridActions {
     /// The photos a context menu acts on, by identifier: the selection when the photo is part of it.
     var targetIDs: (LibraryAsset) -> [LibraryAsset.ID] = { [$0.id] }
     var albums: AlbumsAction?
+
+    /// The photo whose context menu was last built, and when.
+    private var menuOpening: (id: LibraryAsset.ID, index: Int, at: ContinuousClock.Instant)?
+    /// A menu is tracked right after it is built: one built longer ago than this isn't the menu
+    /// that is opening now (the menu bar, a pop-up button).
+    private static let menuOpeningDelay = Duration.milliseconds(500)
+
+    /// Called while the context menu of a photo is being built for display.
+    func menuIsOpening(for id: LibraryAsset.ID, at index: Int) {
+        menuOpening = (id, index, .now)
+    }
+
+    /// The photo whose context menu is opening now, if any; asked once per menu.
+    func takeMenuOpening() -> (id: LibraryAsset.ID, index: Int)? {
+        defer { menuOpening = nil }
+        guard let menuOpening, ContinuousClock.now - menuOpening.at < Self.menuOpeningDelay else { return nil }
+        return (menuOpening.id, menuOpening.index)
+    }
+}
+
+/// Tells when the context menu it is placed in is built for display. SwiftUI runs a context menu's
+/// closure for every tile on every update of the grid, but evaluates the body of a view inside it
+/// only when the menu opens, and then only if what it holds changed since it last did (measured
+/// with a probe, see docs/PLAN.md): that body is the one place that knows a menu is opening, and
+/// for which photo. It must hold items of the menu: a view that adds none is never evaluated.
+private struct ContextMenuOpening<Items: View>: View {
+    let report: () -> Void
+    @ViewBuilder let items: Items
+
+    var body: some View {
+        // Not a state change: the report goes to a plain object.
+        let _ = report()
+        items
+    }
 }
 
 /// One thumbnail of the grid with its gestures, its context menu and its drag source.
@@ -486,6 +542,8 @@ struct AssetGridCell: View, Equatable {
         var canDuplicate: Bool
         var canDelete: Bool
         var albums: AlbumState?
+        /// Changes after each menu closed, so the menu is built anew the next time it opens.
+        var generation = 0
     }
 
     /// The album items depend on these; the closures of `AlbumsAction` are read from `actions`.
@@ -542,7 +600,9 @@ struct AssetGridCell: View, Equatable {
 
     @ViewBuilder
     private var contextMenu: some View {
-        Button("Open in Editor") { actions.open(asset.id) }
+        ContextMenuOpening(report: { actions.menuIsOpening(for: asset.id, at: index) }) {
+            Button("Open in Editor") { actions.open(asset.id) }
+        }
         if menu.canShowInFinder {
             Button("Show in Finder") { actions.showInFinder(asset) }
         }
