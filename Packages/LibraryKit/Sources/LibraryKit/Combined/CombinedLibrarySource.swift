@@ -352,6 +352,14 @@ public final class CombinedLibrarySource: LibrarySource {
         await owner(of: asset.id)?.source.details(for: asset, allowingDownload: allowingDownload) ?? AssetDetails(asset)
     }
 
+    public func hasAlbums(for asset: LibraryAsset) -> Bool {
+        owner(of: asset.id)?.source.hasAlbums(for: asset) ?? false
+    }
+
+    public func albumIDs(containing asset: LibraryAsset) async -> [String] {
+        await owner(of: asset.id)?.source.albumIDs(containing: asset) ?? []
+    }
+
     /// Answers for the photos of members that have files; `hasFileURLs` stays false, since not every
     /// photo here has one.
     public func fileURL(for asset: LibraryAsset) -> URL? {

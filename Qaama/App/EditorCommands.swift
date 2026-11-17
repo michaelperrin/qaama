@@ -204,6 +204,7 @@ struct EditorCommands: Commands {
     @FocusedValue(\.goToMonthAction) private var goToMonthAction
     @FocusedValue(\.libraryDisplayAction) private var libraryDisplayAction
     @FocusedValue(\.mapZoomAction) private var mapZoomAction
+    @FocusedValue(\.backAction) private var backAction
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
     @AppStorage(GridDisplay.thumbnailSideKey) private var thumbnailSide = GridDisplay.defaultSide
     @AppStorage(GridDisplay.thumbnailFitKey) private var thumbnailFit = ThumbnailFit.fill
@@ -279,6 +280,10 @@ struct EditorCommands: Commands {
             .pickerStyle(.inline)
             .disabled(hasAssetGrid != true)
             Divider()
+            // The toolbar's Back button, as the Finder's Go › Back.
+            Button("Back") { backAction?.go() }
+                .keyboardShortcut("[")
+                .disabled(backAction == nil)
             // As Calendar's Go to Date…; the toolbar's month button opens the same picker.
             Button("Go to Month…") { goToMonthAction?.run() }
                 .keyboardShortcut("t", modifiers: [.command, .shift])

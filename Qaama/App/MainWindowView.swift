@@ -23,6 +23,10 @@ struct MainWindowView: View {
     @State private var maps = PhotoMapModels()
     /// Whether the sidebar is shown, for its toggle to tell.
     @State private var columnVisibility = NavigationSplitViewVisibility.all
+    /// The albums opened from an Info panel, one from the other, and how each library was left.
+    @State private var trail = VisitTrail<LibrarySelection, LibraryPlace>()
+    /// The place to put a library back in, between Back and the library's view showing.
+    @State private var arrival = LibraryArrival()
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -30,6 +34,18 @@ struct MainWindowView: View {
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } detail: {
             detail
+                // Albums named in an Info panel open through the sidebar's selection, with a way back.
+                .environment(\.libraryVisits, LibraryVisits(albums: catalog.photosAlbums, currentAlbumID: currentAlbumID, arrival: arrival,
+                                                            back: backAction, open: openAlbum))
+        }
+        .onChange(of: selection) { _, location in
+            // The sidebar was used: there is nothing to go back to any more.
+            if let location {
+                trail.moved(to: location)
+            } else {
+                trail = VisitTrail()
+            }
+            arrival.moved(to: location)
         }
         .task { await catalog.load() }
         .fileImporter(isPresented: $isPickingFolder, allowedContentTypes: [.folder]) { result in
@@ -43,6 +59,42 @@ struct MainWindowView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(folderError ?? "")
+        }
+    }
+
+    private var currentAlbumID: PhotosAlbum.ID? {
+        if case let .photosAlbum(id) = selection {
+            return id
+        }
+        return nil
+    }
+
+    /// Shows an album named in an Info panel, keeping the way back to what is on screen.
+    private func openAlbum(_ id: PhotosAlbum.ID, leaving place: LibraryPlace) {
+        guard let origin = selection else { return }
+        trail.visit(.photosAlbum(id), from: origin, leaving: place)
+        selection = .photosAlbum(id)
+    }
+
+    /// Back to where the album on screen was opened from, as it was left; nil when it was chosen
+    /// in the sidebar.
+    private var backAction: BackAction? {
+        guard let selection, let origin = trail.origin(of: selection) else { return nil }
+        return BackAction(help: "Back to “\(title(of: origin))”") {
+            guard let back = trail.goBack(from: selection) else { return }
+            arrival.expect(back.place, at: back.origin)
+            self.selection = back.origin
+        }
+    }
+
+    /// The name the sidebar shows for a library.
+    private func title(of location: LibrarySelection) -> String {
+        switch location {
+        case .map: "Map"
+        case .photos: "Photos"
+        case let .photosAlbum(id): catalog.photosAlbums.album(id: id)?.title ?? "Album"
+        case let .folder(id): catalog.folders.first { $0.id == id }?.displayName ?? "Folder"
+        case let .subfolder(_, path): path.split(separator: "/").last.map(String.init) ?? "Folder"
         }
     }
 

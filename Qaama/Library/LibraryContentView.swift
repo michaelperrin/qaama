@@ -38,10 +38,17 @@ struct LibraryContentView: View {
     /// Grid or map, for every library that has a map.
     @AppStorage(LibraryDisplay.key) private var display = LibraryDisplay.grid
     @State private var ownMaps = PhotoMapModels()
+    /// Where the grid is scrolled, for the grid that comes back after the editor or after Back.
+    @State private var gridPlace = GridPlaceKeeper()
     @Environment(\.undoManager) private var undoManager
+    /// The way to the albums named in the Info panels, and back.
+    @Environment(\.libraryVisits) private var visits
 
     var body: some View {
         content
+            .environment(\.albumNavigation, albumNavigation)
+            .onAppear(perform: arrive)
+            .focusedSceneValue(\.backAction, backAction)
             // View › Show Inspector acts on this window, grid or editor.
             .focusedSceneValue(\.hasInspector, true)
             .focusedSceneValue(\.adjustDateAction, adjustDateAction)
@@ -121,14 +128,17 @@ struct LibraryContentView: View {
                             }
                         }
                 } else {
-                    AssetGridView(source: source, selection: $selection, onOpen: { editorSession = EditorSession(assetID: $0, source: source) },
-                                  onAdjustDate: adjustDate, albums: albumsAction, onDuplicate: duplicate, onDelete: askToDelete,
-                                  navigator: navigator)
-                        .safeAreaInset(edge: .top, spacing: 0) {
-                            if let notice = source.indexingNotice {
-                                IndexingNoticeView(notice: notice, progress: source.indexingProgress)
+                    // The grid waits for a side column to have slid in or out before taking its new width.
+                    SettledWidth(trailingColumnWidth: EditorInspector.width) {
+                        AssetGridView(source: source, selection: $selection, onOpen: openEditor,
+                                      onAdjustDate: adjustDate, albums: albumsAction, onDuplicate: duplicate, onDelete: askToDelete,
+                                      navigator: navigator, place: gridPlace)
+                            .safeAreaInset(edge: .top, spacing: 0) {
+                                if let notice = source.indexingNotice {
+                                    IndexingNoticeView(notice: notice, progress: source.indexingProgress)
+                                }
                             }
-                        }
+                    }
                 }
             }
             // Without it the row settles at the grid's ideal width, one column of thumbnails.
@@ -155,6 +165,12 @@ struct LibraryContentView: View {
                 ToolbarItem(placement: .navigation) {
                     Button("Back to the Map", systemImage: "chevron.left") { source.query.onlyAssetIDs = nil }
                         .help("Back to the map")
+                }
+            } else if let back = visits?.back {
+                // An album opened from the Info panel: back to where it was opened from.
+                ToolbarItem(placement: .navigation) {
+                    Button("Back", systemImage: "chevron.left", action: back.go)
+                        .help(back.help)
                 }
             }
             if source.hasPlaces, !showsOnlyMap {
@@ -336,6 +352,65 @@ struct LibraryContentView: View {
         }
     }
 
+    // MARK: - Albums of the Info panel, and back
+
+    /// What the Info panels name the albums of a photo with, and go to one through.
+    private var albumNavigation: AlbumNavigation? {
+        visits.map { AlbumNavigation(list: $0.albums, currentID: $0.currentAlbumID, open: openAlbum) }
+    }
+
+    /// Leaves this library for an album, noting how it is left for the way back. From the editor,
+    /// the open photo's unsaved edits are asked about first, as when stepping to another photo.
+    private func openAlbum(_ id: PhotosAlbum.ID) {
+        guard let visits else { return }
+        let leave = { visits.open(id, currentPlace) }
+        guard let model = editorSession?.model else { return leave() }
+        guard !model.isBusy else { return }
+        if model.hasUnsavedChanges {
+            pendingLeave = PendingLeave(model: model, proceed: leave)
+        } else {
+            leave()
+        }
+    }
+
+    /// The selection, where the grid is scrolled and the photo open in the editor, as they are now.
+    private var currentPlace: LibraryPlace {
+        if let editorSession {
+            return LibraryPlace(selection: selection, grid: gridPlace.left, editedAssetID: editorSession.model.assetID)
+        }
+        return LibraryPlace(selection: selection, grid: showsMap ? nil : gridPlace.read())
+    }
+
+    /// Puts this library back as it was left, when Back led to it.
+    private func arrive() {
+        guard let place = visits?.arrival.take() else { return }
+        selection = place.selection
+        if let id = place.editedAssetID, source.asset(id: id) != nil {
+            gridPlace.open(id, leavingGridAt: place.grid)
+            editorSession = EditorSession(assetID: id, source: source)
+        } else {
+            gridPlace.pending = place.grid
+        }
+    }
+
+    /// View › Back: what the Back button on screen does. The editor's closes it, the one of a group
+    /// of the map shows the map again, the one of an album opened from the Info panel goes back to
+    /// where it was opened from.
+    private var backAction: BackAction? {
+        if let editorSession {
+            return BackAction(help: "Back to the photos") { closeEditor(editorSession) }
+        }
+        if isShowingMapGroup {
+            return BackAction(help: "Back to the map") { source.query.onlyAssetIDs = nil }
+        }
+        return visits?.back
+    }
+
+    private func openEditor(_ id: LibraryAsset.ID) {
+        gridPlace.open(id, leavingGridAt: gridPlace.read())
+        editorSession = EditorSession(assetID: id, source: source)
+    }
+
     // MARK: - Duplicating and deleting
 
     /// Image › Duplicate and Delete, and the same in the open photo's context menu: the photo open
@@ -414,6 +489,7 @@ struct LibraryContentView: View {
                 session.show(next)
             } else {
                 selection = []
+                gridPlace.close(on: id, row: nil)
                 editorSession = nil
             }
         }
@@ -426,8 +502,10 @@ struct LibraryContentView: View {
 
     /// Returns to the grid, from the editor's Close button or the toolbar's Back button.
     private func closeEditor(_ session: EditorSession) {
-        // Back in the grid, the photo last edited is the one selected.
-        selection = [session.model.assetID]
+        // Back in the grid, the photo last edited is the one selected, and the grid is where it was.
+        let id = session.model.assetID
+        selection = [id]
+        gridPlace.close(on: id, row: source.index(of: id))
         editorSession = nil
     }
 

@@ -439,6 +439,72 @@ Bibliothèque
           le champ comme par le bouton par défaut), Échap efface puis ferme, captures claires et
           sombres avec titres et dossiers longs. Non vérifié à
           l'écran : l'élément Search… dans les deux menus et son raccourci.
+      - Albums d'une photo dans le panneau Info, fait le 17/11/2026 à la demande de Michaël :
+        section Albums sous Info (grille, carte et onglet Info de l'éditeur), le titre de chaque
+        album au-dessus du chemin de ses dossiers ; à plusieurs photos, « Albums in Common »,
+        les albums qu'elles ont toutes, comme pour les mots-clés. Un clic sur la ligne ouvre
+        l'album par la sélection de la barre latérale ; l'album affiché n'est pas cliquable.
+        Depuis l'éditeur, les modifications non enregistrées sont d'abord demandées (même
+        dialogue que pour passer à une autre photo).
+        - Architecture : `LibrarySource.hasAlbums(for:)` et `albumIDs(containing:)` (identifiants
+          seulement, vides par défaut ; Photos interroge
+          `PHAssetCollection.fetchAssetCollectionsContaining` hors acteur principal ; la carte
+          relaie au membre qui détient la photo), `AssetAlbumsModel` dans LibraryKit
+          (intersection des albums de la sélection), `AssetAlbumsSection` dans l'app, qui nomme
+          les albums d'après `PhotosAlbumList.tree` : ceux que la barre latérale ne liste pas
+          (partagés, synchronisés, Favoris) sont écartés, puisqu'on ne peut pas les ouvrir. La
+          fenêtre donne le chemin par la valeur d'environnement `albumNavigation`.
+        - Rafraîchissement : ajouter une photo à un album ne change pas la photo, et Photos
+          signale des changements toutes les secondes ou deux pendant ses analyses : relire à
+          chaque notification coûterait trop. `PhotosAlbumList.contentVersion` est donc
+          incrémenté quand Qaama ajoute ou retire lui-même (annulations comprises) et quand la
+          liste des albums est relue ; la section relit alors la sélection. Hypothèse non
+          vérifiée : qu'un ajout fait dans Photos même fasse relire la liste (Photos signale-t-il
+          l'album comme changé ?) ; sinon le panneau ne suit ce changement-là qu'à la sélection
+          suivante.
+        - Leçon : `.buttonStyle(.link)` reste d'un bleu fixe, quelle que soit la teinte (vu dans
+          la sonde, teinte grise appliquée). Pour une liste, ligne entière cliquable en style
+          `.plain` avec une flèche grise au bout, comme le bouton ellipse de la ligne File. Le
+          lien bleu de la date (Captured) est resté tel quel.
+        - Mesure : aucune sur une vraie photothèque. Le modèle journalise « Read the albums of
+          N photos in X ms » (catégorie `AssetAlbumsModel`) : à relever par Michaël avec ses
+          787 albums, pour une photo et pour 50.
+        - Vérifié : 6 tests d'`AssetAlbumsModel`, un de la carte, un de `PhotosAlbumEditor`
+          (version incrémentée, annulation comprise), un du parcours de la hiérarchie ; sonde
+          hors écran en clair et en sombre (une photo, plusieurs, aucune, titres et dossiers
+          longs tronqués dans la colonne de 280). Non vérifié à l'écran : le clic lui-même (un
+          bouton SwiftUI ne reçoit pas les clics simulés de la sonde), la vraie requête PhotoKit
+          et l'ouverture depuis l'éditeur.
+        - Reste possible : sélectionner la photo dans l'album ouvert et y faire défiler la
+          grille ; déplier le dossier de l'album dans la barre latérale.
+      - Retour depuis un album ouvert par le panneau Info, fait le 17/11/2026 à la demande de
+        Michaël : bouton Back de la barre d'outils (le chevron de l'éditeur) et View › Back
+        (⌘[), qui ramènent là où l'on était : grille au même endroit, même sélection, même photo
+        rouverte dans l'éditeur si l'on en venait. Les albums ouverts l'un depuis l'autre se
+        remontent un par un ; un clic dans la barre latérale fait oublier le chemin.
+        - Constat (sonde minimale) : un `ScrollView` retiré puis remis à l'écran repart à
+          l'offset 0. La grille repartait donc en haut à chaque retour de l'éditeur ; le même
+          mécanisme la remet maintenant en place là aussi (autour de la photo affichée en
+          dernier si l'on a changé de photo dans l'éditeur).
+        - Architecture : `VisitTrail` (LibraryKit, générique, testé) tenu par la fenêtre, avec
+          pour chaque visite un `LibraryPlace` (sélection, place de la grille, photo en cours
+          d'édition) ; `LibraryVisits` dans l'environnement donne à `LibraryContentView` de quoi
+          partir et revenir, et `LibraryArrival` lui remet la place une seule fois. La place de
+          la grille est un `GridPlace` : la première vignette entièrement visible et sa distance
+          au haut de la zone visible, lue dans les cadres du `GridViewport` et rendue par
+          `scrollTo(id:anchor:)` ; `GridPlaceKeeper` la garde d'une grille à la suivante.
+        - Leçon : à l'apparition d'une bibliothèque, la fenêtre place ses colonnes en plusieurs
+          passes (zone visible de 100 × 100, puis 24 de large, puis la vraie taille) ; un
+          `scrollTo` fait dans une taille provisoire est perdu. La place est donc réalignée à
+          chaque changement de taille pendant une seconde (`GridViewport.arrive(at:)`).
+        - Mesure (sonde, vraie grille, 400 photos d'exemple) : après un aller-retour, la même
+          vignette au même endroit à 0,2 pt près (153,3 puis 153,1 ; 53,8 puis 53,6). L'offset
+          brut diffère (3137 puis 3188) : les hauteurs estimées de `LazyVGrid` ne sont pas
+          celles d'avant, d'où le repérage par vignette et non par offset.
+        - Vérifié : 4 tests de `VisitTrail` ; sonde de `LibraryContentView` à l'arrivée d'un
+          retour (bouton Back avec son aide, sélection, grille à la place demandée, éditeur
+          rouvert). Non vérifié à l'écran : le parcours complet dans l'app (clic sur l'album,
+          Back, View › Back), et le retour de l'éditeur sur la photothèque de 74 000 photos.
       - Reste : renommer et déplacer un album ou un dossier, supprimer un dossier, glisser sur
         Favoris, faire suivre le jumeau JPEG d'un RAW ajouté à un album, filtrer les albums de
         la barre latérale par leur nom. (Raccourci pour Remove from Album : ⌫, le 17/11/2026.)
@@ -1036,6 +1102,102 @@ Bibliothèque
             rétrécit ; elle demande alors une ligne qui n'existe plus. Corrigé par une
             vérification des bornes dans la cellule (leçon ajoutée à AGENTS.md). Sonde après
             correction : les quatre scénarios passent.
+      - [x] Lenteur causée par cette vérification, signalée par Michaël le 17/11/2026 (photothèque
+            Photos : sélection d'une photo affichée au moins 1 s après le clic, repli de la barre
+            latérale en 3 à 4 s). Cause : le `if` nu dans le `ForEach` fait de chaque rangée
+            zéro ou une vue ; la grille paresseuse ne sait alors plus où est une rangée sans
+            construire toutes celles au-dessus, et le refaisait à chaque mise à jour, d'autant
+            plus cher qu'on est loin dans la photothèque (et chaque rangée construite demande
+            sa photo à PhotoKit). Corrigé en mettant la vérification dans un `ZStack` : une
+            rangée, une vue (leçon ajoutée à AGENTS.md).
+            - Mesures (sonde, Debug, 74 000 photos factices sur 237 mois, grille au milieu) :
+              sélection d'une photo 124 ms avant, 13 ms après (12 ms en haut de la grille dans
+              les deux cas) ; un pas de changement de largeur 60 à 500 ms avant, 7 à 42 ms
+              après ; repli de la barre latérale dans la vraie `LibraryContentView` : un tour de
+              boucle bloqué 3 643 ms avant, 66 à 211 ms cumulés après (pire tour 76 ms).
+            - Effet de bord découvert : avec le `if` nu, `scrollTo(id:)` n'amenait pas la grille
+              à une rangée lointaine dans cette photothèque (elle restait en haut) ; le retour à
+              sa place (bouton Back) n'y aurait donc pas marché.
+            - Au repos l'app ne consomme rien (échantillon du fil principal). Lecture des albums
+              d'une photo, relevée dans les journaux de Michaël : 70 à 312 ms, hors acteur
+              principal.
+            - Confirmé par Michaël le 17/11/2026 (« beaucoup mieux »). Reste : le journal signale
+              « OnScrollGeometryChange tried to update multiple times per frame » (3 fois en
+              12 min), non traité.
+      - [x] Grille qui se décale au repli de la barre latérale, signalé par Michaël le
+            17/11/2026 : en la cachant, des photos plus anciennes s'affichaient ; en la
+            remontrant, on revenait aux premières. Cause : plus ou moins de colonnes font
+            d'autres rangées, et le défilement gardait le même décalage en points. La grille
+            garde maintenant en place la première vignette entièrement visible d'avant le
+            changement de largeur (`GridViewport.update`, même repérage que `GridPlace`), pour
+            toute la durée du redimensionnement.
+            - Trois façons essayées (sonde, 74 000 photos, grille au milieu, cumul des tours de
+              plus de 20 ms par repli) : réaligner à chaque image de l'animation, exact mais
+              250 à 390 ms (autant que la mise en page elle-même) ; réaligner une seule fois au
+              début, 100 ms mais la place est perdue au changement de colonnes suivant
+              (SwiftUI ne tient pas une rangée par son identifiant quand la largeur change) ;
+              réaligner quand la hauteur du contenu change, c'est-à-dire quand les rangées
+              sont refaites : exact (159,5 pt avant, 159,5 après élargissement, rétrécissement
+              et retour) pour 60 à 120 ms à l'affichage de la barre et 180 à 310 ms au repli.
+              Retenu.
+            - La place est lue quand les cellules ont rapporté leurs cadres
+              (`updateVisibleRows`), pas au rapport de géométrie du défilement, qui a une image
+              de retard : lue là, elle était décalée d'un cran de molette (80 pt).
+            - Dans la sonde, un défilement fait sur la `NSClipView` après un `scrollTo(id:)` est
+              refusé, alors que la molette (`scrollWheel(with:)`) passe : tester le défilement
+              par la molette.
+            - Animation de la barre latérale encore « un peu lente » (Michaël) : le profil
+              (`sample`) montre que le temps est dans la mise en page de la grille paresseuse à
+              chaque image (`LazySubviewPlacements`, parcours des 237 sections), pire tour 60 à
+              110 ms en Debug. Pistes non faites : figer la largeur de la grille pendant
+              l'animation et la refaire une fois à la fin ; ne garder dans la grille que les
+              mois proches de ce qui est affiché.
+            - Largeur de la grille figée pendant l'animation, fait le 17/11/2026 (choix de
+              Michaël après essai de la version Release) : `SettledWidth` autour de la grille,
+              `GridWidthSettler`. Au repos la grille est épinglée à la largeur offerte ; quand
+              celle-ci change, la grille garde la sienne, contre le bord qui ne bouge pas, et
+              prend la nouvelle une seule fois, 100 ms après le dernier changement. Une fenêtre
+              redimensionnée à la main n'attend pas (la grille suit en direct, épingle levée
+              entre `willStartLiveResize` et `didEndLiveResize`).
+              - Mesure (sonde, 74 000 photos, repli par `toggleSidebar`, tours de plus de
+                20 ms) : avant, 6 à 9 tours lents de 21 à 157 ms répartis sur l'animation ;
+                après, aucun pendant les 250 ms de l'animation, puis un ou deux à la fin (30 à
+                60 ms) pour refaire les rangées. Les mêmes dates restent à l'écran.
+              - Essais écartés. (1) Déclencher par `onChange(of: columnVisibility)` : par le
+                menu système, la liaison ne change qu'à la fin de l'animation (tracé dans la
+                sonde), trop tard. (2) Une `Layout` sur mesure qui décide de la largeur
+                pendant la mise en page, puis un `GeometryReader`, puis une surcouche
+                (`overlay`) : la vue de défilement y perd l'estompage sous la barre d'outils,
+                les photos passent nettes sous le titre (couleur moyenne sous la barre 92/143/103
+                au lieu de 217/226/219) ; `scrollEdgeEffectStyle` ne le rétablit pas, et
+                `frame(minWidth: 0, maxWidth: .infinity)` le casse aussi. Seuls les cadres
+                `frame(width:)` et `frame(maxWidth:)` le gardent. (3) Un cadre à maximum seul
+                s'élargit avec une grille épinglée plus large que la place offerte : le
+                rétrécissement n'était jamais vu. D'où le cadre de largeur nulle autour de la
+                grille épinglée, qui la sort du calcul de largeur sans la rogner.
+              - Retour de Michaël le même jour : très rapide, mais au repli une grande zone
+                blanche là où était la barre latérale, puis la mosaïque qui s'y place d'un coup.
+                Corrigé selon sa première idée, placer la mosaïque d'abord : quand la largeur
+                grandit, la grille prend dès la première image la largeur qu'elle aura (sa
+                largeur plus la place que la barre latérale occupait depuis le bord de la
+                fenêtre, ou la largeur de l'inspecteur), sous la colonne, qui découvre en
+                glissant des photos déjà en place. Quand la largeur diminue, rien ne change :
+                la colonne recouvre une grille qui remplit encore sa place, refaite à la fin.
+                Pas de prédiction bouton de souris enfoncé (bord tiré à la main). Mesure
+                (sonde) : au repli, un tour de 80 à 98 ms à la première image, plus rien
+                pendant l'animation, et pas de seconde mise en page à la fin (la largeur
+                prédite est la bonne). Autres idées de Michaël non faites : animer le
+                déplacement des vignettes, supprimer l'animation de la barre latérale.
+              - Limites : la première image d'un maintien peut garder l'autre bord (le bord
+                qui bouge n'est connu qu'après la mise en page) ; quand le changement n'est pas
+                animé, les rangées sont refaites 100 à 150 ms après. Non vérifié à l'écran :
+                le bouton de la barre d'outils dans l'app (animé ou non), l'inspecteur, le
+                redimensionnement de la fenêtre à la main, le bord de la barre latérale tiré.
+            - Mesure en Release (même sonde, 17/11/2026) : le repli ne change pas (226 à 330 ms
+              cumulés au repli, 92 à 117 ms à l'affichage, pire tour 69 à 107 ms, comme en
+              Debug) : le temps est dans SwiftUI, déjà optimisé, pas dans notre code. La
+              sélection d'une photo passe de 13 ms à 5 à 9 ms. La compilation n'est donc pas un
+              levier pour l'animation.
       - [x] Mesures sur la photothèque de Michaël (journaux du 13/11/2026, 74 051 photos, un
             dossier de 25 fichiers) : premier listage de Photos 1 304 ms, le second (membre
             d'« All Photos ») 103 ms ; dates du listage 1 300 ms, lues deux fois en même temps

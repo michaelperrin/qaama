@@ -34,6 +34,9 @@ struct AssetGridView: View {
     var onDelete: (([LibraryAsset.ID]) -> Void)?
     /// Told which month is at the top, and asked to scroll to another; nil for a grid without the toolbar's month button.
     var navigator: TimelineNavigator?
+    /// Told how to read where this grid is scrolled, and where to scroll it when it takes the place
+    /// of another; nil for a grid that always starts at the top.
+    var place: GridPlaceKeeper?
 
     /// Thumbnail size and shape, from the toolbar's slider and the View menu; kept across launches.
     @AppStorage(GridDisplay.thumbnailSideKey) private var thumbnailSide = GridDisplay.defaultSide
@@ -69,6 +72,7 @@ struct AssetGridView: View {
         let side = CGFloat(thumbnailSide)
         let timeline = sections
         let _ = followVisibleRows(in: timeline)
+        let _ = tellPlace()
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: side), spacing: GridViewport.spacing)], spacing: GridViewport.spacing) {
                 ForEach(timeline.sections) { section in
@@ -79,16 +83,23 @@ struct AssetGridView: View {
                             // A cell reads the listing, so it is asked again when the listing changes, and
                             // that can come before the months above are: with the row it had, which a
                             // listing that just shrank (a subfolder opened, a filter set) no longer has.
-                            if source.assets.indices.contains(index) {
-                                let asset = source.assets[index]
-                                AssetGridCell(asset: asset, index: index, side: side, fit: thumbnailFit, isSelected: selection.contains(asset.id),
-                                              menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canPaste: canPaste,
-                                                                            canAdjustDate: canAdjustDate,
-                                                                            canShowInFinder: canShowInFinder, canDuplicate: canDuplicate,
-                                                                            canDelete: canDelete, albums: albumState,
-                                                                            generation: menuGeneration),
-                                              source: source, actions: actions)
-                                    .equatable()
+                            // The check is inside a ZStack so that every row is exactly one view. With the
+                            // `if` alone a row is zero or one view, the grid can't tell where a row is
+                            // without building every row above it, and did so at each update: measured
+                            // with 74,000 photos, 124 ms to select a photo in the middle of the grid
+                            // against 13 ms, and up to 500 ms per step of a change of width against 42 ms.
+                            ZStack {
+                                if source.assets.indices.contains(index) {
+                                    let asset = source.assets[index]
+                                    AssetGridCell(asset: asset, index: index, side: side, fit: thumbnailFit, isSelected: selection.contains(asset.id),
+                                                  menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canPaste: canPaste,
+                                                                                canAdjustDate: canAdjustDate,
+                                                                                canShowInFinder: canShowInFinder, canDuplicate: canDuplicate,
+                                                                                canDelete: canDelete, albums: albumState,
+                                                                                generation: menuGeneration),
+                                                  source: source, actions: actions)
+                                        .equatable()
+                                }
                             }
                         }
                     } header: {
@@ -104,8 +115,14 @@ struct AssetGridView: View {
         }
         .scrollPosition($scrollPosition)
         .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { _, geometry in
-            viewport.update(geometry)
+            let held = viewport.update(geometry)
+            // The first report is when the grid can scroll; the later ones find a listing that came late.
+            // A place the grid was asked to open at comes before the one it holds while its width changes.
+            if !restorePlace(), let held, source.assets.indices.contains(held.row) {
+                scrollPosition.scrollTo(id: held.row, anchor: viewport.anchor(forCellTop: held.top, side: thumbnailSide))
+            }
         }
+        .onChange(of: place?.pending) { restorePlace() }
         .onChange(of: navigator?.jump) { _, jump in
             // The first row of the month goes under its header, which then sits at the top of the grid.
             guard let jump, source.assets.indices.contains(jump.row) else { return }
@@ -203,6 +220,42 @@ struct AssetGridView: View {
         let dates = [source.assets[rows.lowerBound].creationDate, source.assets[rows.upperBound].creationDate].compactMap(\.self)
         navigator.gridShows(section: timeline.section(containing: rows.lowerBound)?.id,
                             dates: dates.min().flatMap { first in dates.max().map { first ... $0 } })
+    }
+
+    /// Has the keeper read where this grid is scrolled: the first thumbnail showing whole, and how
+    /// far under the top. Not a state change: a plain closure, pointed at this version of the grid.
+    private func tellPlace() {
+        guard let place else { return }
+        let viewport = viewport
+        place.read = {
+            guard let cell = viewport.topCell, source.assets.indices.contains(cell.row) else { return nil }
+            return GridPlace(assetID: source.assets[cell.row].id, row: cell.row, top: cell.top)
+        }
+    }
+
+    /// Scrolls to the place kept for this grid, once it has a size and photos to show, and again
+    /// while that size settles (see `GridViewport.arrive(at:)`).
+    @discardableResult
+    private func restorePlace() -> Bool {
+        if let place, let wanted = place.pending, viewport.hasSize, !source.assets.isEmpty {
+            place.pending = nil
+            viewport.arrive(at: wanted)
+            scroll(to: wanted)
+            return true
+        }
+        if let wanted = viewport.placeToAlignAgain() {
+            scroll(to: wanted)
+            return true
+        }
+        return false
+    }
+
+    private func scroll(to wanted: GridPlace) {
+        guard !source.assets.isEmpty else { return }
+        // The listing may have changed since: the photo is looked for, then its old row is settled for.
+        let stillThere = source.assets.indices.contains(wanted.row) && source.assets[wanted.row].id == wanted.assetID
+        let row = stillThere ? wanted.row : source.index(of: wanted.assetID) ?? min(wanted.row, source.assets.count - 1)
+        scrollPosition.scrollTo(id: row, anchor: wanted.top.map { viewport.anchor(forCellTop: $0, side: thumbnailSide) } ?? .center)
     }
 
     /// Points the cells' actions at this version of the grid. Not a state change: a plain object.
@@ -373,8 +426,104 @@ final class GridViewport {
     var onVisibleRowsChange: (ClosedRange<Int>?) -> Void = { _ in }
     private var visibleRowsAreOutdated = false
 
-    func update(_ geometry: ScrollGeometry) {
+    /// Where the grid was last seen scrolled while its width stayed the same: read once the cells
+    /// have reported their frames (`updateVisibleRows`), which the scroll view's own report precedes.
+    private var settled: (row: Int, top: CGFloat)?
+    /// The thumbnail kept where it is while the width changes, and when the width last changed.
+    private var held: (row: Int, top: CGFloat)?
+    private var lastResize: ContinuousClock.Instant?
+    /// The height of the grid's content as last reported, and how many reports came since the
+    /// width last changed.
+    private var contentHeight: CGFloat = 0
+    private var reportsSinceResize = Int.max / 2
+    /// Changes of width closer together than this belong to one resize (the sidebar sliding, the
+    /// window's edge being dragged), and keep the same thumbnail in place.
+    private static let resizeGap: Duration = .milliseconds(400)
+
+    /// Takes the scroll view's geometry as it changes. While the width of the visible area changes,
+    /// answers with the thumbnail to put back where it was each time the rows were made anew: more
+    /// or fewer columns make other rows, and the same offset would show other photos (hiding the
+    /// sidebar scrolled to older ones). The thumbnail is the one that was first before the resize
+    /// began, for the whole of it: reading it again between two steps would take a grid that has
+    /// not caught up yet.
+    ///
+    /// The rows are known to have changed by the height of the content: between two widths that
+    /// hold as many columns it stays the same, and so does what the grid shows. Aligning at every
+    /// step of the sidebar's animation cost as much again as the layout itself (measured with a
+    /// probe, see docs/PLAN.md); aligning once at the first step lost the place at the next change
+    /// of columns.
+    func update(_ geometry: ScrollGeometry) -> (row: Int, top: CGFloat)? {
+        let previous = containerSize
         containerSize = geometry.containerSize
+        let rowsChanged = geometry.contentSize.height != contentHeight
+        contentHeight = geometry.contentSize.height
+        guard previous.width > 0, previous.width != containerSize.width else {
+            if !isResizing {
+                held = nil
+            }
+            // The new height can come one report after the new width.
+            defer { reportsSinceResize += 1 }
+            return rowsChanged && reportsSinceResize < 2 ? held : nil
+        }
+        if !isResizing || held == nil {
+            held = settled
+        }
+        lastResize = .now
+        reportsSinceResize = 0
+        return rowsChanged ? held : nil
+    }
+
+    private var isResizing: Bool {
+        lastResize.map { ContinuousClock.now - $0 < Self.resizeGap } ?? false
+    }
+
+    /// The place the grid was last asked to open at, the size of the visible area it was aligned
+    /// in, and until when it is worth aligning again.
+    private var arrival: (place: GridPlace, size: CGSize, until: ContinuousClock.Instant)?
+    /// How long after a grid opened at a place its size may still be settling.
+    private static let settlingTime: Duration = .seconds(1)
+
+    /// Notes that the grid was just scrolled to `place`. A window lays its columns out in several
+    /// passes when a library's view appears (measured with a probe: a visible area of 100 × 100,
+    /// then 24 wide, then the real one), and a scroll made in a provisional size is lost: the place
+    /// is aligned again each time the size changes, for a moment.
+    func arrive(at place: GridPlace) {
+        arrival = (place, containerSize, .now + Self.settlingTime)
+    }
+
+    /// The place to scroll to again, when the visible area changed size since it was last aligned.
+    func placeToAlignAgain() -> GridPlace? {
+        guard let current = arrival else { return nil }
+        guard ContinuousClock.now < current.until else {
+            arrival = nil
+            return nil
+        }
+        guard hasSize, current.size != containerSize else { return nil }
+        arrival?.size = containerSize
+        return current.place
+    }
+
+    /// False until the scroll view has reported its size: nothing can be aligned in it before.
+    var hasSize: Bool {
+        containerSize.height > 0
+    }
+
+    /// The first thumbnail showing whole, and how far its top is under the top of the visible area:
+    /// what tells where the grid is scrolled. The first one showing at all when none shows whole
+    /// (thumbnails taller than the window); nil when no cell is on screen.
+    var topCell: (row: Int, top: CGFloat)? {
+        var whole: (row: Int, top: CGFloat)?
+        var cut: (row: Int, top: CGFloat)?
+        for (index, frame) in frames where frame.maxY > 0 && frame.minY < containerSize.height {
+            if frame.minY >= 0 {
+                if index < whole?.row ?? .max {
+                    whole = (index, frame.minY)
+                }
+            } else if index < cut?.row ?? .max {
+                cut = (index, frame.minY)
+            }
+        }
+        return whole ?? cut
     }
 
     func cellDidLayout(_ index: Int, frame: CGRect) {
@@ -397,6 +546,9 @@ final class GridViewport {
 
     private func updateVisibleRows() {
         visibleRowsAreOutdated = false
+        if !isResizing {
+            settled = topCell
+        }
         var first: Int?
         var last: Int?
         // The grid keeps a few cells beyond its edges: only those crossing the visible area count.
@@ -439,6 +591,12 @@ final class GridViewport {
         self.anchor = anchor
         let top = anchor.pointY - anchor.fractionInCell * (side + 4)
         return (anchor.item, unitPoint(forCellTop: top, side: side))
+    }
+
+    /// How to align a cell with the visible area so its top is `top` points under the top of it:
+    /// where `topCell` found it.
+    func anchor(forCellTop top: CGFloat, side: Double) -> UnitPoint {
+        unitPoint(forCellTop: top, side: side)
     }
 
     /// The alignment that puts the top of a cell `top` points under the top of the visible area, once

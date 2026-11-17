@@ -55,6 +55,11 @@ can feed a website one day. Dates are when the feature landed.
   while pinching, the one at the center of the view stays put with the slider or the menu, and
   thumbnails are fetched at the size they are shown, so zooming in keeps them sharp. Remembered
   across launches (2026-11-07, pinch 2026-11-08).
+- The grid keeps its photos in place when its width changes: hiding or showing the sidebar or the
+  inspector, or resizing the window, makes other rows of the same photos, with the first one
+  where it was. While the sidebar or the inspector slides, the grid stays still, so the animation
+  stays smooth in a large library: a column that leaves uncovers photos already in place, one
+  that comes covers them, and the rows are made anew once (2026-11-17).
 - Thumbnail shape, with a toolbar button and in the View menu: Square Thumbnails (the photo
   cropped to a square) or Whole Photos (the whole photo inside the square, with its own
   proportions; the place is reserved at the photo's shape before it loads); the thumbnails
@@ -135,6 +140,14 @@ can feed a website one day. Dates are when the feature landed.
     moves on to the next photo, after asking about unsaved edits. The Delete key does it, as in
     Photos (2026-11-17).
   - The Image menu items act on the grid's selection or on the photo open in the editor.
+  - The albums a photo is in, listed in the Info panel next to the grid and in the editor's Info
+    tab, each with the folders it is in; with several photos selected, the albums they are all
+    in. A click on one shows that album (from the editor, after asking about unsaved edits). The
+    list follows photos added to or removed from an album (2026-11-17).
+  - Back from an album opened that way: the toolbar's Back button and View › Back (⌘[) return to
+    where the album was opened from, as it was left: the grid scrolled to the same photos, the
+    same selection, the same photo open in the editor. Albums opened one from the other are
+    retraced one by one (2026-11-17).
   - Every one of these is undoable, deleting an album included: it comes back with its name,
     its folder and its photos.
 
@@ -185,7 +198,9 @@ can feed a website one day. Dates are when the feature landed.
   a detent at 100% (one pixel of the photo per pixel of the screen) and the zoom shown as a
   percentage of the photo's real size; zooming back out to Fit recenters the photo; View › Zoom In
   (⌘+), Zoom Out (⌘−), Zoom to Fit (⌘0) and Actual Size (⌘1) (2026-11-09).
-- Round Back button at the top left of the toolbar returns to the photo grid (2026-11-05).
+- Round Back button at the top left of the toolbar returns to the photo grid (2026-11-05), which
+  is found where it was left; when the editor stepped to another photo, the grid shows that one.
+  View › Back (⌘[) does the same, and leaves a group opened from the map (2026-11-17).
 - Inspector in three icon tabs in the toolbar: Info (histogram and file metadata), Crop & Straighten (the crop
   tool: opening the tab frames the image, leaving it or pressing Done applies the crop; C toggles
   it from anywhere) and Adjustments; the tab is remembered from one photo to the next

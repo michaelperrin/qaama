@@ -3,8 +3,8 @@ import ImageIOKit
 import LibraryKit
 import SwiftUI
 
-/// The Info tab: the histogram of the current edit, what the file says about itself, and a map of
-/// where it was taken when it says so.
+/// The Info tab: the histogram of the current edit, what the file says about itself, the albums
+/// the photo is in, and a map of where it was taken when the file says so.
 struct InfoInspector: View {
     let model: EditorModel
 
@@ -17,6 +17,9 @@ struct InfoInspector: View {
             Section("Info") {
                 InfoPanel(summary: InfoSummary(metadata: model.metadata), fileName: model.baseName,
                           onShowInFinder: model.asset.flatMap(model.source.fileURL(for:)).map { url in { FinderReveal.show([url]) } })
+            }
+            if let asset = model.asset {
+                AssetAlbumsSection(source: model.source, assets: [asset])
             }
             if let location = model.metadata?.location {
                 LocationSection(location: location)

@@ -123,6 +123,20 @@ public final class SampleLibrarySource: LibrarySource {
     /// a download is allowed, which brings the original "back" for good.
     public var cloudOnlyIDs: Set<LibraryAsset.ID> = []
 
+    /// The albums each photo plays at being in, by identifier; nil for a library without albums,
+    /// as a folder is.
+    public var albumIDsByAsset: [LibraryAsset.ID: [String]]?
+
+    public func hasAlbums(for _: LibraryAsset) -> Bool {
+        albumIDsByAsset != nil
+    }
+
+    public func albumIDs(containing asset: LibraryAsset) async -> [String] {
+        // The answer comes a moment later, as a real library's does.
+        await Task.yield()
+        return albumIDsByAsset?[asset.id] ?? []
+    }
+
     /// A made-up camera, so previews show every row of the Info panel.
     public func details(for asset: LibraryAsset, allowingDownload: Bool) async -> AssetDetails {
         if cloudOnlyIDs.contains(asset.id) {

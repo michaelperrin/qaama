@@ -98,6 +98,17 @@ struct CombinedLibrarySourceTests {
         }
     }
 
+    @Test func albumsAreThoseOfTheMemberHoldingThePhoto() async throws {
+        let (library, a, _) = await makeLibrary()
+        a.albumIDsByAsset = ["a-1": ["iceland"]]
+        await open(in: library)
+
+        let filed = try #require(library.asset(id: "a-1")), elsewhere = try #require(library.asset(id: "b-0"))
+        #expect(library.hasAlbums(for: filed) && !library.hasAlbums(for: elsewhere), "one member has albums, the other is a folder")
+        #expect(await library.albumIDs(containing: filed) == ["iceland"])
+        #expect(await library.albumIDs(containing: elsewhere).isEmpty)
+    }
+
     @Test func thumbnailsAndEditsComeFromTheMemberHoldingThePhoto() async throws {
         let (library, a, b) = await makeLibrary()
         let photo = try #require(library.asset(id: "b-2"))

@@ -367,6 +367,23 @@ public final class PhotosLibrarySource: LibrarySource {
         logger.notice("Keywords of \(asset.id, privacy: .public): +\(added.count) -\(removed.count)")
     }
 
+    public func hasAlbums(for _: LibraryAsset) -> Bool {
+        true
+    }
+
+    /// One request to Photos' database per photo, off the main actor. Every kind of album is asked
+    /// for (the user's, shared, synced): the caller keeps those it lists.
+    public func albumIDs(containing asset: LibraryAsset) async -> [String] {
+        guard let phAsset = phAsset(for: asset.id) else { return [] }
+        return await Task.detached {
+            var ids: [String] = []
+            PHAssetCollection.fetchAssetCollectionsContaining(phAsset, with: .album, options: nil).enumerateObjects { album, _, _ in
+                ids.append(album.localIdentifier)
+            }
+            return ids
+        }.value
+    }
+
     /// Thumbnail for a square of `pixelSize`; PhotoKit sizes it to fill or to fit that square.
     public func thumbnail(for asset: LibraryAsset, pixelSize: CGSize, fit: ThumbnailFit) async -> CGImage? {
         await requestImage(for: asset, targetSize: pixelSize, contentMode: fit.contentMode)

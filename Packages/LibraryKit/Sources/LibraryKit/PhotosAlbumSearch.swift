@@ -45,28 +45,7 @@ public nonisolated struct PhotosAlbumSearch: Sendable {
 
     /// `excludedID` leaves one album out: the one on screen, which adding to makes no sense.
     public init(tree: [PhotosAlbumNode], excluding excludedID: PhotosAlbum.ID? = nil) {
-        var matches: [Match] = []
-        func collect(_ nodes: [PhotosAlbumNode], in folders: [String]) {
-            for node in nodes {
-                switch node {
-                case let .album(album):
-                    if album.id != excludedID {
-                        matches.append(Match(album: album, folders: folders))
-                    }
-                case let .folder(_, title, children):
-                    collect(children, in: folders + [title])
-                }
-            }
-        }
-        collect(tree, in: [])
-        matches.sort { lhs, rhs in
-            let byTitle = lhs.album.title.localizedStandardCompare(rhs.album.title)
-            if byTitle != .orderedSame {
-                return byTitle == .orderedAscending
-            }
-            return lhs.folders.joined(separator: "\n").localizedStandardCompare(rhs.folders.joined(separator: "\n")) == .orderedAscending
-        }
-        entries = matches.map { match in
+        entries = Match.all(in: tree) { $0.id != excludedID }.map { match in
             Entry(match: match, title: SearchText.fold(match.album.title), path: SearchText.foldedList(match.folders + [match.album.title]))
         }
     }
@@ -114,5 +93,33 @@ public nonisolated struct PhotosAlbumSearch: Sendable {
             searched = text.index(after: found.lowerBound) ..< text.endIndex
         }
         return false
+    }
+}
+
+public nonisolated extension PhotosAlbumSearch.Match {
+    /// The albums of a hierarchy that `isIncluded` keeps, each with the folders it is in, by title
+    /// then by folders.
+    static func all(in tree: [PhotosAlbumNode], where isIncluded: (PhotosAlbum) -> Bool = { _ in true }) -> [Self] {
+        var matches: [Self] = []
+        func collect(_ nodes: [PhotosAlbumNode], in folders: [String]) {
+            for node in nodes {
+                switch node {
+                case let .album(album):
+                    if isIncluded(album) {
+                        matches.append(Self(album: album, folders: folders))
+                    }
+                case let .folder(_, title, children):
+                    collect(children, in: folders + [title])
+                }
+            }
+        }
+        collect(tree, in: [])
+        return matches.sorted { lhs, rhs in
+            let byTitle = lhs.album.title.localizedStandardCompare(rhs.album.title)
+            if byTitle != .orderedSame {
+                return byTitle == .orderedAscending
+            }
+            return lhs.folders.joined(separator: "\n").localizedStandardCompare(rhs.folders.joined(separator: "\n")) == .orderedAscending
+        }
     }
 }

@@ -109,6 +109,14 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   Ask the source once per grid update instead (as `hasFileURLs` does). And check the row still
   exists before reading it: even a cell that only reads `assets` can be asked again before the
   months above it are, when a listing spread over several months shrinks.
+- Every row of a `ForEach` in a lazy container is exactly one view. A row made of an `if` without
+  `else` is zero or one view: the container can't tell where a row is without building every row
+  above it, and does so at each update (measured with 74,000 photos: 3.6 s to toggle the sidebar,
+  against 0.2 s). Put the condition inside a container (`ZStack`), as the grid does.
+- Between the window and a scroll view that runs under the toolbar, only frames (`frame(width:)`,
+  `frame(maxWidth:)`): inside a `Layout` of our own, a `GeometryReader`, an `overlay`, or a frame
+  with both a minimum and a maximum, the scroll view loses the toolbar's soft edge and photos show
+  sharp under the window's title (seen with a probe; see `SettledWidth`).
 
 ## Code quality
 

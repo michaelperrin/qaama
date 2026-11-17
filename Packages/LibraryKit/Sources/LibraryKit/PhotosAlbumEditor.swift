@@ -15,7 +15,8 @@ public final class PhotosAlbumEditor {
     }
 
     private let library: any PhotosAlbumLibrary
-    /// Listed again after each change to albums or folders, so callers can select what was just created.
+    /// Listed again after each change to albums or folders, so callers can select what was just
+    /// created, and told when photos moved in or out of an album.
     private let list: PhotosAlbumList?
     private let defaults: UserDefaults
     /// Identifiers of deleted albums and folders, to the ones that replaced them when an undo created them again.
@@ -141,10 +142,14 @@ public final class PhotosAlbumEditor {
             return .createFolder(title: title, parentID: parentID, replacing: id)
         case let .add(assetIDs, albumID):
             let added = try await library.add(assetIDs, toAlbum: current(albumID))
-            return added.isEmpty ? nil : .remove(added, albumID: albumID)
+            guard !added.isEmpty else { return nil }
+            list?.contentChanged()
+            return .remove(added, albumID: albumID)
         case let .remove(assetIDs, albumID):
             let removed = try await library.remove(assetIDs, fromAlbum: current(albumID))
-            return removed.isEmpty ? nil : .add(removed, albumID: albumID)
+            guard !removed.isEmpty else { return nil }
+            list?.contentChanged()
+            return .add(removed, albumID: albumID)
         }
     }
 

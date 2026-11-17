@@ -103,6 +103,13 @@ public protocol LibrarySource: AnyObject, Observable {
     /// Changes when `locatedAssets()` may answer differently for the same query: photos came or
     /// went, positions were read or corrected. A map in use is then loaded again.
     var placesVersion: Int { get }
+    /// True when the library holding this photo files its photos in albums (the Photos library);
+    /// `albumIDs(containing:)` then says which. Asked per photo: a library made of several holds
+    /// photos of both kinds.
+    func hasAlbums(for asset: LibraryAsset) -> Bool
+    /// The albums a photo is in, by identifier, in no particular order; empty when it is in none,
+    /// or when its library has no albums. Smart albums (Favorites) aren't among them.
+    func albumIDs(containing asset: LibraryAsset) async -> [String]
     /// How far a background index this source's listing relies on is, or nil when none is being built.
     var indexingProgress: IndexingProgress? { get }
     /// A sentence to show with the photos while indexing makes the current listing provisional, or nil
@@ -251,6 +258,14 @@ public extension LibrarySource {
 
     var placesVersion: Int {
         0
+    }
+
+    func hasAlbums(for _: LibraryAsset) -> Bool {
+        false
+    }
+
+    func albumIDs(containing _: LibraryAsset) async -> [String] {
+        []
     }
 
     var indexingProgress: IndexingProgress? {

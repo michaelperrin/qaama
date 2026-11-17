@@ -63,6 +63,9 @@ public final class PhotosAlbumList {
     public private(set) var tree: [PhotosAlbumNode] = []
     public private(set) var favorites: PhotosAlbum?
     public private(set) var isLoaded = false
+    /// Bumped when the albums, or the photos they hold, may have changed: what was read about the
+    /// albums of a photo is then worth reading again.
+    public private(set) var contentVersion = 0
 
     /// Every fetch result the tree was built from; a change in any of them rebuilds the tree.
     private var fetchResults: [PHFetchResult<PHCollection>] = []
@@ -71,6 +74,12 @@ public final class PhotosAlbumList {
     private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "PhotosAlbumList")
 
     public init() {}
+
+    /// A hierarchy given as is and never read from Photos, for previews and tests.
+    public init(tree: [PhotosAlbumNode]) {
+        self.tree = tree
+        albums = PhotosAlbumSearch.Match.all(in: tree).map(\.album)
+    }
 
     /// Lists the albums; call once access to the library is granted.
     public func load() {
@@ -87,6 +96,12 @@ public final class PhotosAlbumList {
     public func reload() {
         guard isLoaded else { return }
         rebuild()
+    }
+
+    /// Tells that Qaama itself moved photos in or out of an album: Photos' own notification only
+    /// comes a moment later, and doesn't promise to name the album.
+    public func contentChanged() {
+        contentVersion += 1
     }
 
     /// One album by identifier, Favorites included.
@@ -150,6 +165,7 @@ public final class PhotosAlbumList {
         favorites = favorite
         albums = (favorite.map { [$0] } ?? []) + flat
         isLoaded = true
+        contentVersion += 1
         logger.notice("Listed \(flat.count) albums in \(results.count) folders in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
     }
 

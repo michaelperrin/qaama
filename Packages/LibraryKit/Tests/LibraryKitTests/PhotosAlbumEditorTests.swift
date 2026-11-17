@@ -92,6 +92,28 @@ struct PhotosAlbumEditorTests {
         #expect(editor.lastAlbumID == id)
     }
 
+    @Test func photosMovedInOrOutOfAnAlbumAreToldToTheList() async throws {
+        let suite = "PhotosAlbumEditorTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let library = FakeAlbumLibrary()
+        let list = PhotosAlbumList(tree: [])
+        let editor = PhotosAlbumEditor(library: library, list: list, defaults: defaults)
+        let manager = makeUndoManager()
+        let id = try await editor.createAlbum(titled: "Iceland", containing: ["a"], undoManager: nil)
+        let created = list.contentVersion
+
+        try await step(manager) { try await editor.add(["a"], toAlbum: id, undoManager: manager) }
+        #expect(list.contentVersion == created, "already there: nothing moved")
+        try await step(manager) { try await editor.add(["b"], toAlbum: id, undoManager: manager) }
+        #expect(list.contentVersion == created + 1)
+        manager.undo()
+        await editor.waitUntilIdle()
+        #expect(list.contentVersion == created + 2, "an undo moves photos too")
+        try await editor.remove(["a"], fromAlbum: id, undoManager: nil)
+        #expect(list.contentVersion == created + 3)
+    }
+
     @Test func theLastAlbumIsRememberedAcrossLaunches() async throws {
         let (editor, library, defaults, suite) = makeEditor()
         defer { defaults.removePersistentDomain(forName: suite) }

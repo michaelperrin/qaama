@@ -55,6 +55,19 @@ struct PhotosAlbumSearchTests {
         #expect(titles("famille japon").isEmpty)
     }
 
+    @Test func listsTheAlbumsAskedForWithTheirFolders() {
+        let wanted: Set = ["album-Japon 2024", "album-À trier", "album-Bajapur", "album-gone"]
+        let found = PhotosAlbumSearch.Match.all(in: Self.tree) { wanted.contains($0.id) }
+        #expect(found.map(\.album.title) == ["À trier", "Bajapur", "Japon 2024"])
+        #expect(found.map(\.folders) == [[], ["Famille"], ["Voyages", "Asie"]])
+    }
+
+    @MainActor @Test func aListGivenItsHierarchyKnowsEveryAlbumOfIt() {
+        let list = PhotosAlbumList(tree: Self.tree)
+        #expect(list.albums.count == 8 && list.album(id: "album-Islande")?.title == "Islande")
+        #expect(!list.isLoaded, "never read from Photos: nothing to list again")
+    }
+
     @Test func titleMatchesComeBeforeFolderMatches() {
         let tree = [Self.folder("Japon", [Self.album("Kyoto")]), Self.album("Tout le Japon")]
         #expect(PhotosAlbumSearch(tree: tree).matches(for: "japon").map(\.album.title) == ["Tout le Japon", "Kyoto"])
