@@ -587,6 +587,15 @@ Bibliothèque
       favoris, note (prédicats confirmés par sonde, PhotoKit ne documente pas la note).
       Prefetch des vignettes Photos le 30/10/2026 (fenêtre de 60 lignes autour de l'écran via
       `PHCachingImageManager`, libérée au-delà). Reste : filtre par type de fichier.
+      Sélection au clavier le 18/11/2026 (bogue signalé par Michaël : les flèches ne faisaient
+      rien après un clic) : la grille prend le focus au clic (`.focusable()` + `@FocusState`,
+      sans anneau), sinon la liste de la barre latérale garde les flèches et changerait de
+      bibliothèque ; `.onKeyPress` sur les quatre flèches, ⇧ pour étendre depuis l'ancre.
+      Haut et bas gardent la colonne en tenant compte des mois, qui commencent chacun une
+      rangée (`DateTimeline.row(from:moving:columns:)`, testé) ; colonnes par l'arithmétique
+      de `LazyVGrid` adaptative (`GridViewport.columns(forSide:)`). Non vérifié à l'écran par
+      moi : à confirmer par Michaël (focus au clic, bord flou sous la barre d'outils intact
+      avec `.focusable()` sur le `ScrollView`, nombre de colonnes juste).
 - [x] Zoom de la mosaïque et mode d'affichage, cadré avec Michaël le 7/11/2026 : taille des
       vignettes réglable par un curseur dans la barre d'outils et par le menu View (⌘+ / ⌘−),
       et choix entre le carré rogné actuel et la photo entière dans un carré, sans rognage ;

@@ -68,6 +68,10 @@ can feed a website one day. Dates are when the feature landed.
 - Thumbnails of edited photos show the real edit, from a cached preview (2026-10-29).
 - Multiple selection in the grid: click, ⌘-click, ⇧-click, ⌘A, Escape; double-click opens the
   editor; the context menu acts on the whole selection (2026-10-30).
+- Keyboard selection in the grid: once a photo is clicked, the arrow keys move the selection
+  through rows and months (up and down keep the column, into the month above or below), ⇧ with
+  them extends or shrinks it, and the grid scrolls to keep the photo in view; back from the
+  editor, the arrows go on from the photo just edited (2026-11-18).
 - Image › Rating and Image › Flag: rate (No Rating to 5 Stars, keys 0–5) and pick, reject or
   unflag (P, X, U) the photos selected in the grid or the photo open in the editor; the menu
   checks the current value. Undoable (2026-11-06).

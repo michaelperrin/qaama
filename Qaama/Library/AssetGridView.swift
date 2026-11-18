@@ -4,7 +4,8 @@ import LibraryKit
 import SwiftUI
 
 /// Thumbnail grid shared by every library source, with multiple selection: click selects, ⌘-click
-/// toggles, ⇧-click extends from the last click, double-click opens the editor.
+/// toggles, ⇧-click extends from the last click, double-click opens the editor. The arrow keys move
+/// the selection, ⇧ with them extends it.
 ///
 /// Each cell is an `AssetGridCell` with inputs that only change when the photo or the selection does,
 /// and its actions on one object that stays the same (`actions`): the grid is rebuilt on every change
@@ -45,6 +46,11 @@ struct AssetGridView: View {
     @AppStorage(GridDisplay.thumbnailFitKey) private var thumbnailFit = ThumbnailFit.fill
     /// Index of the last plain click, where a ⇧-click range starts.
     @State private var anchorIndex: Int?
+    /// Index of the photo last clicked or moved to, where the arrow keys move from.
+    @State private var cursorIndex: Int?
+    /// The grid takes the keyboard focus when a photo is clicked, as a collection view becomes first
+    /// responder: otherwise the sidebar's list keeps it and the arrow keys change the library.
+    @FocusState private var isFocused: Bool
     @State private var batchError: String?
     @State private var exportModel: ExportModel?
     @State private var actions = AssetGridActions()
@@ -118,6 +124,19 @@ struct AssetGridView: View {
             .scrollTargetLayout()
         }
         .scrollPosition($scrollPosition)
+        .focusable()
+        .focused($isFocused)
+        .focusEffectDisabled()
+        .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow]) { press in
+            moveSelection(GridMove(press.key), extending: press.modifiers.contains(.shift))
+            return .handled
+        }
+        // Back from the editor, the photo just edited is selected: the arrow keys go on from it.
+        .onAppear {
+            if !selection.isEmpty {
+                isFocused = true
+            }
+        }
         .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { _, geometry in
             let held = viewport.update(geometry)
             // The first report is when the grid can scroll; the later ones find a listing that came late.
@@ -289,6 +308,8 @@ struct AssetGridView: View {
     // MARK: - Selection
 
     private func click(_ id: LibraryAsset.ID, at index: Int, modifiers: NSEvent.ModifierFlags) {
+        isFocused = true
+        cursorIndex = index
         if modifiers.contains(.command) {
             toggle(id, at: index)
         } else if modifiers.contains(.shift) {
@@ -328,10 +349,58 @@ struct AssetGridView: View {
     }
 
     private func extend(to index: Int) {
-        let anchor = anchorIndex ?? index
-        let range = min(anchor, index) ... max(anchor, index)
+        selection.formUnion(ids(between: anchorIndex ?? index, and: index))
+    }
+
+    private func ids(between first: Int, and last: Int) -> [LibraryAsset.ID] {
         let assets = source.assets
-        selection.formUnion(range.compactMap { assets.indices.contains($0) ? assets[$0].id : nil })
+        return (min(first, last) ... max(first, last)).compactMap { assets.indices.contains($0) ? assets[$0].id : nil }
+    }
+
+    /// Moves the selection to the photo next to the one last clicked or moved to, in the grid's rows
+    /// and months, and scrolls it into view. With ⇧, the selection runs from the anchor to that
+    /// photo, growing or shrinking as in a list. Without a selection, the first photo on screen is
+    /// selected.
+    private func moveSelection(_ move: GridMove, extending: Bool) {
+        let assets = source.assets
+        guard !assets.isEmpty else { return }
+        guard let from = keyboardPosition() else {
+            let first = viewport.visibleRows?.lowerBound ?? 0
+            if assets.indices.contains(first) {
+                select(assets[first].id, at: first)
+                cursorIndex = first
+            }
+            return
+        }
+        let timeline = sections
+        guard let to = timeline.row(from: from, moving: move, columns: viewport.columns(forSide: thumbnailSide)),
+              assets.indices.contains(to) else { return }
+        if extending {
+            let anchor = anchorIndex.flatMap { assets.indices.contains($0) ? $0 : nil } ?? from
+            anchorIndex = anchor
+            selection = Set(ids(between: anchor, and: to))
+        } else {
+            select(assets[to].id, at: to)
+        }
+        cursorIndex = to
+        guard !viewport.showsWhole(to) else { return }
+        // A row that starts its month shows with the month's name above it.
+        let startsSection = timeline.section(containing: to).map { to - $0.range.lowerBound < viewport.columns(forSide: thumbnailSide) } ?? false
+        let anchor: UnitPoint = switch move {
+        case .up, .left: startsSection && source.timeline != nil ? viewport.anchor(underHeaderForSide: thumbnailSide) : .top
+        case .down, .right: .bottom
+        }
+        scrollPosition.scrollTo(id: to, anchor: anchor)
+    }
+
+    /// Where the arrow keys move from: the photo last clicked or moved to while it stays selected,
+    /// else a selected photo, for a selection made elsewhere (the Info panel, the map).
+    private func keyboardPosition() -> Int? {
+        let assets = source.assets
+        if let cursorIndex, assets.indices.contains(cursorIndex), selection.contains(assets[cursorIndex].id) {
+            return cursorIndex
+        }
+        return selection.first.flatMap(source.index(of:))
     }
 
     /// The photos a context menu acts on: the whole selection when the clicked photo is part of it,
@@ -506,6 +575,19 @@ final class GridViewport {
         guard hasSize, current.size != containerSize else { return nil }
         arrival?.size = containerSize
         return current.place
+    }
+
+    /// How many thumbnails a row holds when they are `side` wide: the arithmetic of `LazyVGrid`'s
+    /// adaptive columns, in the width the padding leaves.
+    func columns(forSide side: Double) -> Int {
+        let width = containerSize.width - 2 * Self.padding
+        return max(Int(((width + Self.spacing) / (side + Self.spacing)).rounded(.down)), 1)
+    }
+
+    /// True when the cell is laid out and shows whole in the visible area.
+    func showsWhole(_ index: Int) -> Bool {
+        guard let frame = frames[index] else { return false }
+        return frame.minY >= 0 && frame.maxY <= containerSize.height
     }
 
     /// False until the scroll view has reported its size: nothing can be aligned in it before.
@@ -863,4 +945,16 @@ struct GridSectionHeader: View {
     @Previewable @State var selection: Set<LibraryAsset.ID> = []
     AssetGridView(source: SampleLibrarySource(count: 0), selection: $selection) { _ in }
         .frame(width: 400, height: 300)
+}
+
+private extension GridMove {
+    /// The move of an arrow key; only arrow keys are handed to the grid's key handler.
+    init(_ key: KeyEquivalent) {
+        self = switch key {
+        case .leftArrow: .left
+        case .rightArrow: .right
+        case .upArrow: .up
+        default: .down
+        }
+    }
 }
