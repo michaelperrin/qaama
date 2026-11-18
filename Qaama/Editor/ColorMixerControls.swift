@@ -22,7 +22,7 @@ struct ColorMixerControls: View {
         if model.adjustments.hsl != nil {
             Button("Reset Color Mixer") {
                 model.adjustments.hsl = nil
-                model.commitChange()
+                model.commitChange(named: "Reset Color Mixer")
             }
         }
     }

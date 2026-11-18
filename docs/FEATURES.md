@@ -187,6 +187,9 @@ can feed a website one day. Dates are when the feature landed.
 - Opens the original (RAW through Apple's RAW engine) with the saved edit; Save stores the
   edit back; Export writes a full-size JPEG (2026-10-29).
 - Undo and redo per gesture, through the Edit menu and its shortcuts (2026-10-30).
+- The Edit menu names what Undo and Redo take back: the setting moved (Undo Exposure, Undo
+  Vignette Amount, Undo Red Hue), the switch flipped (Undo Turn Off Light) or the action
+  (Undo Rotate Right, Undo Add Sky Mask, Undo Brush Stroke, Undo Apply Preset) (2026-11-18).
 - Hold Compare to see the original (2026-10-30).
 - Presets: save the current adjustments under a name, apply or delete them from a menu; stored as
   readable JSON files (2026-10-30).

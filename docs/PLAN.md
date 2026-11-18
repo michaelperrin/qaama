@@ -1359,11 +1359,10 @@ Bibliothèque
       undo/redo par geste relié au menu Édition. Avant/après le 30/10/2026 (bouton Compare à
       maintenir). Reste : interface des calques, à faire avec les masques (sans masque rendu,
       un calque supplémentaire n'apporte rien de visible).
-      Reste aussi (demandé le 11/11/2026) : un interrupteur par catégorie de réglages (Lumière,
-      Couleur, Détail…), comme celui de la vignette. La ligne de titre `SectionSwitch` est prête
-      et sert déjà au noir et blanc et à la vignette ; il manque l'état « désactivé » de chaque
-      groupe dans la recette (les groupes sont aujourd'hui des champs à plat d'`AdjustmentSet`)
-      et son respect par `RenderPipeline`.
+      Interrupteur par catégorie de réglages (demandé le 11/11/2026), fait : `AdjustmentGroup`
+      dans la recette (groupes coupés, valeurs gardées), `AdjustmentSet.effective` pour le
+      rendu, `SectionSwitch` en tête de chaque carte de l'inspecteur.
+      Noms précis des étapes d'annulation dans le menu Edit (18/11/2026, `EditActionName`).
 - [ ] Ajustements de base : balance des blancs, exposition, contraste, luminosité,
       hautes lumières/ombres, saturation/vibrance, netteté, réduction de bruit simple,
       vignettage, grain, courbes, niveaux, teinte/saturation sélective, noir et blanc.
@@ -1769,6 +1768,24 @@ Interface
         raccord au bord (léger contour sur les fonds en dégradé) ; masques de sujet calculés
         sur l'image non retouchée ; à l'ouverture d'une photo retouchée, l'objet réapparaît
         le temps du calcul ; pas de liste pour supprimer une retouche précise.
+- [ ] Historique des modifications d'une photo (demande de Michaël, 18/11/2026) : la liste des
+      modifications faites, datées, avec la possibilité de revenir à une version donnée.
+      Point de départ : depuis le 18/11/2026, chaque étape d'annulation de l'éditeur porte un
+      nom précis (« Exposure », « Rotate Right », « Add Sky Mask »…), déduit de la différence
+      entre la recette avant et après (`EditActionName`, EditorKit) ou donné par l'opération
+      (« Apply Preset », « Paste Adjustments »). Aujourd'hui ce nom est une chaîne anglaise, en
+      mémoire seulement (`EditorModel.undoNames`), et l'historique d'annulation se perd à la
+      fermeture de la photo. À prévoir le moment venu :
+      - faire de `EditActionName` une valeur structurée et `Codable` (réglage, action, calque),
+        traduite en texte à l'affichage : un historique enregistré doit survivre à un
+        changement de langue de l'appli ;
+      - une entrée par étape : nom, date, et la recette d'après (ou un écart), pour revenir à
+        n'importe quelle version ;
+      - où l'enregistrer : le sidecar pour les dossiers ; pour Photos, `PHAdjustmentData` a une
+        taille limitée, donc probablement le catalogue, avec la recette courante qui reste la
+        vérité ;
+      - les gestes regroupés tels qu'aujourd'hui (une entrée par geste, pas par mouvement de
+        curseur), et peut-être fusionner les retouches successives d'un même réglage.
 - [ ] Extension d'édition pour Photos (`PHEditingExtension`) et extension de partage.
 - [ ] HDR (gain map, EDR sur écran compatible), vidéo courte peut‑être.
 - [ ] iCloud (si compte développeur), puis déclinaison iPad si le cœur reste portable.

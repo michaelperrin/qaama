@@ -395,7 +395,7 @@ public final class EditorModel {
         }
         recipe.layers.insert(copy, at: index + 1)
         selectedLayerID = copy.id
-        commitChange()
+        commitChange(named: inverted ? "Duplicate and Invert Mask" : "Duplicate Mask")
     }
 
     public func updateLayer(_ id: UUID, _ change: (inout AdjustmentLayer) -> Void) {
@@ -459,7 +459,7 @@ public final class EditorModel {
 
     public func resetGeometry() {
         recipe.geometry = isCropping ? Geometry() : nil
-        commitChange()
+        commitChange(named: "Reset Crop & Straighten")
     }
 
     // MARK: - Presets and clipboard
@@ -475,7 +475,7 @@ public final class EditorModel {
     /// Replaces the global adjustments with a preset's (geometry and other layers are untouched).
     public func apply(_ preset: Preset) {
         recipe.global = preset.adjustments
-        commitChange()
+        commitChange(named: "Apply Preset")
     }
 
     public func copyAdjustments(to clipboard: AdjustmentsClipboard = .shared) {
@@ -486,7 +486,7 @@ public final class EditorModel {
     public func pasteAdjustments(from clipboard: AdjustmentsClipboard = .shared) {
         guard let adjustments = clipboard.adjustments else { return }
         recipe.global = adjustments
-        commitChange()
+        commitChange(named: "Paste Adjustments")
     }
 
     // MARK: - LUT
@@ -702,9 +702,11 @@ public final class EditorModel {
 
     // MARK: - Recipe and history
 
-    /// Records the current recipe as one undoable step, if it changed since the last checkpoint.
+    /// Records the current recipe as one undoable step, if it changed since the last checkpoint,
+    /// named in the Edit menu after what changed (`EditActionName`).
     public func commitChange() {
-        commitChange(named: "Adjustment")
+        guard recipe != checkpoint else { return }
+        commitChange(named: EditActionName.describing(from: checkpoint, to: recipe))
     }
 
     /// Same, under the name the Edit menu shows after Undo and Redo.
@@ -720,14 +722,14 @@ public final class EditorModel {
 
     public func reset() {
         recipe = .identity
-        commitChange()
+        commitChange(named: "Revert to Original")
     }
 
     /// Steps back one committed change. When the window has an undo manager, the Edit menu calls
     /// this through it; the inspector's button goes through the manager too so both stay in sync.
     public func undo() {
         guard let previous = undoStack.popLast() else { return }
-        let name = undoNames.popLast() ?? "Adjustment"
+        let name = undoNames.popLast() ?? EditActionName.several
         redoStack.append(recipe)
         redoNames.append(name)
         recipe = previous
@@ -738,7 +740,7 @@ public final class EditorModel {
 
     public func redo() {
         guard let next = redoStack.popLast() else { return }
-        let name = redoNames.popLast() ?? "Adjustment"
+        let name = redoNames.popLast() ?? EditActionName.several
         undoStack.append(recipe)
         undoNames.append(name)
         recipe = next

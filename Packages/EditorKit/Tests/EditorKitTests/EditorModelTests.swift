@@ -182,7 +182,7 @@ struct EditorModelTests {
         model.recipe.global.exposure = 1
         model.commitChange()
         manager.endUndoGrouping()
-        #expect(manager.canUndo && manager.undoActionName == "Adjustment")
+        #expect(manager.canUndo && manager.undoActionName == "Exposure")
 
         manager.undo()
         #expect(model.recipe.isIdentity && manager.canRedo && !model.canUndo)
