@@ -127,8 +127,11 @@ struct AssetGridView: View {
         .focusable()
         .focused($isFocused)
         .focusEffectDisabled()
+        // Through `actions`: while a key is held, SwiftUI calls the handler of the first press
+        // again, whose `selection` binding still holds the value of that moment, so every repeat
+        // moved from the same photo (seen with a probe).
         .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow]) { press in
-            moveSelection(GridMove(press.key), extending: press.modifiers.contains(.shift))
+            actions.move(GridMove(press.key), press.modifiers.contains(.shift))
             return .handled
         }
         // Back from the editor, the photo just edited is selected: the arrow keys go on from it.
@@ -285,6 +288,7 @@ struct AssetGridView: View {
     private func updateActions() {
         actions.open = onOpen
         actions.click = { id, index in click(id, at: index, modifiers: NSEvent.modifierFlags) }
+        actions.move = { move, extending in moveSelection(move, extending: extending) }
         let pixels = GridDisplay.requestPixels(forSide: CGFloat(thumbnailSide), displayScale: displayScale)
         let fit = thumbnailFit
         actions.appear = { index in source.prefetchThumbnails(around: index, pixelSize: pixels, fit: fit) }
@@ -717,6 +721,8 @@ final class GridViewport {
 final class AssetGridActions {
     var open: (LibraryAsset.ID) -> Void = { _ in }
     var click: (LibraryAsset.ID, Int) -> Void = { _, _ in }
+    /// An arrow key, and whether ⇧ is held.
+    var move: (GridMove, Bool) -> Void = { _, _ in }
     var appear: (Int) -> Void = { _ in }
     var disappear: (Int) -> Void = { _ in }
     /// The cell's frame in the scroll view's coordinate space, whenever it changes.

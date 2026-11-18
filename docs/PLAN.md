@@ -595,7 +595,13 @@ Bibliothèque
       rangée (`DateTimeline.row(from:moving:columns:)`, testé) ; colonnes par l'arithmétique
       de `LazyVGrid` adaptative (`GridViewport.columns(forSide:)`). Non vérifié à l'écran par
       moi : à confirmer par Michaël (focus au clic, bord flou sous la barre d'outils intact
-      avec `.focusable()` sur le `ScrollView`, nombre de colonnes juste).
+      avec `.focusable()` sur le `ScrollView`, nombre de colonnes juste). Validé par Michaël le
+      même jour. Touche maintenue (signalé par Michaël : un seul pas puis plus rien) : les
+      répétitions arrivaient bien toutes les 33 ms (journal), mais SwiftUI rappelle le
+      gestionnaire de l'appui initial, dont le `@Binding` de la sélection garde la valeur de cet
+      instant (les `@State` sont lus à jour) ; chaque répétition repartait de la même photo.
+      Reproduit et corrigé dans une sonde : le gestionnaire passe par `AssetGridActions.move`,
+      repointé à chaque mise à jour de la grille.
 - [x] Zoom de la mosaïque et mode d'affichage, cadré avec Michaël le 7/11/2026 : taille des
       vignettes réglable par un curseur dans la barre d'outils et par le menu View (⌘+ / ⌘−),
       et choix entre le carré rogné actuel et la photo entière dans un carré, sans rognage ;

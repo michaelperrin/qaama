@@ -103,6 +103,10 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   `.equatable()`, its closures moved to one stable object (see `AssetGridCell` and
   `AssetGridActions`). Everything the view shows must then be one of its inputs or an observed
   value, or the display goes stale. Elsewhere, measure before adding it.
+- While a key is held, SwiftUI calls the `onKeyPress` handler of the first press again for every
+  repeat, and a `@Binding` it reads keeps the value of that first press (`@State` reads are
+  current). Have the handler call through an object the view repoints at each update, as the
+  grid does with `AssetGridActions.move`.
 - Inside the grid's `ForEach`, read nothing observed from the source but `assets[index]`: a cell
   that depends on other state of the source (its items, a per-photo lookup) is refreshed alone
   when it changes, with a row that may no longer exist, and crashes when the listing shrinks.
