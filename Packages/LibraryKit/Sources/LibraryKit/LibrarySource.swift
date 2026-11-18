@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ImageIOKit
 import Observation
 
 /// A collection of photos Qaama can browse: the Apple Photos library or a folder on disk.
@@ -53,6 +54,17 @@ public protocol LibrarySource: AnyObject, Observable {
     /// Corrects the capture date of a photo, without touching its file. Nil removes the correction
     /// where the source keeps one apart from the file's own date (folders).
     func setCaptureDate(_ date: Date?, for asset: LibraryAsset) async throws
+    /// Where the photo was taken as the source holds it now, corrections included; nil when nothing
+    /// says. Read from the source's current state, not from `asset`, which may be an older snapshot.
+    func location(for asset: LibraryAsset) -> GeoCoordinate?
+    /// Sets where a photo was taken, without touching its file; nil says it has no location. Setting
+    /// what the file says removes the correction where the source keeps one apart from the file
+    /// (folders), so writing back the location read before undoes a change exactly.
+    func setLocation(_ location: GeoCoordinate?, for asset: LibraryAsset) async throws
+    /// What the photo's own file says of where it was taken, when the source holds a location of its
+    /// own over it (`.originalLocation`); nil when it holds none, or keeps no other (Photos): there
+    /// is then nothing to go back to.
+    func originalLocation(for asset: LibraryAsset) -> OriginalLocation?
 
     /// Deletes photos from the library. The files of a folder go to the Trash, and an undo puts them
     /// back; the photos of the Photos library go to its Recently Deleted album once the user has
@@ -213,6 +225,18 @@ public extension LibrarySource {
         throw LibrarySourceError.unsupported(.captureDate)
     }
 
+    func location(for asset: LibraryAsset) -> GeoCoordinate? {
+        self.asset(id: asset.id).map(\.location) ?? asset.location
+    }
+
+    func setLocation(_: GeoCoordinate?, for _: LibraryAsset) async throws {
+        throw LibrarySourceError.unsupported(.location)
+    }
+
+    func originalLocation(for _: LibraryAsset) -> OriginalLocation? {
+        nil
+    }
+
     func delete(_: [LibraryAsset], undoManager _: UndoManager?) async throws -> Bool {
         throw LibrarySourceError.unsupported(.deletion)
     }
@@ -277,6 +301,16 @@ public extension LibrarySource {
     }
 }
 
+/// The location a photo's own file gives, kept apart from the one the library holds over it.
+public nonisolated struct OriginalLocation: Hashable, Sendable {
+    /// Nil when the file gives none.
+    public var coordinate: GeoCoordinate?
+
+    public init(coordinate: GeoCoordinate?) {
+        self.coordinate = coordinate
+    }
+}
+
 /// What a source can store about a photo, and what it can do with the photo itself.
 public nonisolated enum LibraryCapability: Sendable, Hashable {
     case rating
@@ -284,6 +318,10 @@ public nonisolated enum LibraryCapability: Sendable, Hashable {
     case keywords
     /// Correcting when a photo was taken.
     case captureDate
+    /// Setting or correcting where a photo was taken.
+    case location
+    /// Going back to the location the photo's own file gives, after setting another.
+    case originalLocation
     /// Deleting photos from the library.
     case deletion
     /// Making a copy of a photo in the library.
@@ -307,6 +345,8 @@ public nonisolated enum LibrarySourceError: Error, LocalizedError, Sendable {
             case .flag: "This library doesn't store flags."
             case .keywords: "This library doesn't store keywords."
             case .captureDate: "This library doesn't store corrected dates."
+            case .location: "This library doesn't store locations."
+            case .originalLocation: "This library doesn't keep the original location apart."
             case .deletion: "Photos can't be deleted from this library."
             case .duplication: "Photos can't be duplicated in this library."
             }

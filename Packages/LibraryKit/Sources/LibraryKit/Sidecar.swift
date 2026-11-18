@@ -1,7 +1,8 @@
 import Foundation
+import ImageIOKit
 
 /// The `<image>.qaama` file next to a photo: the portable truth about what the user decided
-/// (identity, rating, flag, keywords, corrected capture date, edit recipe). See `docs/catalogue.md` §5.
+/// (identity, rating, flag, keywords, corrected capture date and location, edit recipe). See `docs/catalogue.md` §5.
 ///
 /// Serialized by hand with `JSONSerialization` so the recipe, owned by another package, is embedded
 /// as a JSON object rather than an opaque string. No backward compatibility while the app is young:
@@ -19,23 +20,28 @@ public nonisolated struct Sidecar: Hashable, Sendable {
         didSet { captureDate = captureDate.map(Self.wholeSeconds) }
     }
 
+    /// Where the user said the photo was taken, or that it has no location; nil leaves the position
+    /// in the image's header, if any. As for the date, the image is never rewritten.
+    public var location: LocationCorrection?
+
     /// The edit recipe as JSON (an object), or nil when the photo has no edit.
     public var recipeData: Data?
 
     public init(id: UUID = UUID(), rating: Int = 0, flag: ItemFlag = .none, keywords: [String] = [], captureDate: Date? = nil,
-                recipeData: Data? = nil)
+                location: LocationCorrection? = nil, recipeData: Data? = nil)
     {
         self.id = id
         self.rating = min(max(rating, 0), 5)
         self.flag = flag
         self.keywords = keywords
         self.captureDate = captureDate.map(Self.wholeSeconds)
+        self.location = location
         self.recipeData = recipeData
     }
 
     /// True when nothing is worth keeping: the file should then be deleted, not written.
     public var isEmpty: Bool {
-        rating == 0 && flag == .none && keywords.isEmpty && captureDate == nil && recipeData == nil
+        rating == 0 && flag == .none && keywords.isEmpty && captureDate == nil && location == nil && recipeData == nil
     }
 
     /// EXIF dates stop at the second, and so does the sidecar's spelling of them.
@@ -96,6 +102,7 @@ public nonisolated struct Sidecar: Hashable, Sendable {
             flag: ItemFlag(sidecarName: object["flag"] as? String),
             keywords: object["keywords"] as? [String] ?? [],
             captureDate: (object["captureDate"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) },
+            location: Self.locationCorrection(object["location"]),
             recipeData: recipe
         )
     }
@@ -118,6 +125,15 @@ public nonisolated struct Sidecar: Hashable, Sendable {
             // An instant in UTC ("2026-10-29T13:03:12Z"), readable and free of time zone guesswork.
             object["captureDate"] = ISO8601DateFormatter().string(from: captureDate)
         }
+        switch location {
+        case let .place(place):
+            // Decimal degrees, north and east positive, as the EXIF GPS block would read once signed.
+            object["location"] = ["latitude": place.latitude, "longitude": place.longitude]
+        case .removed:
+            object["location"] = Self.noLocation
+        case nil:
+            break
+        }
         if let recipeData {
             guard let recipe = try? JSONSerialization.jsonObject(with: recipeData) as? [String: Any] else {
                 throw ReadError.malformed(URL(filePath: "/"))
@@ -125,6 +141,25 @@ public nonisolated struct Sidecar: Hashable, Sendable {
             object["recipe"] = recipe
         }
         return try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+    }
+
+    /// How a sidecar says the photo has no location, whatever its file says.
+    private static let noLocation = "none"
+
+    /// A position spelled `{"latitude": …, "longitude": …}`, or `"none"`; nil for anything else, a
+    /// position out of range or half of one included.
+    private static func locationCorrection(_ value: Any?) -> LocationCorrection? {
+        if let text = value as? String {
+            return text == noLocation ? .removed : nil
+        }
+        return (value as? [String: Any]).flatMap(coordinate).map(LocationCorrection.place)
+    }
+
+    private static func coordinate(_ object: [String: Any]) -> GeoCoordinate? {
+        guard let latitude = (object["latitude"] as? NSNumber)?.doubleValue, let longitude = (object["longitude"] as? NSNumber)?.doubleValue,
+              abs(latitude) <= 90, abs(longitude) <= 180
+        else { return nil }
+        return GeoCoordinate(latitude: latitude, longitude: longitude)
     }
 
     /// Re-serializes a JSON object with sorted keys so equal recipes give equal bytes.

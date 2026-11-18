@@ -914,6 +914,70 @@ Bibliothèque
       pas livrer de vrais gestes à MapKit ni capturer la carte interactive : glisser, zoom et
       recentrage restent à essayer à l'écran.
       Reste : nom du lieu (géocodage inverse).
+      Définir / redéfinir la localisation, commencé le 18/11/2026 à la demande de Michaël :
+      section Location du panneau Info (mosaïque, une photo ou une sélection jusqu'à 50, et
+      onglet Info de l'éditeur). Edit (ou Assign… sans position, « Several locations » si la
+      sélection en a plusieurs) ouvre un mode d'édition : champ de recherche système
+      (`SearchField`, petite taille) dont les résultats viennent de `MKLocalSearch` (adresses et
+      lieux, six au plus, la région de la photo en indice), flèches et Retour comme dans Add to
+      Album ; clic sur la carte pour poser l'épingle (`MapReader` + `SpatialTapGesture`, actif
+      seulement en édition, pour qu'un clic de consultation ne déplace pas la photo) ; épingle
+      déplaçable (`Annotation` + `DragGesture`, position suivie par la translation depuis le
+      point de l'épingle). La carte ne se recentre que sur une autre photo ou un lieu choisi
+      dans la recherche (`LocationEditModel.focus`), pas sous le pointeur.
+      Paquets : capacité `.location`, `LibrarySource.location(for:)` / `setLocation(_:for:)`,
+      `LibraryAsset.location` (les vues suivent donc la position comme la date corrigée) ;
+      dossiers : clé `location` du sidecar et colonnes `latitudeOverride` / `longitudeOverride`
+      de `item` (migration v8, l'en-tête reste dans `latitude` / `longitude`, une position égale
+      à celle de l'en-tête à un mètre près efface la correction) ; Photos :
+      `PHAssetChangeRequest.location`. `MetadataEditing.setLocations`, une étape annulable
+      « Assign Location », partage désormais son écriture générique avec les dates ;
+      `LocationEditModel` dans EditorKit (recherche injectée, délai de 300 ms, jumeau JPEG
+      inclus via `LibrarySource.withTwins`, aussi utilisé par Adjust Date & Time).
+      Vérifié : 215 tests de LibraryKit et 87 d'EditorKit (sidecar, migration, source dossier,
+      modèle : recherche, annulation, jumeau, sélection mixte), compilation de l'appli, et sonde
+      hors écran du panneau (photo placée avec « Edit », sans position avec « Assign… »,
+      sélection de deux lieux). Non vérifié, à essayer à l'écran : le mode d'édition lui-même
+      (la sonde ne presse pas les boutons SwiftUI), le glisser de l'épingle (un `DragGesture`
+      dans une `Annotation` pourrait aussi faire glisser la carte), le clic sur la carte et le
+      double clic de zoom (qui pose aussi l'épingle), les résultats réels de `MKLocalSearch`,
+      et l'écriture dans la vraie photothèque.
+      Essai de Michaël le même jour (vidéo) : la carte, la recherche et le clic vont, mais le
+      glisser de l'épingle « vibre et ne suit pas bien le curseur » ; sur les images, l'épingle
+      traîne derrière le pointeur avec une image fantôme. Deux causes : la translation du
+      `DragGesture` était lue dans le repère de l'épingle, qui bouge avec elle (rétroaction), et
+      MapKit replace ses annotations une ou deux images en retard. Repris : translation lue en
+      `.global` (repère fixe), épingle dessinée par SwiftUI au-dessus de la carte pendant le
+      geste (calque `overlay`, `position`), l'annotation restant en place, invisible, pour garder
+      le geste ; au lâcher, la position lâchée reste affichée jusqu'à ce que celle de la photo
+      suive (une seconde au plus si l'écriture échoue). Non vérifié à l'écran.
+      Puis, accordé par Michaël : position corrigée dans les exports, retrait et retour à la
+      position du fichier, menus.
+      - Correction à trois états (`LocationCorrection` dans ImageIOKit : un lieu, retirée, ou
+        rien) : sidecar `"location": "none"`, colonne `locationRemoved` (migration v9 ; la v8
+        était déjà appliquée chez Michaël). `setLocation(nil)` dit « sans position » même si
+        l'en-tête en a une ; écrire ce que dit l'en-tête efface la correction, donc l'annulation
+        (qui réécrit la position lue avant) retrouve exactement l'état d'avant.
+        `LibrarySource.originalLocation(for:)` et capacité `.originalLocation` (dossiers ; pas
+        Photos, dont PhotoKit ne donne pas la position d'origine).
+      - Exports : `ExportInput.location`, comparée à l'en-tête comme la date
+        (`LocationCorrection.between`) ; `ImageMetadataWriter.applying` remplace le bloc GPS par
+        latitude et longitude seules (l'altitude était celle de l'autre lieu) ou le retire.
+        « Remove location » de l'export retire aussi une position corrigée.
+      - `MetadataEditing.removeLocations` / `revertLocations` (« Remove Location », « Revert to
+        Original Location », jumeau JPEG compris) ; menu ⋯ dans l'en-tête de la section ; menu
+        Image › Location (Assign Location…, Remove Location, Revert to Original Location, valeur
+        de focus `locationAction`) ; sous-menu Location du menu contextuel des vignettes (sans
+        lire les photos, le menu étant construit pour chaque vignette : les éléments ne font
+        rien aux photos qu'ils ne concernent pas). Assign Location… sélectionne les photos,
+        montre l'inspecteur (onglet Info dans l'éditeur) et passe par `LocationEditRequest`,
+        que la section prend quand elle montre ces photos ; le champ de recherche se fait
+        défiler en vue avec la carte (`scrollToVisible`), la section étant souvent sous le pli.
+      Vérifié : 215 tests de LibraryKit, 88 d'EditorKit, 97 de RenderEngine, 10 d'ImageIOKit,
+      compilation de l'appli, sonde du panneau (menu ⋯ à côté d'Edit). Non vérifié : tout ce
+      qui passe par les menus et les gestes, et le défilement vers la section.
+      Reste : suggestions au fil de la frappe (`MKLocalSearchCompleter`) si `MKLocalSearch`
+      déçoit ; Location dans le menu contextuel du canevas de l'éditeur.
 - [ ] Carte de la bibliothèque, façon Apple Photos : les photos là où elles ont été prises,
       regroupées et dégroupées au zoom. Demandé par Michaël le 13/11/2026, qui a validé
       l'emplacement (mode Grille / Carte de la source courante, pas une entrée à part dans la

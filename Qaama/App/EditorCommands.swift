@@ -196,6 +196,7 @@ struct EditorCommands: Commands {
     @FocusedValue(\.hasAssetGrid) private var hasAssetGrid
     @FocusedValue(\.adjustDateAction) private var adjustDateAction
     @FocusedValue(\.decisionsAction) private var decisions
+    @FocusedValue(\.locationAction) private var locationAction
     @FocusedValue(\.exportAction) private var exportAction
     @FocusedValue(\.showInFinderAction) private var showInFinderAction
     @FocusedValue(\.albumsCommand) private var albumsCommand
@@ -309,6 +310,15 @@ struct EditorCommands: Commands {
         CommandMenu("Image") {
             Button("Adjust Date & Time…") { adjustDateAction?.run() }
                 .disabled(adjustDateAction == nil)
+            Menu("Location") {
+                Button("Assign Location…") { locationAction?.assign?() }
+                    .disabled(locationAction?.assign == nil)
+                Button("Remove Location") { locationAction?.remove?() }
+                    .disabled(locationAction?.remove == nil)
+                Button("Revert to Original Location") { locationAction?.revert?() }
+                    .disabled(locationAction?.revert == nil)
+            }
+            .disabled(locationAction == nil)
             Divider()
             Menu("Rating") {
                 ForEach(0 ... 5, id: \.self) { stars in

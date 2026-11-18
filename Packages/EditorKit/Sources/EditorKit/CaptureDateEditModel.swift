@@ -37,14 +37,7 @@ public final class CaptureDateEditModel: Identifiable {
         self.source = source
         let assets = assets.sorted { (source.captureDate(for: $0) ?? .distantFuture) < (source.captureDate(for: $1) ?? .distantFuture) }
         self.assets = assets
-        var seen = Set(assets.map(\.id))
-        var all = assets
-        for asset in assets {
-            if let twinID = asset.pairedAssetID, seen.insert(twinID).inserted, let twin = source.asset(id: twinID) {
-                all.append(twin)
-            }
-        }
-        targets = all.map { ($0, source.captureDate(for: $0)) }
+        targets = source.withTwins(assets).map { ($0, source.captureDate(for: $0)) }
         date = DateAdjustment.wholeSeconds(targets.lazy.compactMap(\.date).first ?? .now)
     }
 

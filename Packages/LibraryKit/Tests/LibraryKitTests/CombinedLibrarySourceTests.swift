@@ -122,7 +122,7 @@ struct CombinedLibrarySourceTests {
 
     @Test func offersOnlyWhatEveryMemberCanDo() async {
         let (library, a, _) = await makeLibrary()
-        #expect(library.capabilities == [.rating, .flag, .keywords, .captureDate, .deletion, .duplication])
+        #expect(library.capabilities == [.rating, .flag, .keywords, .captureDate, .location, .originalLocation, .deletion, .duplication])
         // Orders other than by date don't weave.
         #expect(library.queryCapabilities == [.rating, .flag, .edited, .favorite, .search])
 

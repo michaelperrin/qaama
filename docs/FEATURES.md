@@ -118,6 +118,18 @@ can feed a website one day. Dates are when the feature landed.
   real date of one photo there derives the shift for all of them. Originals are never
   rewritten: the correction is stored in Photos' database or in the sidecar for folders, the
   library sorts by it, and exports carry it in their EXIF. The JPEG twin of a RAW follows.
+- Assign Location: set or correct where photos were taken, from the Location section of the
+  Info panel, next to the grid (one photo or a selection) and in the editor's Info tab. Edit
+  (or Assign… for photos without a location) opens a search field: places are found by name
+  through Apple's search service, nearest to the photo first, and picked with a click or with
+  the arrow keys and Return; a click on the map puts the pin there, and the pin can be dragged
+  elsewhere. Every change is one undoable step. Originals are never rewritten: the location is
+  stored in Photos' database or in the sidecar for folders, the library's map follows, and
+  exports carry it in their GPS metadata. The JPEG twin of a RAW follows (2026-11-18).
+- Remove Location, and for folder photos Revert to Original Location (back to what the file
+  says), from the menu next to the Location section's Edit button, from Image › Location (with
+  Assign Location…, which opens the Info panel ready to search) and from the thumbnails'
+  context menu, for one photo or a whole selection, each one undoable step (2026-11-18).
   Undoable (2026-11-06).
 
 - Albums of the Apple Photos library, managed without leaving Qaama (2026-11-06):

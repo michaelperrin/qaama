@@ -19,9 +19,12 @@ public nonisolated struct ExportInput: Sendable {
     /// The capture date the user corrected in the library, written in place of the original's; nil
     /// keeps what the original says.
     public var captureDate: Date?
+    /// The location the library holds over the original's, written in its place; nil keeps what the
+    /// original says.
+    public var location: LocationCorrection?
 
     public init(image: CIImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:], fills: [UUID: CIImage] = [:], metadataURL: URL? = nil,
-                captureDate: Date? = nil)
+                captureDate: Date? = nil, location: LocationCorrection? = nil)
     {
         self.image = image
         self.recipe = recipe
@@ -29,6 +32,7 @@ public nonisolated struct ExportInput: Sendable {
         self.fills = fills
         self.metadataURL = metadataURL
         self.captureDate = captureDate
+        self.location = location
     }
 }
 
@@ -79,11 +83,18 @@ public nonisolated enum ExportRenderer {
     }
 
     /// What the exported file says about itself: the original's metadata filtered by the policy, with
-    /// the user's corrections on top. Stripping everything strips the corrections too.
+    /// the user's corrections on top. Stripping everything strips the corrections too, and stripping
+    /// the location strips a corrected one.
     public static func metadata(for input: ExportInput, policy: ExportMetadataPolicy) -> [CFString: Any]? {
-        let kept = input.metadataURL.flatMap { metadata(of: $0, policy: policy) }
-        guard let captureDate = input.captureDate, policy != .strip else { return kept }
-        return ImageMetadataWriter.settingCaptureDate(captureDate, in: kept ?? [:])
+        var properties = input.metadataURL.flatMap { metadata(of: $0, policy: policy) }
+        guard policy != .strip else { return properties }
+        if let captureDate = input.captureDate {
+            properties = ImageMetadataWriter.settingCaptureDate(captureDate, in: properties ?? [:])
+        }
+        if let location = input.location, policy == .keep {
+            properties = ImageMetadataWriter.applying(location, to: properties ?? [:])
+        }
+        return properties
     }
 
     /// The original's metadata filtered by the policy; nil strips everything.

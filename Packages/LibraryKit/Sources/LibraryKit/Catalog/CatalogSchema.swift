@@ -160,6 +160,24 @@ nonisolated enum CatalogSchema {
             }
             try db.execute(sql: "UPDATE item SET metadataRead = NULL")
         }
+
+        migrator.registerMigration("v8-location-override") { db in
+            // Where the user said a photo was taken, mirrored from the sidecar as the corrected date
+            // is; `latitude` and `longitude` stay what the header says. Sidecars written before hold
+            // no location, so nothing needs reading again.
+            try db.alter(table: "item") { t in
+                t.add(column: "latitudeOverride", .double)
+                t.add(column: "longitudeOverride", .double)
+            }
+        }
+
+        migrator.registerMigration("v9-location-removed") { db in
+            // A photo the user said has no location, whatever its header says: the third state of
+            // the correction, next to "none" (both overrides nil) and a place.
+            try db.alter(table: "item") { t in
+                t.add(column: "locationRemoved", .boolean).notNull().defaults(to: false)
+            }
+        }
         return migrator
     }
 }

@@ -1,6 +1,7 @@
 import CoreGraphics
 import CoreImage
 import Foundation
+import ImageIOKit
 import LibraryKit
 import Observation
 import OSLog
@@ -59,6 +60,8 @@ public final class AssetInfoModel {
         let id: LibraryAsset.ID
         /// A corrected capture date is part of the details.
         let creationDate: Date?
+        /// So is an assigned location.
+        let location: GeoCoordinate?
     }
 
     public init() {}
@@ -113,7 +116,7 @@ public final class AssetInfoModel {
         var read = 0
         var all: [AssetDetails] = []
         for asset in assets {
-            let key = DetailsKey(id: asset.id, creationDate: asset.creationDate)
+            let key = DetailsKey(id: asset.id, creationDate: asset.creationDate, location: asset.location)
             if let cached = detailsCache[key] {
                 all.append(cached)
                 continue
@@ -166,7 +169,7 @@ public final class AssetInfoModel {
             let loaded = await source.details(for: asset, allowingDownload: true)
             guard let self, !Task.isCancelled, self.asset?.id == asset.id else { return }
             details = loaded
-            detailsCache[DetailsKey(id: asset.id, creationDate: asset.creationDate)] = loaded
+            detailsCache[DetailsKey(id: asset.id, creationDate: asset.creationDate, location: asset.location)] = loaded
             originalDownloadFailed = loaded.isOriginalInCloud
             isDownloadingOriginal = false
             download = nil

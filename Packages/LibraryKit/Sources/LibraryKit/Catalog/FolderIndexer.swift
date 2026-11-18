@@ -208,6 +208,7 @@ nonisolated extension CatalogItem {
         keywords = sidecar?.keywords ?? []
         hasEdit = sidecar?.recipeData != nil
         captureDateOverride = sidecar?.captureDate
+        locationCorrection = sidecar?.location
         sidecarModified = modified
     }
 }

@@ -178,6 +178,40 @@ struct ExportTests {
         #expect(ImageMetadataReader.metadata(from: ExportRenderer.metadata(for: alone, policy: .keep) ?? [:]).captureDate == corrected)
     }
 
+    @Test func aCorrectedLocationReplacesTheOriginalsInTheExportedFile() async throws {
+        let image = CIImage(color: .gray).cropped(to: CGRect(x: 0, y: 0, width: 32, height: 16))
+        let original = FileManager.default.temporaryDirectory.appendingPathComponent("export-location-\(UUID().uuidString).jpg")
+        defer { try? FileManager.default.removeItem(at: original) }
+        try ExportRenderer.encode(image, settings: ExportSettings(format: .jpeg), metadata: [
+            kCGImagePropertyExifDictionary: [kCGImagePropertyExifFNumber: 4.0],
+            kCGImagePropertyGPSDictionary: [
+                kCGImagePropertyGPSLatitude: 48.8584, kCGImagePropertyGPSLatitudeRef: "N",
+                kCGImagePropertyGPSLongitude: 2.2945, kCGImagePropertyGPSLongitudeRef: "E",
+            ] as [CFString: Any],
+        ]).write(to: original)
+        let etretat = GeoCoordinate(latitude: 49.7073, longitude: 0.2036)
+        let input = ExportInput(image: image, recipe: EditRecipe(), metadataURL: original, location: .place(etretat))
+
+        // Read the exported bytes back, as another application would.
+        let exported = try await ExportRenderer.export(input, settings: ExportSettings(format: .jpeg))
+        let source = try #require(CGImageSourceCreateWithData(exported as CFData, nil))
+        let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        let written = try #require(ImageMetadataReader.metadata(from: properties).location)
+        #expect(written.isAlmostEqual(to: etretat))
+        #expect(properties[kCGImagePropertyExifDictionary] != nil)
+
+        // A location removed in the library leaves the export without one.
+        var removed = input
+        removed.location = .removed
+        #expect(ExportRenderer.metadata(for: removed, policy: .keep)?[kCGImagePropertyGPSDictionary] == nil)
+        // Removing the location on export removes a corrected one too, and stripping strips everything.
+        #expect(ExportRenderer.metadata(for: input, policy: .stripLocation)?[kCGImagePropertyGPSDictionary] == nil)
+        #expect(ExportRenderer.metadata(for: input, policy: .strip) == nil)
+        // No file to take metadata from: the correction is written on its own.
+        let alone = ExportInput(image: image, recipe: EditRecipe(), location: .place(etretat))
+        #expect(ImageMetadataReader.metadata(from: ExportRenderer.metadata(for: alone, policy: .keep) ?? [:]).location == etretat)
+    }
+
     @Test func settingsRoundTripThroughJSON() throws {
         var settings = ExportSettings(format: .avif, quality: 0.7, size: .longEdge(2048))
         settings.frame = ExportFrame(isEnabled: true, thickness: 0.1, aspectRatio: 1.5, cornerRadius: 0.1, color: ExportColor(red: 0.2, green: 0.3, blue: 0.4))

@@ -75,6 +75,12 @@ public nonisolated struct CatalogItem: Codable, Hashable, Sendable, Identifiable
     public var hasEdit: Bool
     /// The capture date the user corrected; `captureDate` stays what the header says.
     public var captureDateOverride: Date?
+    /// Where the user said the photo was taken, mirrored from the sidecar; `latitude` and `longitude`
+    /// stay what the header says. Both nil when there is no correction.
+    public var latitudeOverride: Double?
+    public var longitudeOverride: Double?
+    /// True when the user said the photo has no location, whatever the header says.
+    public var locationRemoved = false
     public var sidecarModified: Date?
 
     public var pairedItemID: UUID?
@@ -112,6 +118,7 @@ public nonisolated struct CatalogItem: Codable, Hashable, Sendable, Identifiable
         captureDateOverride ?? captureDate
     }
 
+    /// Where the header says the photo was taken.
     public var location: GeoCoordinate? {
         get {
             guard let latitude, let longitude else { return nil }
@@ -121,6 +128,27 @@ public nonisolated struct CatalogItem: Codable, Hashable, Sendable, Identifiable
             latitude = newValue?.latitude
             longitude = newValue?.longitude
         }
+    }
+
+    /// What the user said of where the photo was taken, if they said anything.
+    public var locationCorrection: LocationCorrection? {
+        get {
+            if locationRemoved {
+                return .removed
+            }
+            guard let latitudeOverride, let longitudeOverride else { return nil }
+            return .place(GeoCoordinate(latitude: latitudeOverride, longitude: longitudeOverride))
+        }
+        set {
+            locationRemoved = newValue == .removed
+            latitudeOverride = newValue?.location?.latitude
+            longitudeOverride = newValue?.location?.longitude
+        }
+    }
+
+    /// Where the photo was taken as far as the library is concerned: the user's correction, else the header's.
+    public var effectiveLocation: GeoCoordinate? {
+        locationCorrection.map(\.location) ?? location
     }
 
     /// True when the header must be (re)read: never read, or the file changed since.

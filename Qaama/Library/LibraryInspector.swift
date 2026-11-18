@@ -5,7 +5,7 @@ import SwiftUI
 
 /// Right column of the grid, for the photos selected there, without opening them: their rating,
 /// flag and keywords, to read and to change, and the same histogram, file details, albums and map
-/// as the editor's Info tab. With several photos, each line shows what they share.
+/// (where their location is also set) as the editor's Info tab. With several photos, each line shows what they share.
 struct LibraryInspector: View {
     let source: any LibrarySource
     let selection: Set<LibraryAsset.ID>
@@ -146,8 +146,8 @@ struct LibraryInspector: View {
             }
         }
         AssetAlbumsSection(source: source, assets: [asset])
-        if let location = details.metadata?.location {
-            LocationSection(location: location)
+        if LocationSection.isShown(for: [asset], in: source) {
+            LocationSection(source: source, assets: [asset])
         }
     }
 
@@ -174,6 +174,9 @@ struct LibraryInspector: View {
             }
         }
         AssetAlbumsSection(source: source, assets: assets)
+        if LocationSection.isShown(for: assets, in: source) {
+            LocationSection(source: source, assets: assets)
+        }
     }
 
     /// Selecting a photo never downloads anything; the camera details of an original kept in iCloud

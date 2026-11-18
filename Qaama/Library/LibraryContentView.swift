@@ -23,6 +23,8 @@ struct LibraryContentView: View {
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
     /// The Adjust Date & Time dialog, opened from the Image menu, the grid's context menu or the Info panel.
     @State private var dateEdit: CaptureDateEditModel?
+    /// Image › Location › Assign Location… and the context menu's, for the Info panel to take.
+    @State private var locationRequest = LocationEditRequest()
     /// What went wrong with a rating or a flag set from the Image menu, or with an album change.
     @State private var decisionError: String?
     /// The name being asked for a new album made from photos.
@@ -47,12 +49,14 @@ struct LibraryContentView: View {
     var body: some View {
         content
             .environment(\.albumNavigation, albumNavigation)
+            .environment(\.locationEditRequest, locationRequest)
             .onAppear(perform: arrive)
             .focusedSceneValue(\.backAction, backAction)
             // View › Show Inspector acts on this window, grid or editor.
             .focusedSceneValue(\.hasInspector, true)
             .focusedSceneValue(\.adjustDateAction, adjustDateAction)
             .focusedSceneValue(\.decisionsAction, decisionsAction)
+            .focusedSceneValue(\.locationAction, locationAction)
             .focusedSceneValue(\.albumsCommand, albumsCommand)
             .focusedSceneValue(\.photoFilingAction, filingAction)
             .deletionConfirmation($deletion, onConfirm: delete)
@@ -131,7 +135,8 @@ struct LibraryContentView: View {
                     // The grid waits for a side column to have slid in or out before taking its new width.
                     SettledWidth(trailingColumnWidth: EditorInspector.width) {
                         AssetGridView(source: source, selection: $selection, onOpen: openEditor,
-                                      onAdjustDate: adjustDate, albums: albumsAction, onDuplicate: duplicate, onDelete: askToDelete,
+                                      onAdjustDate: adjustDate, onLocation: runLocation, albums: albumsAction, onDuplicate: duplicate,
+                                      onDelete: askToDelete,
                                       navigator: navigator, place: gridPlace)
                             .safeAreaInset(edge: .top, spacing: 0) {
                                 if let notice = source.indexingNotice {
@@ -265,6 +270,50 @@ struct LibraryContentView: View {
         return DecisionsAction(rating: AssetInfoModel.shared(shown.map(\.rating)), flag: AssetInfoModel.shared(shown.map(\.flag)),
                                setRating: capabilities.contains(.rating) ? { decide(.rating($0)) } : nil,
                                setFlag: capabilities.contains(.flag) ? { decide(.flag($0)) } : nil)
+    }
+
+    /// Image › Location: the photo open in the editor, else the grid's selection; nil when there is
+    /// neither or the source stores no location. What the items can do is read only for a selection
+    /// small enough to resolve on every update; Assign Location… needs the Info panel, which shows
+    /// that many photos at most.
+    private var locationAction: LocationAction? {
+        let capabilities = source.capabilities
+        guard capabilities.contains(.location) else { return nil }
+        let ids = editorSession.map { [$0.model.assetID] } ?? Array(selection)
+        guard !ids.isEmpty else { return nil }
+        let shown = ids.count <= AssetInfoModel.selectionLimit ? ids.compactMap { source.asset(id: $0) } : nil
+        let canRemove = shown.map { $0.contains { source.location(for: $0) != nil } } ?? true
+        let canRevert = capabilities.contains(.originalLocation) && (shown.map { $0.contains { source.originalLocation(for: $0) != nil } } ?? true)
+        return LocationAction(assign: shown == nil ? nil : { runLocation(.assign, on: ids) },
+                              remove: canRemove ? { runLocation(.remove, on: ids) } : nil,
+                              revert: canRevert ? { runLocation(.revert, on: ids) } : nil)
+    }
+
+    /// A Location item of the Image menu or of the context menu. Assigning shows the Info panel and
+    /// has its Location section start editing, the photos selected; the others write at once, as one
+    /// undoable step.
+    private func runLocation(_ command: LocationCommand, on ids: [LibraryAsset.ID]) {
+        switch command {
+        case .assign:
+            if editorSession == nil {
+                selection = Set(ids)
+            }
+            isInspectorVisible = true
+            locationRequest.ask(for: ids)
+        case .remove, .revert:
+            let assets = ids.compactMap { source.asset(id: $0) }
+            Task {
+                do {
+                    if command == .remove {
+                        try await MetadataEditing.removeLocations(of: assets, in: source, undoManager: undoManager)
+                    } else {
+                        try await MetadataEditing.revertLocations(of: assets, in: source, undoManager: undoManager)
+                    }
+                } catch {
+                    decisionError = error.localizedDescription
+                }
+            }
+        }
     }
 
     /// Writes a decision to every selected photo, as one undoable step.

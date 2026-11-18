@@ -35,6 +35,8 @@ struct EditorView: View {
     /// The step to another photo waiting for the user to decide what to do with unsaved changes.
     @State private var pendingLeave: PendingLeave?
     @Environment(\.undoManager) private var undoManager
+    /// Image › Location › Assign Location… opens the Info tab, where the place is chosen.
+    @Environment(\.locationEditRequest) private var locationRequest
 
     private var model: EditorModel {
         session.model
@@ -101,6 +103,11 @@ struct EditorView: View {
             ShowInFinderAction { FinderReveal.show([url]) }
         })
         .onChange(of: undoManager, initial: true) { _, manager in session.undoManager = manager }
+        .onChange(of: locationRequest?.pending, initial: true) { _, pending in
+            if pending != nil {
+                inspectorTab = .info
+            }
+        }
         .background(navigationShortcuts)
         .onChange(of: isInspectorVisible, initial: true) { _, isVisible in
             if isVisible {

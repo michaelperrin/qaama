@@ -59,6 +59,35 @@ struct CatalogMigrationTests {
         }
     }
 
+    @Test func locationOverrideMigrationKeepsTheHeadersPosition() throws {
+        let queue = try DatabaseQueue()
+        try CatalogSchema.migrator.migrate(queue, upTo: "v7-folder-location")
+        let folderID = UUID(), itemID = UUID()
+        try queue.write { db in
+            try db.execute(sql: "INSERT INTO folder (id, bookmark, displayName) VALUES (?, ?, ?)", arguments: [folderID, Data([1]), "Trip"])
+            try db.execute(sql: """
+            INSERT INTO item (id, folderID, relativePath, fileName, fileType, fileSize, contentModified, latitude, longitude, metadataRead)
+            VALUES (?, ?, 'a.jpg', 'a.jpg', 'public.jpeg', 1, ?, 48.8584, 2.2945, ?)
+            """, arguments: [itemID, folderID, Date(timeIntervalSince1970: 10), Date(timeIntervalSince1970: 20)])
+        }
+        try CatalogSchema.migrator.migrate(queue)
+
+        try queue.write { db in
+            var item = try #require(try CatalogItem.fetchOne(db, key: itemID))
+            let header = GeoCoordinate(latitude: 48.8584, longitude: 2.2945)
+            #expect(item.locationCorrection == nil && item.effectiveLocation == header)
+            #expect(!item.needsMetadata, "nothing to read again")
+            item.locationCorrection = .place(GeoCoordinate(latitude: 45.764, longitude: 4.8357))
+            try item.save(db)
+            var reloaded = try #require(try CatalogItem.fetchOne(db, key: itemID))
+            #expect(reloaded.effectiveLocation == GeoCoordinate(latitude: 45.764, longitude: 4.8357) && reloaded.location == header)
+            reloaded.locationCorrection = .removed
+            try reloaded.save(db)
+            reloaded = try #require(try CatalogItem.fetchOne(db, key: itemID))
+            #expect(reloaded.locationCorrection == .removed && reloaded.effectiveLocation == nil && reloaded.location == header)
+        }
+    }
+
     @Test func locationMigrationStartsThePhotosIndexOver() throws {
         let queue = try DatabaseQueue()
         try CatalogSchema.migrator.migrate(queue, upTo: "v5-capture-date-override")

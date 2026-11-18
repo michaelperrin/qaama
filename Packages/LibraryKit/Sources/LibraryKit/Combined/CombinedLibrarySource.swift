@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ImageIOKit
 import Observation
 import OSLog
 
@@ -287,6 +288,18 @@ public final class CombinedLibrarySource: LibrarySource {
 
     public func setCaptureDate(_ date: Date?, for asset: LibraryAsset) async throws {
         try await source(of: asset).setCaptureDate(date, for: asset)
+    }
+
+    public func location(for asset: LibraryAsset) -> GeoCoordinate? {
+        owner(of: asset.id)?.source.location(for: asset) ?? asset.location
+    }
+
+    public func setLocation(_ location: GeoCoordinate?, for asset: LibraryAsset) async throws {
+        try await source(of: asset).setLocation(location, for: asset)
+    }
+
+    public func originalLocation(for asset: LibraryAsset) -> OriginalLocation? {
+        owner(of: asset.id)?.source.originalLocation(for: asset)
     }
 
     /// Each member deletes its own photos, and registers its own undo. False when no member deleted any.

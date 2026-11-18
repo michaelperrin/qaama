@@ -57,4 +57,36 @@ struct ImageMetadataWriterTests {
         // No IPTC date to begin with: none is invented.
         #expect(ImageMetadataWriter.settingCaptureDate(instant, in: [:], fallback: paris)[kCGImagePropertyIPTCDictionary] == nil)
     }
+
+    @Test func aLocationCorrectionReplacesOrRemovesTheGPSBlock() throws {
+        let original: [CFString: Any] = [
+            kCGImagePropertyGPSDictionary: [
+                kCGImagePropertyGPSLatitude: 48.8584, kCGImagePropertyGPSLatitudeRef: "N",
+                kCGImagePropertyGPSLongitude: 2.2945, kCGImagePropertyGPSLongitudeRef: "E",
+                kCGImagePropertyGPSAltitude: 35.0,
+            ] as [CFString: Any],
+            kCGImagePropertyExifDictionary: [kCGImagePropertyExifLensModel: "XF35mmF2 R WR"] as [CFString: Any],
+        ]
+        // Rio de Janeiro: south and west.
+        let rio = GeoCoordinate(latitude: -22.9519, longitude: -43.2105)
+        let moved = ImageMetadataWriter.applying(.place(rio), to: original)
+        let gps = try #require(moved[kCGImagePropertyGPSDictionary] as? [CFString: Any])
+        #expect(ImageMetadataReader.location(from: gps) == rio)
+        #expect(gps[kCGImagePropertyGPSAltitude] == nil, "the altitude was the other place's")
+        #expect(moved[kCGImagePropertyExifDictionary] != nil, "the rest stays")
+
+        let removed = ImageMetadataWriter.applying(.removed, to: original)
+        #expect(removed[kCGImagePropertyGPSDictionary] == nil && removed[kCGImagePropertyExifDictionary] != nil)
+    }
+
+    @Test func aCorrectionIsOnlyWhatDiffersFromTheFile() {
+        let paris = GeoCoordinate(latitude: 48.8584, longitude: 2.2945), nearby = GeoCoordinate(latitude: 48.858_400_1, longitude: 2.2945)
+        let lyon = GeoCoordinate(latitude: 45.764, longitude: 4.8357)
+        #expect(LocationCorrection.between(file: nil, location: nil) == nil)
+        #expect(LocationCorrection.between(file: paris, location: nearby) == nil)
+        #expect(LocationCorrection.between(file: paris, location: lyon) == .place(lyon))
+        #expect(LocationCorrection.between(file: nil, location: lyon) == .place(lyon))
+        #expect(LocationCorrection.between(file: paris, location: nil) == .removed)
+        #expect(LocationCorrection.removed.location == nil && LocationCorrection.place(lyon).location == lyon)
+    }
 }

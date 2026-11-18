@@ -25,6 +25,8 @@ struct AssetGridView: View {
     let onOpen: (LibraryAsset.ID) -> Void
     /// Opens the Adjust Date & Time dialog for these photos; nil leaves the command out.
     var onAdjustDate: (([LibraryAsset]) -> Void)?
+    /// Runs a Location item of the context menu for these photos; nil leaves the items out.
+    var onLocation: ((LocationCommand, [LibraryAsset.ID]) -> Void)?
     /// Filing in albums: its items in the context menu, and thumbnails that can be dragged to an
     /// album of the sidebar. Nil for libraries without albums.
     var albums: AlbumsAction?
@@ -65,6 +67,8 @@ struct AssetGridView: View {
         let _ = updateActions()
         let canPaste = AdjustmentsClipboard.shared.adjustments != nil
         let canAdjustDate = onAdjustDate != nil && source.capabilities.contains(.captureDate)
+        let location = onLocation == nil || !source.capabilities.contains(.location) ? nil
+            : AssetGridCell.LocationState(canRevert: source.capabilities.contains(.originalLocation))
         let canShowInFinder = source.hasFileURLs
         let canDuplicate = onDuplicate != nil && source.capabilities.contains(.duplication)
         let canDelete = onDelete != nil && source.capabilities.contains(.deletion)
@@ -93,7 +97,7 @@ struct AssetGridView: View {
                                     let asset = source.assets[index]
                                     AssetGridCell(asset: asset, index: index, side: side, fit: thumbnailFit, isSelected: selection.contains(asset.id),
                                                   menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canPaste: canPaste,
-                                                                                canAdjustDate: canAdjustDate,
+                                                                                canAdjustDate: canAdjustDate, location: location,
                                                                                 canShowInFinder: canShowInFinder, canDuplicate: canDuplicate,
                                                                                 canDelete: canDelete, albums: albumState,
                                                                                 generation: menuGeneration),
@@ -273,6 +277,7 @@ struct AssetGridView: View {
             run { try await BatchEditing.pasteAdjustments(to: targets(for: asset), in: source, undoManager: undoManager) }
         }
         actions.adjustDate = { asset in onAdjustDate?(targets(for: asset)) }
+        actions.location = { command, asset in onLocation?(command, targetIDs(for: asset)) }
         actions.export = { asset in export(targets(for: asset)) }
         actions.showInFinder = { asset in showInFinder(Set(targetIDs(for: asset))) }
         actions.duplicate = { asset in onDuplicate?(targetIDs(for: asset)) }
@@ -637,6 +642,7 @@ final class AssetGridActions {
     var copyAdjustments: (LibraryAsset) -> Void = { _ in }
     var pasteAdjustments: (LibraryAsset) -> Void = { _ in }
     var adjustDate: (LibraryAsset) -> Void = { _ in }
+    var location: (LocationCommand, LibraryAsset) -> Void = { _, _ in }
     var export: (LibraryAsset) -> Void = { _ in }
     var showInFinder: (LibraryAsset) -> Void = { _ in }
     var duplicate: (LibraryAsset) -> Void = { _ in }
@@ -695,6 +701,8 @@ struct AssetGridCell: View, Equatable {
         var count: Int
         var canPaste: Bool
         var canAdjustDate: Bool
+        /// Nil where the library stores no location: the Location submenu is left out.
+        var location: LocationState?
         /// The photo is a file of a folder, which the Finder can show.
         var canShowInFinder: Bool
         var canDuplicate: Bool
@@ -702,6 +710,12 @@ struct AssetGridCell: View, Equatable {
         var albums: AlbumState?
         /// Changes after each menu closed, so the menu is built anew the next time it opens.
         var generation = 0
+    }
+
+    /// What the Location submenu offers.
+    nonisolated struct LocationState: Equatable {
+        /// The library keeps the original location apart, to go back to.
+        var canRevert: Bool
     }
 
     /// The album items depend on these; the closures of `AlbumsAction` are read from `actions`.
@@ -769,9 +783,24 @@ struct AssetGridCell: View, Equatable {
             .disabled(!asset.hasEdit)
         Button(menu.count > 1 ? "Paste Adjustments to \(menu.count) Photos" : "Paste Adjustments") { actions.pasteAdjustments(asset) }
             .disabled(!menu.canPaste)
-        if menu.canAdjustDate {
+        if menu.canAdjustDate || menu.location != nil {
             Divider()
+        }
+        if menu.canAdjustDate {
             Button(menu.count > 1 ? "Adjust Date & Time of \(menu.count) Photos…" : "Adjust Date & Time…") { actions.adjustDate(asset) }
+        }
+        if let location = menu.location {
+            // Whether the photos have a location to remove or revert isn't read here: the menu is
+            // built for every thumbnail on every update. The items do nothing to photos they don't concern.
+            Menu("Location") {
+                Button("Assign Location…") { actions.location(.assign, asset) }
+                    // The Info panel, where the place is chosen, shows that many photos at most.
+                    .disabled(menu.count > AssetInfoModel.selectionLimit)
+                Button("Remove Location") { actions.location(.remove, asset) }
+                if location.canRevert {
+                    Button("Revert to Original Location") { actions.location(.revert, asset) }
+                }
+            }
         }
         if menu.albums != nil {
             Divider()

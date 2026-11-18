@@ -10,6 +10,11 @@ import SwiftUI
 struct SearchField: NSViewRepresentable {
     @Binding var text: String
     let prompt: String
+    /// Large in a dialog of its own, regular in a panel.
+    var controlSize: NSControl.ControlSize = .large
+    /// The height below the field to bring into view with it when it takes the keyboard, for what
+    /// follows it in a panel that scrolls; 0 leaves the scrolling alone.
+    var revealedBelow: CGFloat = 0
     /// The up (-1) and down (1) arrow keys, which a single line has no use for.
     var onMove: (Int) -> Void = { _ in }
     /// The Return key.
@@ -21,7 +26,8 @@ struct SearchField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSSearchField {
         let field = FocusedSearchField()
-        field.controlSize = .large
+        field.revealedBelow = revealedBelow
+        field.controlSize = controlSize
         field.placeholderString = prompt
         field.delegate = context.coordinator
         return field
@@ -34,6 +40,7 @@ struct SearchField: NSViewRepresentable {
             field.stringValue = text
         }
         field.placeholderString = prompt
+        field.controlSize = controlSize
     }
 
     final class Coordinator: NSObject, NSSearchFieldDelegate {
@@ -67,8 +74,19 @@ struct SearchField: NSViewRepresentable {
 
 /// A search field that is typed in as soon as its window shows it.
 private final class FocusedSearchField: NSSearchField {
+    var revealedBelow: CGFloat = 0
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        guard window != nil else { return }
         window?.makeFirstResponder(self)
+        guard revealedBelow > 0 else { return }
+        // Once the panel has laid out the rows that come with the field.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            // The room below the field: further down the y axis when the view is flipped, up it otherwise.
+            let y = isFlipped ? bounds.minY : bounds.minY - revealedBelow
+            scrollToVisible(NSRect(x: 0, y: y, width: bounds.width, height: bounds.height + revealedBelow))
+        }
     }
 }

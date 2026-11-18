@@ -890,10 +890,11 @@ public final class EditorModel {
         let source = source
         let asset = asset
         return ExportItem(id: assetID, name: { name }, load: {
-            // A capture date corrected in the library replaces the original's in the exported file.
+            // A capture date or a location corrected in the library replaces the original's in the exported file.
             var input = input
-            let fileDate = await headerTask?.value?.captureDate
-            input.captureDate = ExportItem.captureDateToWrite(library: asset.flatMap { source.captureDate(for: $0) }, file: fileDate)
+            let header = await headerTask?.value
+            input.captureDate = ExportItem.captureDateToWrite(library: asset.flatMap { source.captureDate(for: $0) }, file: header?.captureDate)
+            input.location = asset.flatMap { LocationCorrection.between(file: header?.location, location: source.location(for: $0)) }
             return input
         })
     }

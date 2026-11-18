@@ -9,6 +9,39 @@ public nonisolated struct GeoCoordinate: Hashable, Sendable {
         self.latitude = latitude
         self.longitude = longitude
     }
+
+    /// True when both name the same spot to about a meter (1e-5 degree): what survives a round trip
+    /// through a header, a database or a map does not compare equal to the last digit.
+    public func isAlmostEqual(to other: GeoCoordinate) -> Bool {
+        abs(latitude - other.latitude) < 1e-5 && abs(longitude - other.longitude) < 1e-5
+    }
+}
+
+/// A location the library holds over the one in a photo's own file: another place, or none at all.
+/// Nil (no correction) leaves the file's word.
+public nonisolated enum LocationCorrection: Hashable, Sendable {
+    case place(GeoCoordinate)
+    /// The photo has no location, whatever the file says.
+    case removed
+
+    /// The location a photo has once corrected.
+    public var location: GeoCoordinate? {
+        if case let .place(place) = self {
+            return place
+        }
+        return nil
+    }
+
+    /// The correction that takes a photo whose file says `file` to `location`; nil when there is
+    /// nothing to correct (the same place to about a meter, or no place on either side).
+    public static func between(file: GeoCoordinate?, location: GeoCoordinate?) -> LocationCorrection? {
+        switch (file, location) {
+        case (nil, nil): nil
+        case (.some, nil): .removed
+        case let (file?, location?) where file.isAlmostEqual(to: location): nil
+        case let (_, location?): .place(location)
+        }
+    }
 }
 
 /// What the header of an image file says, without decoding any pixel.

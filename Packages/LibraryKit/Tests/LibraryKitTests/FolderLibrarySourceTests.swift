@@ -266,6 +266,70 @@ struct FolderLibrarySourceTests {
         #expect(try Sidecar.read(forImageAt: image) == nil)
     }
 
+    @Test func assigningALocationWritesTheSidecarAndMovesThePhotoOnTheMap() async throws {
+        let root = try makePlacedFolder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try makeSource(root: root)
+        #expect(source.capabilities.contains(.location))
+        await source.load()
+        await wait { source.assets.count == 3 && !source.isScanning && source.assets.filter { $0.location != nil }.count == 2 }
+        func photo(_ name: String) throws -> LibraryAsset {
+            try #require(source.assets.first { source.fileURL(for: $0)?.lastPathComponent == name })
+        }
+        let nowhere = try photo("nowhere.jpg"), paris = try photo("paris.jpg")
+        let nowhereFile = try #require(source.fileURL(for: nowhere)), parisFile = try #require(source.fileURL(for: paris))
+        let imageBytes = try Data(contentsOf: nowhereFile)
+        let fileParis = try #require(source.location(for: paris))
+
+        // A photo the file doesn't place gets a position.
+        let etretat = GeoCoordinate(latitude: 49.7073, longitude: 0.2036)
+        let version = source.placesVersion
+        try await source.setLocation(etretat, for: nowhere)
+        await wait { source.placesVersion > version }
+        #expect(source.location(for: nowhere) == etretat)
+        #expect(source.asset(id: nowhere.id)?.location == etretat)
+        #expect(try Sidecar.read(forImageAt: nowhereFile)?.location == .place(etretat))
+        #expect(try Data(contentsOf: nowhereFile) == imageBytes, "the original is never rewritten")
+        #expect(await source.locatedAssets().contains { $0.id == nowhere.id && $0.coordinate == etretat })
+        #expect(await source.details(for: nowhere, allowingDownload: false).metadata?.location == etretat)
+
+        // A photo the file places is moved, and the correction wins over the header.
+        let lyon = GeoCoordinate(latitude: 45.764, longitude: 4.8357)
+        try await source.setLocation(lyon, for: paris)
+        #expect(source.location(for: paris) == lyon)
+        #expect(await source.details(for: paris, allowingDownload: false).metadata?.location == lyon)
+
+        // A rescan reads the corrections back from the sidecars, as after a catalog rebuild.
+        source.rescan()
+        await wait { !source.isScanning }
+        #expect(source.location(for: nowhere) == etretat && source.location(for: paris) == lyon)
+
+        #expect(source.originalLocation(for: paris) == OriginalLocation(coordinate: fileParis))
+        #expect(source.originalLocation(for: nowhere) == OriginalLocation(coordinate: nil))
+
+        // Putting back the file's own position, as an undo or Revert does, removes the correction and the sidecar with it.
+        try await source.setLocation(fileParis, for: paris)
+        #expect(source.location(for: paris) == fileParis)
+        #expect(source.originalLocation(for: paris) == nil, "nothing to go back to")
+        #expect(try Sidecar.read(forImageAt: parisFile) == nil)
+        try await source.setLocation(nil, for: nowhere)
+        #expect(source.location(for: nowhere) == nil)
+        #expect(try Sidecar.read(forImageAt: nowhereFile) == nil)
+
+        // A photo whose file places it can be said to have no location: it leaves the map.
+        try await source.setLocation(nil, for: paris)
+        await wait { source.asset(id: paris.id)?.location == nil }
+        #expect(source.location(for: paris) == nil)
+        #expect(try Sidecar.read(forImageAt: parisFile)?.location == .removed)
+        #expect(await source.details(for: paris, allowingDownload: false).metadata?.location == nil)
+        #expect(await !source.locatedAssets().contains { $0.id == paris.id })
+        source.rescan()
+        await wait { !source.isScanning }
+        #expect(source.location(for: paris) == nil, "read back from the sidecar")
+        try await source.setLocation(fileParis, for: paris)
+        #expect(source.location(for: paris) == fileParis && source.originalLocation(for: paris) == nil)
+    }
+
     @Test func timelineGroupsThePhotosByMonthAndFollowsACorrectedDate() async throws {
         let root = try makeFolder()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -357,7 +421,7 @@ struct FolderLibrarySourceTests {
         await source.load()
         await wait { source.assets.count == 2 && !source.isScanning }
         let asset = try #require(source.assets.first)
-        #expect(source.capabilities == [.rating, .flag, .keywords, .captureDate, .deletion, .duplication])
+        #expect(source.capabilities == [.rating, .flag, .keywords, .captureDate, .location, .originalLocation, .deletion, .duplication])
 
         try await source.setFlag(.rejected, for: asset)
         try await source.setKeywords([" lapland", "", "winter "], for: asset)

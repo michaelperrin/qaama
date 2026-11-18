@@ -91,6 +91,12 @@ item
   hasEdit: Bool
   captureDateOverride: Date?     date de prise de vue corrigée (6/11/2026) ; captureDate reste
                                  celle de l'en-tête, le tri par date prend la correction d'abord
+  latitudeOverride, longitudeOverride: Double?
+                                 position donnée par l'utilisateur (18/11/2026, migration v8) ;
+                                 latitude et longitude restent celles de l'en-tête, la carte prend
+                                 la correction d'abord
+  locationRemoved: Bool          l'utilisateur dit que la photo n'a pas de position, quoi que dise
+                                 l'en-tête (18/11/2026, migration v9)
   sidecarModified: Date?         date du sidecar lu, pour détecter un changement externe
 
   -- liens
@@ -122,6 +128,7 @@ une `DatabaseQueue` en mémoire.
   "flag": "pick",
   "keywords": ["lapland", "winter"],
   "captureDate": "2026-10-29T13:03:12Z",
+  "location": { "latitude": 49.7073, "longitude": 0.2036 },
   "recipe": { "version": 1, "exposure": 0.3, "contrast": 0, "saturation": 0.1 }
 }
 ```
@@ -129,6 +136,11 @@ une `DatabaseQueue` en mémoire.
 - `captureDate` (6/11/2026) : la date de prise de vue corrigée par l'utilisateur, à la seconde,
   en instant UTC. Absente tant que rien n'est corrigé. L'image n'est jamais réécrite : la
   correction est appliquée à l'EXIF des exports. Remettre la date de l'en-tête retire la clé.
+- `location` (18/11/2026) : où l'utilisateur dit que la photo a été prise, en degrés décimaux
+  (nord et est positifs), ou `"none"` pour une photo sans position quoi que dise son en-tête.
+  Absente tant que rien n'est donné ; remettre la position de l'en-tête (à un mètre près) retire
+  la clé. Une position hors bornes ou incomplète est ignorée. Appliquée aux exports : le bloc
+  GPS de l'original est remplacé (latitude et longitude seules) ou retiré.
 
 - Le sidecar v1 actuel (la recette seule) est lu et migré à la première écriture.
 - Écriture atomique ; relecture si sa date change (modification externe ou synchronisation).

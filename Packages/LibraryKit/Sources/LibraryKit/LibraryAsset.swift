@@ -1,4 +1,5 @@
 import Foundation
+import ImageIOKit
 
 /// A photo in the library, independent of its source (Photos library, file on disk).
 ///
@@ -26,10 +27,12 @@ public nonisolated struct LibraryAsset: Identifiable, Hashable, Sendable {
     public var isRAW: Bool
     /// The other half of a RAW + JPEG pair shot together, when the source pairs them.
     public var pairedAssetID: String?
+    /// Where the photo was taken as the library holds it, corrections included; nil when nothing says.
+    public var location: GeoCoordinate?
 
     public init(id: String, pixelWidth: Int, pixelHeight: Int, creationDate: Date?, isFavorite: Bool, rating: Int = 0,
                 flag: ItemFlag = .none, keywords: [String] = [], modificationDate: Date? = nil, hasEdit: Bool = false,
-                isRAW: Bool = false, pairedAssetID: String? = nil)
+                isRAW: Bool = false, pairedAssetID: String? = nil, location: GeoCoordinate? = nil)
     {
         self.id = id
         self.pixelWidth = pixelWidth
@@ -43,6 +46,7 @@ public nonisolated struct LibraryAsset: Identifiable, Hashable, Sendable {
         self.hasEdit = hasEdit
         self.isRAW = isRAW
         self.pairedAssetID = pairedAssetID
+        self.location = location
     }
 
     /// Width / height ratio, or 1 when the dimensions are unknown.

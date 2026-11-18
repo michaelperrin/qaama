@@ -48,9 +48,10 @@ public struct ExportItem: Identifiable {
                 throw LibrarySourceError.editingFailed("no image data")
             }
             let loaded = try await Task.detached(priority: .userInitiated) { try SourceImageLoader.load(renderSource) }.value
-            let fileDate = await Task.detached { input.imageURL.flatMap { try? ImageMetadataReader.read($0) }?.captureDate }.value
+            let header = await Task.detached { input.imageURL.flatMap { try? ImageMetadataReader.read($0) } }.value
             return ExportInput(image: loaded.image, recipe: recipe, metadataURL: input.imageURL,
-                               captureDate: captureDateToWrite(library: source.captureDate(for: asset), file: fileDate))
+                               captureDate: captureDateToWrite(library: source.captureDate(for: asset), file: header?.captureDate),
+                               location: LocationCorrection.between(file: header?.location, location: source.location(for: asset)))
         }
     }
 

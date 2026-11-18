@@ -4,7 +4,7 @@ import LibraryKit
 import SwiftUI
 
 /// The Info tab: the histogram of the current edit, what the file says about itself, the albums
-/// the photo is in, and a map of where it was taken when the file says so.
+/// the photo is in, and a map of where it was taken, where that place can also be set.
 struct InfoInspector: View {
     let model: EditorModel
 
@@ -20,9 +20,9 @@ struct InfoInspector: View {
             }
             if let asset = model.asset {
                 AssetAlbumsSection(source: model.source, assets: [asset])
-            }
-            if let location = model.metadata?.location {
-                LocationSection(location: location)
+                if LocationSection.isShown(for: [asset], in: model.source) {
+                    LocationSection(source: model.source, assets: [asset])
+                }
             }
         }
         .formStyle(.grouped)

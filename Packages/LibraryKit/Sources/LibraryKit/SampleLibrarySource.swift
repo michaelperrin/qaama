@@ -11,7 +11,7 @@ public final class SampleLibrarySource: LibrarySource {
     public private(set) var assets: AssetCollection = .empty
     public private(set) var timeline: DateTimeline?
     public private(set) var lastLoadDuration: Duration?
-    public var capabilities: Set<LibraryCapability> = [.rating, .flag, .keywords, .captureDate, .deletion, .duplication]
+    public var capabilities: Set<LibraryCapability> = [.rating, .flag, .keywords, .captureDate, .location, .originalLocation, .deletion, .duplication]
     public var queryCapabilities: Set<QueryCapability> {
         [.sortByRating, .sortByFileName, .rating, .flag, .edited, .favorite, .search]
     }
@@ -30,7 +30,7 @@ public final class SampleLibrarySource: LibrarySource {
         var listing = query
         listing.onlyAssetIDs = nil
         return byID.values.filter { listing.matches($0) }.compactMap { asset in
-            Self.location(of: asset.id).map { LocatedAsset(id: asset.id, coordinate: $0, captureDate: asset.creationDate) }
+            asset.location.map { LocatedAsset(id: asset.id, coordinate: $0, captureDate: asset.creationDate) }
         }
     }
 
@@ -71,7 +71,8 @@ public final class SampleLibrarySource: LibrarySource {
                 flag: index % 7 == 0 ? .picked : (index % 7 == 1 ? .rejected : .none),
                 keywords: index % 2 == 0 ? ["sample", "even"] : [],
                 modificationDate: .now, hasEdit: index % 4 == 0, isRAW: pairsFirstTwo && index == 0,
-                pairedAssetID: pairsFirstTwo && index < 2 && count >= 2 ? "\(idPrefix)-\(1 - index)" : nil
+                pairedAssetID: pairsFirstTwo && index < 2 && count >= 2 ? "\(idPrefix)-\(1 - index)" : nil,
+                location: Self.location(of: id)
             )
             asset.rating = index % 6
             list.append(asset)
@@ -119,6 +120,19 @@ public final class SampleLibrarySource: LibrarySource {
         update(asset.id) { $0.creationDate = date ?? own }
     }
 
+    public func setLocation(_ location: GeoCoordinate?, for asset: LibraryAsset) async throws {
+        guard capabilities.contains(.location) else { throw LibrarySourceError.unsupported(.location) }
+        update(asset.id) { $0.location = location }
+    }
+
+    /// The made-up place of each photo plays at being its file's.
+    public func originalLocation(for asset: LibraryAsset) -> OriginalLocation? {
+        guard capabilities.contains(.originalLocation) else { return nil }
+        let own = Self.location(of: asset.id)
+        guard LocationCorrection.between(file: own, location: location(for: asset)) != nil else { return nil }
+        return OriginalLocation(coordinate: own)
+    }
+
     /// Photos whose original plays at being in iCloud: their details come without the camera until
     /// a download is allowed, which brings the original "back" for good.
     public var cloudOnlyIDs: Set<LibraryAsset.ID> = []
@@ -151,7 +165,7 @@ public final class SampleLibrarySource: LibrarySource {
         return AssetDetails(fileName: "\(asset.id).jpg", metadata: ImageMetadata(
             pixelWidth: asset.pixelWidth, pixelHeight: asset.pixelHeight, captureDate: captureDate(for: asset),
             cameraMake: "Qaama", cameraModel: "Sample", lens: "35mm F2", iso: 200, exposureTime: 1 / 250, aperture: 2.8, focalLength: 35,
-            location: Self.location(of: asset.id)
+            location: location(for: asset)
         ))
     }
 
@@ -230,7 +244,8 @@ public final class SampleLibrarySource: LibrarySource {
                 }
                 var copy = LibraryAsset(id: copyID, pixelWidth: original.pixelWidth, pixelHeight: original.pixelHeight, creationDate: original.creationDate,
                                         isFavorite: original.isFavorite, rating: original.rating, flag: original.flag, keywords: original.keywords,
-                                        modificationDate: original.modificationDate, hasEdit: original.hasEdit, isRAW: original.isRAW)
+                                        modificationDate: original.modificationDate, hasEdit: original.hasEdit, isRAW: original.isRAW,
+                                        location: original.location)
                 copy.modificationDate = .now
                 insert(Entry(asset: copy, image: images[id], recipe: recipes[id], ownDate: ownDates[id]))
                 copies.append(copyID)

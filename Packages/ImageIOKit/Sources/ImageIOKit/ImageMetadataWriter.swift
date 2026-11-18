@@ -8,6 +8,23 @@ public nonisolated enum ImageMetadataWriter {
     /// carry, so a photo keeps its local time; without one it is spelled in `fallback` and the offset
     /// is written too, which leaves no doubt about the instant. Sub-second tags go: they belonged to
     /// the date replaced.
+    /// Applies a location correction: the GPS block of the file gives way to one holding only the
+    /// place (its altitude, direction and the like belonged to the place replaced), or goes.
+    public static func applying(_ correction: LocationCorrection, to properties: [CFString: Any]) -> [CFString: Any] {
+        var properties = properties
+        switch correction {
+        case .removed:
+            properties[kCGImagePropertyGPSDictionary] = nil
+        case let .place(place):
+            // Unsigned degrees and a hemisphere letter, as `ImageMetadataReader` reads them.
+            properties[kCGImagePropertyGPSDictionary] = [
+                kCGImagePropertyGPSLatitude: abs(place.latitude), kCGImagePropertyGPSLatitudeRef: place.latitude < 0 ? "S" : "N",
+                kCGImagePropertyGPSLongitude: abs(place.longitude), kCGImagePropertyGPSLongitudeRef: place.longitude < 0 ? "W" : "E",
+            ] as [CFString: Any]
+        }
+        return properties
+    }
+
     public static func settingCaptureDate(_ date: Date, in properties: [CFString: Any], fallback: TimeZone = .current) -> [CFString: Any] {
         var properties = properties
         var exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]

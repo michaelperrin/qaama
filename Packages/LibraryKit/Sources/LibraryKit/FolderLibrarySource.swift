@@ -31,7 +31,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     public private(set) var loadError: String?
 
     public var capabilities: Set<LibraryCapability> {
-        [.rating, .flag, .keywords, .captureDate, .deletion, .duplication]
+        [.rating, .flag, .keywords, .captureDate, .location, .originalLocation, .deletion, .duplication]
     }
 
     public var queryCapabilities: Set<QueryCapability> {
@@ -207,7 +207,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         delivered = all
         itemsByID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
         let located = all.compactMap { item in
-            item.location.map { LocatedAsset(id: item.id.uuidString, coordinate: $0, captureDate: item.effectiveCaptureDate) }
+            item.effectiveLocation.map { LocatedAsset(id: item.id.uuidString, coordinate: $0, captureDate: item.effectiveCaptureDate) }
         }
         if located != placed {
             placed = located
@@ -323,6 +323,23 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         logger.notice("Capture date of \(asset.id, privacy: .public) \(date == nil ? "back to the file's" : "corrected", privacy: .public)")
     }
 
+    /// The position goes into the sidecar; the image keeps its header. Nil says the photo has no
+    /// location even when its header has one. What the header says already (to a meter or so) is no
+    /// correction at all, so undoing one leaves no trace of it.
+    public func setLocation(_ location: GeoCoordinate?, for asset: LibraryAsset) async throws {
+        try await updateSidecar(for: asset) { sidecar, item in
+            let correction = LocationCorrection.between(file: item.location, location: location)
+            sidecar.location = correction
+            item.locationCorrection = correction
+        }
+        logger.notice("Location of \(asset.id, privacy: .public) \(location == nil ? "removed" : "set", privacy: .public)")
+    }
+
+    public func originalLocation(for asset: LibraryAsset) -> OriginalLocation? {
+        guard let uuid = UUID(uuidString: asset.id), let item = itemsByID[uuid], item.locationCorrection != nil else { return nil }
+        return OriginalLocation(coordinate: item.location)
+    }
+
     public func resourceInfo(for asset: LibraryAsset) async -> AssetResourceInfo {
         AssetResourceInfo(isRAW: asset.isRAW, hasJPEGTwin: asset.pairedAssetID != nil, originalFileName: fileURL(for: asset)?.lastPathComponent)
     }
@@ -337,6 +354,9 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         // Read again after the wait: the correction may have changed meanwhile.
         if let corrected = itemsByID[uuid]?.captureDateOverride {
             metadata?.captureDate = corrected
+        }
+        if let correction = itemsByID[uuid]?.locationCorrection {
+            metadata?.location = correction.location
         }
         return AssetDetails(fileName: item.fileName, metadata: metadata)
     }
@@ -548,7 +568,8 @@ nonisolated extension LibraryAsset {
             modificationDate: item.sidecarModified ?? item.contentModified,
             hasEdit: item.hasEdit,
             isRAW: item.isRAW,
-            pairedAssetID: item.pairedItemID?.uuidString
+            pairedAssetID: item.pairedItemID?.uuidString,
+            location: item.effectiveLocation
         )
     }
 }

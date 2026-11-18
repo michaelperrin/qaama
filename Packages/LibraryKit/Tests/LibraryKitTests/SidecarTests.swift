@@ -1,4 +1,5 @@
 import Foundation
+import ImageIOKit
 @testable import LibraryKit
 import Testing
 
@@ -40,6 +41,35 @@ struct SidecarTests {
         sidecar.captureDate = nil
         #expect(sidecar.isEmpty)
         #expect(try !String(decoding: sidecar.jsonData(), as: UTF8.self).contains("captureDate"))
+    }
+
+    @Test func anAssignedLocationIsKeptInDecimalDegrees() throws {
+        let etretat = GeoCoordinate(latitude: 49.7073, longitude: 0.2036)
+        var sidecar = Sidecar(location: .place(etretat))
+        #expect(!sidecar.isEmpty, "a location alone is worth a file")
+        let data = try sidecar.jsonData()
+        let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let location = try #require(object["location"] as? [String: Double])
+        #expect(location == ["latitude": 49.7073, "longitude": 0.2036])
+        #expect(try Sidecar(data: data).location == .place(etretat))
+
+        // A photo said to have no location, whatever its file says.
+        sidecar.location = .removed
+        #expect(!sidecar.isEmpty)
+        let removed = try sidecar.jsonData()
+        #expect(String(decoding: removed, as: UTF8.self).contains("\"location\" : \"none\""))
+        #expect(try Sidecar(data: removed).location == .removed)
+
+        sidecar.location = nil
+        #expect(sidecar.isEmpty)
+        #expect(try !String(decoding: sidecar.jsonData(), as: UTF8.self).contains("location"))
+
+        // A position out of range, or half of one, is no position.
+        let id = UUID().uuidString
+        let outOfRange = Data(#"{"version":2,"id":"\#(id)","location":{"latitude":91,"longitude":2}}"#.utf8)
+        #expect(try Sidecar(data: outOfRange).location == nil)
+        let half = Data(#"{"version":2,"id":"\#(id)","location":{"latitude":48.8}}"#.utf8)
+        #expect(try Sidecar(data: half).location == nil)
     }
 
     @Test func rejectsNewerVersionsAndGarbage() {

@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreLocation
 import Foundation
 import ImageIOKit
 import ObjCSupport
@@ -28,7 +29,7 @@ public final class PhotosLibrarySource: LibrarySource {
     }
 
     public var capabilities: Set<LibraryCapability> {
-        [.rating, .keywords, .captureDate, .deletion, .duplication]
+        [.rating, .keywords, .captureDate, .location, .deletion, .duplication]
     }
 
     /// Date and favorite are native; rating filter and sort are too on macOS 27, confirmed by a probe at
@@ -253,6 +254,21 @@ public final class PhotosLibrarySource: LibrarySource {
         // The change observer drops it too, but only once Photos has told: a batch reads it before.
         materialized[asset.id] = nil
         logger.notice("Capture date of \(asset.id, privacy: .public) corrected")
+    }
+
+    /// Photos keeps the position in its database, apart from the original, as its own Assign Location
+    /// does; the list and the map are refreshed through the change observer and the index. Nil removes
+    /// the position: Photos keeps no other to go back to.
+    public func setLocation(_ location: GeoCoordinate?, for asset: LibraryAsset) async throws {
+        guard let phAsset = phAsset(for: asset.id) else { throw LibrarySourceError.assetUnavailable }
+        let place = location.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
+        // CLLocation is immutable and Sendable: it can go to PhotoKit's queue with the asset.
+        try await PHPhotoLibrary.shared().performChanges { @Sendable in
+            PHAssetChangeRequest(for: phAsset).location = place
+        }
+        // As for the date: read again on the next access, not once Photos has told.
+        materialized[asset.id] = nil
+        logger.notice("Location of \(asset.id, privacy: .public) \(location == nil ? "removed" : "set", privacy: .public)")
     }
 
     /// Photos stores a RAW + JPEG pair as one asset with two resources. Listing them costs one request per
@@ -843,7 +859,8 @@ public final class PhotosLibrarySource: LibrarySource {
             modificationDate: asset.modificationDate,
             hasEdit: asset.hasAdjustments,
             isRAW: snapshot.rawIDs.contains(asset.localIdentifier),
-            pairedAssetID: snapshot.pairedIDs[asset.localIdentifier]
+            pairedAssetID: snapshot.pairedIDs[asset.localIdentifier],
+            location: asset.geoCoordinate
         )
     }
 
