@@ -9,7 +9,7 @@ import SwiftUI
 /// photos were taken and, under it, the name of the place once Apple's geocoding service has told it.
 /// The name is a footer rather than a row, so the map doesn't move when it arrives.
 ///
-/// Where the source can store a location, Edit sets it for every photo shown: a place searched by
+/// Where the source can store a location, the pin button sets it for every photo shown: a place searched by
 /// name, a click on the map, or the pin dragged elsewhere. The menu next to it removes the location,
 /// or goes back to the one the file gives. Each change is one step in the Edit menu. Editing is a
 /// mode of its own so that a click to look around the map never moves a photo; Image › Location ›
@@ -102,10 +102,18 @@ struct LocationSection: View {
             }
             // Without a place, the row below offers to assign one.
             if canEdit, model.isEditing || model.location != nil {
-                Button(model.isEditing ? "Done" : "Edit") { model.isEditing.toggle() }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                    .help(model.isEditing ? "Stop changing the location" : "Change where the photo was taken")
+                // A toggle, as Preview's markup button: pressed in (a gray circle) while editing,
+                // which says the mode is on and how to leave it. Changes are written as they are made.
+                // A pin set on the ground says what the mode does; a pencil read as a mere stroke.
+                Toggle(isOn: $model.isEditing) {
+                    Label(model.isEditing ? "Stop Editing Location" : "Edit Location", systemImage: "mappin.and.ellipse")
+                }
+                .toggleStyle(.button)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.accessoryBar)
+                .buttonBorderShape(.circle)
+                .controlSize(.small)
+                .help(model.isEditing ? "Stop changing the location" : "Change where the photo was taken")
             }
         }
     }

@@ -976,6 +976,18 @@ Bibliothèque
       Vérifié : 215 tests de LibraryKit, 88 d'EditorKit, 97 de RenderEngine, 10 d'ImageIOKit,
       compilation de l'appli, sonde du panneau (menu ⋯ à côté d'Edit). Non vérifié : tout ce
       qui passe par les menus et les gestes, et le défilement vers la section.
+      Essai de Michaël après correction : glisser et menus vont. Il trouvait le bouton « Done »
+      peu visible, et craignait qu'on déplace l'épingle sans valider ; en fait chaque changement
+      est écrit aussitôt, le bouton ne fait que sortir du mode. Écartés : une phrase sous la
+      carte (trop d'éléments, selon Michaël) et une validation explicite (un état non enregistré
+      à gérer). Retenu, sur son idée : « Edit » / « Done » remplacés par un bouton-bascule crayon
+      (`Toggle` en `.toggleStyle(.button)`, style `.accessoryBar`, forme `.circle`), enfoncé
+      dans un rond gris pendant l'édition, comme le bouton d'annotation d'Aperçu ; libellé et
+      infobulle changent avec l'état. Rendu vérifié par sonde, clair et sombre : le style
+      `.borderless` ne montrait l'état que par la teinte de l'accent (grise dans l'appli, donc
+      invisible), le style par défaut en cercle ne le montrait pas du tout. Puis, le crayon
+      faisant « quasiment juste un trait » (Michaël), symbole `mappin.and.ellipse` (une épingle
+      posée), choisi parmi six comparés par sonde ; `square.and.pencil` était l'autre candidat.
       Reste : suggestions au fil de la frappe (`MKLocalSearchCompleter`) si `MKLocalSearch`
       déçoit ; Location dans le menu contextuel du canevas de l'éditeur.
 - [ ] Carte de la bibliothèque, façon Apple Photos : les photos là où elles ont été prises,
