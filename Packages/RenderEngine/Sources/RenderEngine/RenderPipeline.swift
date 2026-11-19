@@ -4,9 +4,12 @@ import EditModel
 
 /// Turns an `EditRecipe` into a Core Image filter chain. Pure function of its inputs.
 ///
-/// Retouches come first, on the original, then the geometry, then the layers in order; within a layer the adjustments run in the engine's fixed order:
-/// white balance, exposure, dehaze, highlights and shadows, black point, contrast, curves, color,
-/// selective color, detail, black and white, the LUT, then effects.
+/// The image it is given is the original already decoded with the recipe's noise reduction
+/// (`SourceImage.image(denoise:)`): that one setting belongs to the decoding, not to the chain.
+/// Retouches come first, on that image, then the geometry, then the layers in order; within a layer
+/// the adjustments run in the engine's fixed order: white balance, exposure, dehaze, highlights and
+/// shadows, black point, contrast, curves, color, selective color, detail, black and white, the LUT,
+/// then effects.
 public nonisolated enum RenderPipeline {
     public static func apply(_ recipe: EditRecipe, to image: CIImage) -> CIImage {
         apply(recipe, to: image, geometry: recipe.geometry)
@@ -149,14 +152,6 @@ public nonisolated enum RenderPipeline {
             let filter = CIFilter.vibrance()
             filter.inputImage = output
             filter.amount = Float(vibrance)
-            output = filter.outputImage ?? output
-        }
-
-        if let noise = adjustments.noiseReduction, noise > 0 {
-            let filter = CIFilter.noiseReduction()
-            filter.inputImage = output
-            filter.noiseLevel = Float(noise * 0.1)
-            filter.sharpness = 0.4
             output = filter.outputImage ?? output
         }
 

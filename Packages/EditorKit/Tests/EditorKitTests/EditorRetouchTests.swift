@@ -109,6 +109,42 @@ struct EditorRetouchTests {
         model.close()
     }
 
+    @Test func fillsFollowTheNoiseReductionOnceItSettles() async throws {
+        let url = try makeImage()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let (model, _) = await openModel(at: url)
+        model.beginRetouching(radius: 16.0 / 160)
+        paintOverTheSquare(model)
+        await waitForFills(of: model)
+        let retouch = model.recipe.retouches[0]
+        let fill = try #require(model.retouchFills[retouch.id])
+
+        // A fill copies the grain around it: decoded with another noise reduction, the original
+        // needs another fill. The old one stays on screen while the slider moves.
+        model.recipe.global.denoise = Denoise(luminance: 0.5)
+        model.recipe.global.denoise = Denoise(luminance: 0.8)
+        #expect(model.retouchFills[retouch.id] === fill && model.pendingRetouches.isEmpty)
+
+        // A render asked meanwhile computes its own fill instead of using the old one.
+        let jpeg = try await model.renderJPEG()
+        let healed = try color(in: jpeg, x: 50, y: 40)
+        #expect(healed.r < 150 && healed.b > 200)
+
+        let deadline = ContinuousClock.now + .seconds(10)
+        while model.retouchFills[retouch.id] === fill, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        let refreshed = try #require(model.retouchFills[retouch.id])
+        #expect(refreshed !== fill && !refreshed.extent.isEmpty, "computed again on the original decoded with the new amounts")
+        #expect(model.pendingRetouches.isEmpty)
+
+        // Another slider leaves the fills alone.
+        model.recipe.global.exposure = 0.5
+        try? await Task.sleep(for: EditorModel.retouchRefreshDelay + .milliseconds(200))
+        #expect(model.retouchFills[retouch.id] === refreshed)
+        model.close()
+    }
+
     @Test func fillsOfAListThatDivergedAreDropped() async throws {
         let url = try makeImage()
         defer { try? FileManager.default.removeItem(at: url) }

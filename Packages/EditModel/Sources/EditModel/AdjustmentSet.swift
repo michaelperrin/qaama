@@ -35,8 +35,9 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     /// Detail
     /// Sharpening strength, 0 to 1 (negative values soften).
     public var sharpness: Double?
-    /// Luminance noise reduction, 0 to 1.
-    public var noiseReduction: Double?
+    /// Noise taken out of the original as it is decoded, before everything else; nil until one of
+    /// its amounts is first moved away from the photo's default. Read from the global layer only.
+    public var denoise: Denoise?
 
     /// Effects
     /// Remove (+) or add (-) atmospheric haze, -1 to +1.
@@ -61,7 +62,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
 
     public init(temperature: Double? = nil, tint: Double? = nil, exposure: Double? = nil, highlights: Double? = nil,
                 shadows: Double? = nil, blackPoint: Double? = nil, contrast: Double? = nil, vibrance: Double? = nil,
-                saturation: Double? = nil, sharpness: Double? = nil, noiseReduction: Double? = nil, dehaze: Double? = nil,
+                saturation: Double? = nil, sharpness: Double? = nil, denoise: Denoise? = nil, dehaze: Double? = nil,
                 grain: Double? = nil, vignette: Vignette? = nil, monochrome: Monochrome? = nil, lut: LUT? = nil)
     {
         self.temperature = temperature
@@ -74,7 +75,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
         self.vibrance = vibrance
         self.saturation = saturation
         self.sharpness = sharpness
-        self.noiseReduction = noiseReduction
+        self.denoise = denoise
         self.dehaze = dehaze
         self.grain = grain
         self.vignette = vignette
@@ -86,7 +87,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     /// Every single-value adjustment, in the order the engine applies them.
     public static let all: [WritableKeyPath<AdjustmentSet, Double?> & Sendable] = [
         \.temperature, \.tint, \.exposure, \.highlights, \.shadows, \.blackPoint, \.contrast, \.vibrance, \.saturation,
-        \.sharpness, \.noiseReduction, \.dehaze, \.grain,
+        \.sharpness, \.dehaze, \.grain,
     ]
 
     public static let positiveRange: ClosedRange<Double> = 0 ... 1
@@ -94,7 +95,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     public static func range(of keyPath: WritableKeyPath<AdjustmentSet, Double?>) -> ClosedRange<Double> {
         switch keyPath {
         case \.exposure: exposureRange
-        case \.noiseReduction, \.grain: positiveRange
+        case \.grain: positiveRange
         default: unitRange
         }
     }
@@ -123,6 +124,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
             switch group {
             case .curves: set.curves = nil
             case .colorMixer: set.hsl = nil
+            case .denoise: set.denoise = nil
             default: break
             }
         }
@@ -134,7 +136,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     public var isIdentity: Bool {
         let set = effective
         return Self.all.allSatisfy { (set[keyPath: $0] ?? 0) == 0 } && (set.curves?.isIdentity ?? true) && (set.hsl?.isIdentity ?? true)
-            && monochrome?.isEnabled != true && (vignette?.isNeutral ?? true) && (lut?.isNeutral ?? true)
+            && (set.denoise?.isNeutral ?? true) && monochrome?.isEnabled != true && (vignette?.isNeutral ?? true) && (lut?.isNeutral ?? true)
     }
 
     /// Brings every value back into its range and stores neutral values as absent, so equal edits give
@@ -151,6 +153,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
         if hsl?.isIdentity == true {
             hsl = nil
         }
+        denoise = denoise?.isNeutral == true ? nil : denoise?.clamped
         vignette = vignette?.clamped
         // A switch left on without a table is nothing to keep.
         lut = lut?.name == nil ? nil : lut?.clamped

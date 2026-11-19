@@ -18,8 +18,8 @@ struct EditRecipeTests {
         #expect(set.saturation == nil, "a neutral value is stored as absent")
         #expect(AdjustmentSet(exposure: 0) == AdjustmentSet())
         #expect(AdjustmentSet(temperature: 4).temperature == 1)
-        #expect(AdjustmentSet.all.count == 13)
-        #expect(AdjustmentSet(noiseReduction: -1).noiseReduction == nil, "noise reduction has no negative side")
+        #expect(AdjustmentSet.all.count == 12)
+        #expect(AdjustmentSet(grain: -1).grain == nil, "grain has no negative side")
         #expect(AdjustmentSet.range(of: \.exposure) == -3 ... 3 && AdjustmentSet.range(of: \.shadows) == -1 ... 1)
     }
 
@@ -222,7 +222,7 @@ struct AdjustmentGroupTests {
     @Test func everyAdjustmentBelongsToOneGroup() {
         // A value outside every group could never be switched off.
         var set = AdjustmentSet(temperature: 0.1, tint: 0.1, exposure: 0.1, highlights: 0.1, shadows: 0.1, blackPoint: 0.1, contrast: 0.1,
-                                vibrance: 0.1, saturation: 0.1, sharpness: 0.1, noiseReduction: 0.1, dehaze: 0.1, grain: 0.1)
+                                vibrance: 0.1, saturation: 0.1, sharpness: 0.1, denoise: Denoise(luminance: 0.1), dehaze: 0.1, grain: 0.1)
         set.curves = Curves(rgb: ToneCurve(points: [CurvePoint(x: 0, y: 0.2), CurvePoint(x: 1, y: 1)]))
         set.hsl = HSL(values: [.red: HSLValue(saturation: 0.5)])
         #expect(!set.isIdentity)
@@ -230,7 +230,7 @@ struct AdjustmentGroupTests {
             set.setEnabled(false, for: group)
         }
         #expect(set.isIdentity, "with every group off the photo is untouched")
-        #expect(AdjustmentSet.all.allSatisfy { set[keyPath: $0] == 0.1 } && set.curves != nil && set.hsl != nil)
+        #expect(AdjustmentSet.all.allSatisfy { set[keyPath: $0] == 0.1 } && set.curves != nil && set.hsl != nil && set.denoise != nil)
     }
 
     @Test func switchesRoundTripInOneOrder() throws {
@@ -449,5 +449,33 @@ struct MaskTests {
             let back = geometry.sourcePoint(fromReference: there, width: 300, height: 200)
             #expect(abs(back.x - point.x) < 1e-9 && abs(back.y - point.y) < 1e-9)
         }
+    }
+}
+
+struct DenoiseTests {
+    @Test func zeroIsASettingAndAbsentIsTheDefault() throws {
+        // A RAW gets some noise reduction by default: asking for none is an edit.
+        let none = AdjustmentSet(denoise: Denoise(luminance: 0, color: 0))
+        #expect(none.denoise == Denoise(luminance: 0, color: 0) && !none.isIdentity)
+        #expect(AdjustmentSet(denoise: Denoise()).denoise == nil, "both amounts left alone is nothing to keep")
+        #expect(AdjustmentSet(denoise: Denoise()).isIdentity)
+        #expect(AdjustmentSet(denoise: Denoise(luminance: 4, color: -1)).denoise == Denoise(luminance: 1, color: 0))
+        let recipe = EditRecipe(adjustments: AdjustmentSet(denoise: Denoise(color: 0)))
+        let reloaded = try EditRecipe(jsonData: recipe.jsonData())
+        #expect(reloaded.global.denoise == Denoise(color: 0))
+        #expect(try String(decoding: recipe.jsonData(), as: UTF8.self).contains("\"denoise\":{\"color\":0}"))
+    }
+
+    @Test func theSourceIsDenoisedByTheGlobalLayerOnly() {
+        let denoise = Denoise(luminance: 0.6)
+        var recipe = EditRecipe(adjustments: AdjustmentSet(exposure: 1, denoise: denoise))
+        recipe.layers.append(AdjustmentLayer(mask: Mask(.sky), adjustments: AdjustmentSet(denoise: Denoise(luminance: 1))))
+        #expect(recipe.sourceDenoise == denoise)
+        recipe.global.setEnabled(false, for: .denoise)
+        #expect(recipe.sourceDenoise == nil && recipe.global.denoise == denoise, "switched off, the amounts are kept")
+        recipe.global.setEnabled(true, for: .denoise)
+        recipe.layers[0].isEnabled = false
+        #expect(recipe.sourceDenoise == nil)
+        #expect(EditRecipe().sourceDenoise == nil)
     }
 }

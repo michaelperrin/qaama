@@ -114,7 +114,7 @@ struct RenderPipelineTests {
     }
 
     @Test func detailAdjustmentsKeepTheExtent() {
-        let output = RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(sharpness: -1, noiseReduction: 1)), to: gray)
+        let output = RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(sharpness: -1)), to: gray)
         #expect(output.extent == gray.extent)
         #expect(RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(sharpness: 1)), to: gray).extent == gray.extent)
     }

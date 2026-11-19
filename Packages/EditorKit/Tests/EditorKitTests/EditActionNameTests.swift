@@ -14,7 +14,10 @@ struct EditActionNameTests {
     @Test func slidersAreNamedAfterTheirSetting() {
         #expect(name { $0.global.exposure = 1 } == "Exposure")
         #expect(name { $0.global.blackPoint = -0.2 } == "Black Point")
-        #expect(name { $0.global.noiseReduction = 0.4 } == "Noise Reduction")
+        #expect(name { $0.global.denoise = Denoise(luminance: 0.4) } == "Luminance Noise Reduction")
+        #expect(name(of: { $0.global.denoise?.color = 0 }, from: EditRecipe(adjustments: AdjustmentSet(denoise: Denoise(luminance: 0.4))))
+            == "Color Noise Reduction")
+        #expect(name { $0.global.setEnabled(false, for: .denoise) } == "Turn Off Denoise")
         // Back to neutral is the same setting.
         #expect(name(of: { $0.global.exposure = nil }, from: EditRecipe(exposure: 1)) == "Exposure")
     }

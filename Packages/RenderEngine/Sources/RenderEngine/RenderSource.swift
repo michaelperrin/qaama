@@ -1,5 +1,6 @@
 import CoreGraphics
 import CoreImage
+import EditModel
 import Foundation
 import UniformTypeIdentifiers
 
@@ -13,13 +14,17 @@ public nonisolated enum RenderSource: Sendable {
 
 /// A decoded photo ready for the pipeline, plus what the UI needs to know about it.
 public nonisolated struct SourceImage: Sendable {
-    /// The photo at full resolution.
+    /// The photo at full resolution, as it is decoded when nothing is asked: the original. What a
+    /// recipe is applied to is `image(denoise:)`.
     public let image: CIImage
     /// The pixels of a quick stand-in for `image`, for photos that are slow to decode: a RAW's draft
     /// decode at reduced scale, by the same RAW engine, so colors match. Smaller than `image`; use
-    /// `draft` to show it. Nil when `image` is quick itself.
+    /// `draft` to show it. Nil when `image` is quick itself. It never carries a recipe's noise
+    /// reduction: it is on screen for a moment, at a scale that hides the noise anyway.
     public let draftPixels: CIImage?
     public let isRAW: Bool
+    /// Decodes a RAW again with other amounts of noise reduction; nil for other images.
+    private let decoder: RAWDecoder?
     public var pixelSize: CGSize {
         image.extent.size
     }
@@ -31,14 +36,45 @@ public nonisolated struct SourceImage: Sendable {
     }
 
     public init(image: CIImage, draftPixels: CIImage? = nil, isRAW: Bool) {
+        self.init(image: image, draftPixels: draftPixels, isRAW: isRAW, decoder: nil)
+    }
+
+    init(image: CIImage, draftPixels: CIImage?, isRAW: Bool, decoder: RAWDecoder?) {
         self.image = image
         self.draftPixels = draftPixels
         self.isRAW = isRAW
+        self.decoder = decoder
     }
 
     /// The same photo with other draft pixels, typically the same ones already decoded.
     public func withDraftPixels(_ pixels: CIImage) -> SourceImage {
-        SourceImage(image: image, draftPixels: pixels, isRAW: isRAW)
+        SourceImage(image: image, draftPixels: pixels, isRAW: isRAW, decoder: decoder)
+    }
+
+    // MARK: - Noise reduction
+
+    /// The noise reduction `image` was decoded with, which is where the sliders stand until they
+    /// are moved: what the RAW engine picks for the file, none for other images.
+    public var defaultDenoise: DenoiseAmounts {
+        decoder?.defaults ?? .none
+    }
+
+    /// The amounts `denoise` stands for on this photo: its own, the photo's defaults for the rest.
+    public func amounts(of denoise: Denoise?) -> DenoiseAmounts {
+        DenoiseAmounts(luminance: denoise?.luminance ?? defaultDenoise.luminance, color: denoise?.color ?? defaultDenoise.color)
+    }
+
+    /// The photo at full resolution with `denoise` (a recipe's `sourceDenoise`): what the pipeline
+    /// takes. A RAW is decoded again by its engine, other images are filtered (`DenoiseFilter`).
+    ///
+    /// Each call makes a new image, and one image per position of a slider must not be marked as an
+    /// intermediate to cache: 200 MB each for 26 MP (measured: 6 GB after forty positions, and
+    /// renders of 25 to 260 ms instead of 18). An image used again is kept by Core Image by itself.
+    public func image(denoise: Denoise?) -> CIImage {
+        let amounts = amounts(of: denoise)
+        guard amounts != defaultDenoise else { return image }
+        guard let decoder else { return DenoiseFilter.apply(amounts, to: image) }
+        return decoder.image(amounts) ?? image
     }
 }
 
@@ -71,7 +107,8 @@ public nonisolated enum SourceImageLoader {
                 raw.scaleFactor = 1
                 if let output = raw.outputImage {
                     let full = output.insertingIntermediate(cache: true)
-                    return SourceImage(image: full, draftPixels: draft?.insertingIntermediate(cache: true), isRAW: true)
+                    // The filter stays with the photo: its noise reduction is set through it.
+                    return SourceImage(image: full, draftPixels: draft?.insertingIntermediate(cache: true), isRAW: true, decoder: RAWDecoder(raw))
                 }
             }
             guard let image = CIImage(contentsOf: url, options: [.applyOrientationProperty: true]) else {

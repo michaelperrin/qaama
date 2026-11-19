@@ -213,6 +213,22 @@ public final class EditorModel {
     /// ones before it, so it is only good for a list that starts the same way.
     private var filledRetouches: [Retouch] = []
     private var retouchResolution: Task<Void, Never>?
+    /// The noise reduction of the original the fills were computed on: a fill copies the grain
+    /// around it, so it is only good for the original decoded that way.
+    @ObservationIgnored private var retouchDenoise: Denoise?
+    /// The wait for the noise reduction to settle before the fills are computed again.
+    @ObservationIgnored private var retouchRefresh: Task<Void, Never>?
+    /// How long the noise reduction must stay as it is before the fills follow it.
+    static let retouchRefreshDelay: Duration = .milliseconds(300)
+
+    /// The fills that go with the current recipe, for a render that reuses them: none while they
+    /// still belong to another noise reduction, and only the ones already computed again while
+    /// they follow a new one. The render computes the rest itself.
+    private var currentFills: [UUID: CIImage] {
+        guard retouchDenoise == recipe.sourceDenoise else { return [:] }
+        let filled = Set(filledRetouches.map(\.id))
+        return retouchFills.filter { filled.contains($0.key) }
+    }
 
     /// Retouches whose fill is still being computed: the canvas shows them as painted meanwhile.
     public var pendingRetouches: [Retouch] {
@@ -280,6 +296,17 @@ public final class EditorModel {
     private func resolveRetouchesIfNeeded() {
         let retouches = recipe.retouches
         guard !retouches.isEmpty || !filledRetouches.isEmpty, !isClosed, let sourceImage else { return }
+        let denoise = recipe.sourceDenoise
+        if denoise != retouchDenoise {
+            if filledRetouches.isEmpty, retouchResolution == nil {
+                retouchDenoise = denoise
+            } else {
+                // The fills on screen copy the grain of an original decoded otherwise. They stay
+                // there while the amounts move, and are computed again once the amounts settle.
+                refreshRetouchesOnceDenoiseSettles()
+                return
+            }
+        }
         let shared = zip(retouches, filledRetouches).prefix { $0 == $1 }.count
         if shared < min(retouches.count, filledRetouches.count) {
             for stale in filledRetouches[shared...] {
@@ -290,7 +317,7 @@ public final class EditorModel {
         guard retouchResolution == nil, filledRetouches.count < retouches.count else { return }
         let next = retouches[filledRetouches.count]
         let earlier = filledRetouches
-        let base = RetouchRenderer.apply(earlier, fills: retouchFills, to: sourceImage.image)
+        let base = RetouchRenderer.apply(earlier, fills: retouchFills, to: denoisedImage(of: sourceImage, for: recipe))
         // The canvas's context has the original decoded already: a RAW isn't decoded again.
         let context = renderer?.renderingContext
         retouchResolution = Task { [weak self] in
@@ -298,8 +325,8 @@ public final class EditorModel {
             guard let self, !isClosed else { return }
             retouchResolution = nil
             // The list may have changed while this ran: the fill is kept only if it still follows
-            // the same retouches.
-            if filledRetouches == earlier, recipe.retouches.starts(with: earlier + [next]) {
+            // the same retouches, on the original decoded the same way.
+            if filledRetouches == earlier, retouchDenoise == denoise, recipe.retouches.starts(with: earlier + [next]) {
                 if fill == nil {
                     statusMessage = "There is nothing around that area to fill it with."
                 }
@@ -307,6 +334,22 @@ public final class EditorModel {
                 filledRetouches.append(next)
                 renderPreview()
             }
+            resolveRetouchesIfNeeded()
+        }
+    }
+
+    /// Computes every fill again, in order, once the recipe's noise reduction has stayed the same
+    /// for `retouchRefreshDelay`. The old fills stay on screen until each is replaced, so nothing
+    /// that was painted out comes back meanwhile.
+    private func refreshRetouchesOnceDenoiseSettles() {
+        retouchRefresh?.cancel()
+        retouchRefresh = Task { [weak self] in
+            try? await Task.sleep(for: Self.retouchRefreshDelay)
+            guard !Task.isCancelled, let self, !isClosed else { return }
+            retouchRefresh = nil
+            guard retouchDenoise != recipe.sourceDenoise else { return }
+            retouchDenoise = recipe.sourceDenoise
+            filledRetouches.removeAll()
             resolveRetouchesIfNeeded()
         }
     }
@@ -539,6 +582,8 @@ public final class EditorModel {
         }
     }
 
+    /// The original as last decoded for a recipe's noise reduction; see `denoisedImage(of:for:)`.
+    @ObservationIgnored private var denoised: (denoise: Denoise, image: CIImage)?
     @ObservationIgnored private var histogramTask: Task<Void, Never>?
     @ObservationIgnored private var hueHistogramTask: Task<Void, Never>?
     /// What the current hue histogram was computed from (or is being computed from), so moving the
@@ -683,6 +728,7 @@ public final class EditorModel {
         renderer = nil
         maskResolution?.cancel()
         retouchResolution?.cancel()
+        retouchRefresh?.cancel()
         histogramTask?.cancel()
         hueHistogramTask?.cancel()
         undoManager?.removeAllActions(withTarget: self)
@@ -760,13 +806,28 @@ public final class EditorModel {
         undoManager.setActionName(actionName)
     }
 
+    /// The original decoded with the recipe's noise reduction. The same image is handed out for as
+    /// long as the amounts stay the same, so Core Image keeps it decoded while other sliders move;
+    /// while they change, each position is a new image, which takes the place of the one before.
+    private func denoisedImage(of sourceImage: SourceImage, for recipe: EditRecipe) -> CIImage {
+        guard let denoise = recipe.sourceDenoise else { return sourceImage.image }
+        if let denoised, denoised.denoise == denoise {
+            return denoised.image
+        }
+        let image = sourceImage.image(denoise: denoise)
+        denoised = (denoise, image)
+        return image
+    }
+
     private func renderPreview() {
         guard !isClosed, let sourceImage else { return }
         let recipe = previewRecipe
-        // The draft has the full image's extent, so everything downstream treats it the same.
-        let source = showsDraft ? sourceImage.draft ?? sourceImage.image : sourceImage.image
+        // The draft has the full image's extent, so everything downstream treats it the same. It is
+        // shown as decoded by default: the recipe's noise reduction comes with the full resolution.
+        let original = showsDraft ? sourceImage.draft ?? sourceImage.image : sourceImage.image
+        let source = showsDraft ? original : denoisedImage(of: sourceImage, for: recipe)
         let shown: CIImage = if isShowingOriginal {
-            source
+            original
         } else if isCropping {
             // The crop tool frames the straightened image: show it whole, the frame does the cropping.
             RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry?.withoutCrop, masks: maskImages, fills: retouchFills, luts: luts)
@@ -864,9 +925,9 @@ public final class EditorModel {
     public func renderJPEG() async throws -> Data {
         guard let sourceImage else { throw LibrarySourceError.assetUnavailable }
         let recipe = recipe
-        let masks = maskImages, fills = retouchFills
+        let masks = maskImages, fills = currentFills
         return try await Task.detached(priority: .userInitiated) {
-            try await ImageExporter.jpegData(for: EditRenderer.render(image: sourceImage.image, recipe: recipe, masks: masks, fills: fills))
+            try await ImageExporter.jpegData(for: EditRenderer.render(source: sourceImage, recipe: recipe, masks: masks, fills: fills))
         }.value
     }
 
@@ -884,7 +945,7 @@ public final class EditorModel {
     /// The open photo with its current edit, saved or not, for the export window.
     public func exportItem() -> ExportItem? {
         guard let sourceImage else { return nil }
-        let input = ExportInput(image: sourceImage.image, recipe: recipe, masks: maskImages, fills: retouchFills, metadataURL: imageURL)
+        let input = ExportInput(source: sourceImage, recipe: recipe, masks: maskImages, fills: currentFills, metadataURL: imageURL)
         let name = baseName
         let headerTask = headerTask
         let source = source

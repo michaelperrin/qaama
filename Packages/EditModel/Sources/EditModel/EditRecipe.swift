@@ -41,6 +41,13 @@ public struct EditRecipe: Codable, Hashable, Sendable {
         }
     }
 
+    /// The noise reduction the original is decoded with: the global layer's, unless that layer or
+    /// its denoise group is switched off. Nil leaves the photo's defaults.
+    public var sourceDenoise: Denoise? {
+        guard let layer = layers.first, layer.isEnabled, let denoise = layer.adjustments.effective.denoise, !denoise.isNeutral else { return nil }
+        return denoise
+    }
+
     /// True when applying the recipe would leave the photo unchanged. A masked layer counts only when
     /// it has both adjustments and a mask that selects something.
     public var isIdentity: Bool {

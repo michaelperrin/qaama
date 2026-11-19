@@ -86,7 +86,16 @@ struct AdjustmentsInspector: View {
             group("Detail", .detail) {
                 SliderStack {
                     slider("Sharpness", \.sharpness)
-                    slider("Noise Reduction", \.noiseReduction)
+                }
+            }
+            // The noise is taken out of the whole original as it is decoded: there is none to set
+            // on a masked layer.
+            if model.selectedLayerID == nil {
+                group("Denoise", .denoise) {
+                    SliderStack {
+                        denoiseSlider("Luminance", \.luminance, default: defaultDenoise.luminance)
+                        denoiseSlider("Color", \.color, default: defaultDenoise.color)
+                    }
                 }
             }
             Section {
@@ -215,6 +224,26 @@ struct AdjustmentsInspector: View {
         )
         return AdjustmentSlider(title: title, value: value, range: range, resetValue: Vignette()[keyPath: keyPath],
                                 onEditingEnded: model.commitChange)
+    }
+
+    /// The noise reduction the photo is decoded with when nothing is asked: none, except for a RAW,
+    /// which gets what its engine picks for the file.
+    private var defaultDenoise: DenoiseAmounts {
+        model.sourceImage?.defaultDenoise ?? .none
+    }
+
+    /// A slider on one amount of the noise reduction. It stands at the photo's default until it is
+    /// moved, a double-click brings it back there, and an amount at its default is stored as absent.
+    private func denoiseSlider(_ title: LocalizedStringKey, _ keyPath: WritableKeyPath<Denoise, Double?>, default standard: Double) -> some View {
+        let value = Binding(
+            get: { model.adjustments.denoise?[keyPath: keyPath] ?? standard },
+            set: { newValue in
+                var denoise = model.adjustments.denoise ?? Denoise()
+                denoise[keyPath: keyPath] = newValue == standard ? nil : newValue
+                model.adjustments.denoise = denoise.isNeutral ? nil : denoise
+            }
+        )
+        return AdjustmentSlider(title: title, value: value, range: Denoise.range, resetValue: standard, onEditingEnded: model.commitChange)
     }
 
     /// Curves of the global layer; identity curves are stored as absent.

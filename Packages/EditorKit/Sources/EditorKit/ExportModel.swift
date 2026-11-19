@@ -49,7 +49,7 @@ public struct ExportItem: Identifiable {
             }
             let loaded = try await Task.detached(priority: .userInitiated) { try SourceImageLoader.load(renderSource) }.value
             let header = await Task.detached { input.imageURL.flatMap { try? ImageMetadataReader.read($0) } }.value
-            return ExportInput(image: loaded.image, recipe: recipe, metadataURL: input.imageURL,
+            return ExportInput(source: loaded, recipe: recipe, metadataURL: input.imageURL,
                                captureDate: captureDateToWrite(library: source.captureDate(for: asset), file: header?.captureDate),
                                location: LocationCorrection.between(file: header?.location, location: source.location(for: asset)))
         }
@@ -200,7 +200,7 @@ public final class ExportModel {
             } else {
                 let input = try await input(for: item)
                 edited = try await Task.detached(priority: .userInitiated) { () throws -> (CIImage, CGSize) in
-                    let full = await EditRenderer.render(image: input.image, recipe: input.recipe, masks: input.masks, fills: input.fills)
+                    let full = await EditRenderer.render(source: input.source, recipe: input.recipe, masks: input.masks, fills: input.fills)
                     // Small photos stay at their size: an enlarged preview would only blur them.
                     let edge = min(Self.previewLongEdge, Int(max(full.extent.width, full.extent.height)))
                     let reduced = ExportRenderer.resize(full, to: .longEdge(edge))

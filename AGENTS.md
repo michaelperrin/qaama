@@ -31,7 +31,8 @@ Packages/
   EditModel/      EditRecipe: the versioned JSON edit description, pure Swift
   EditorKit/      EditorModel: editing workflow (open, preview, undo, save, export), testable without views
   ImageIOKit/     ImageIO and Quick Look: headers (EXIF), thumbnails, full-size decoding
-  RenderEngine/   Core Image on Metal: decoding (CIRAWFilter for RAW), pipeline, canvas, export,
+  RenderEngine/   Core Image on Metal: decoding (CIRAWFilter for RAW) and its noise reduction,
+                  pipeline, canvas, export,
                   the retouch fill and the reading of LUT files (targets HealingFill and CubeLUT,
                   always optimized), and the LUT library
   LibraryKit/     Sources of photos (Photos library, folders), SQLite catalog (GRDB), sidecars, caches
@@ -75,9 +76,16 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   copies them under the Finder's name for a copy, the sidecar under a new identifier; Photos
   deletes after the system's own question and copies the original's resources into a new photo.
   A RAW + JPEG pair shown as one photo is deleted or copied as one.
+- Noise reduction belongs to the decoding, not to the pipeline: `AdjustmentSet.denoise` is read on
+  the global layer only (`EditRecipe.sourceDenoise`) and `SourceImage.image(denoise:)` gives the
+  image the pipeline takes, a RAW decoded again by its engine (`RAWDecoder`, which keeps the
+  photo's `CIRAWFilter`), other images filtered (`DenoiseFilter`). Render through
+  `EditRenderer.render(source:recipe:)`, which does it; `SourceImage.image` alone is the original.
+  Never mark an image made per slider position as a cached intermediate (see `docs/PLAN.md`).
 - Retouches are strokes in the recipe, in the original's coordinates. What fills them is computed
   by `RetouchRenderer` once per stroke, off the main actor, and only composited by the pipeline;
-  each fill depends on the retouches before it.
+  each fill depends on the retouches before it, and on the noise reduction of the original it
+  was computed on.
 - Thumbnails of edited folder photos come from `PreviewCache` (2048 px JPEG of the real
   render, keyed by asset id and modification date), never from re-applying the recipe on a
   small image.

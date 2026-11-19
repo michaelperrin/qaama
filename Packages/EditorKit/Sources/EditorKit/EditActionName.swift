@@ -148,8 +148,7 @@ nonisolated enum EditActionName {
         let values: [(KeyPath<AdjustmentSet, Double?>, String)] = [
             (\.temperature, "Temperature"), (\.tint, "Tint"), (\.exposure, "Exposure"), (\.highlights, "Highlights"),
             (\.shadows, "Shadows"), (\.blackPoint, "Black Point"), (\.contrast, "Contrast"), (\.vibrance, "Vibrance"),
-            (\.saturation, "Saturation"), (\.sharpness, "Sharpness"), (\.noiseReduction, "Noise Reduction"),
-            (\.dehaze, "Dehaze"), (\.grain, "Grain"),
+            (\.saturation, "Saturation"), (\.sharpness, "Sharpness"), (\.dehaze, "Dehaze"), (\.grain, "Grain"),
         ]
         for (keyPath, name) in values where old[keyPath: keyPath] != new[keyPath: keyPath] {
             names.append(name)
@@ -162,6 +161,12 @@ nonisolated enum EditActionName {
         }
         if old.hsl != new.hsl {
             names.append(colorMixerName(from: old.hsl ?? HSL(), to: new.hsl ?? HSL()))
+        }
+        if old.denoise?.luminance != new.denoise?.luminance {
+            names.append("Luminance Noise Reduction")
+        }
+        if old.denoise?.color != new.denoise?.color {
+            names.append("Color Noise Reduction")
         }
         if old.monochrome != new.monochrome {
             names += monochromeNames(from: old.monochrome ?? Monochrome(isEnabled: false), to: new.monochrome ?? Monochrome(isEnabled: false))
@@ -188,6 +193,7 @@ nonisolated enum EditActionName {
         case .color: "Color"
         case .colorMixer: "Color Mixer"
         case .detail: "Detail"
+        case .denoise: "Denoise"
         case .effects: "Effects"
         }
     }

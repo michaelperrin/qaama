@@ -1610,6 +1610,56 @@ Bibliothèque
         (`CIColorClamp` sur le transparent) : recadrer en dernier.
       - Le champ `vignette` de la recette passe d'un nombre à un objet : les sidecars qui
         portaient l'ancienne vignette ne se relisent plus (pas de rétrocompatibilité à ce stade).
+- [x] Débruitage (« Denoise »), étape 1, demandé par Michaël le 19/11/2026. Fait le même jour.
+      - Deux curseurs, luminance et couleur, dans une carte « Denoise » à interrupteur, à la place
+        de l'ancien curseur « Noise Reduction » de la carte Detail (`CINoiseReduction` appliqué
+        tard dans la chaîne, sur un bruit déjà amplifié par l'exposition et les courbes).
+      - Le débruitage appartient au décodage, pas à la chaîne : `AdjustmentSet.denoise`
+        (`Denoise`, deux quantités optionnelles) n'est lu que sur le calque global
+        (`EditRecipe.sourceDenoise`) et la carte est absente d'un calque masqué. Une quantité
+        absente laisse le réglage par défaut de la photo ; zéro est donc un vrai réglage (un RAW
+        reçoit du débruitage de couleur par défaut : 0,5 sur les RAF essayés, 0 en luminance à
+        160 ISO). Les curseurs partent de ces valeurs par défaut (`SourceImage.defaultDenoise`).
+      - RAW : les réglages du moteur d'Apple (`CIRAWFilter.luminanceNoiseReductionAmount` et
+        `colorNoiseReductionAmount`), qui connaît le capteur et la sensibilité. `RAWDecoder` garde
+        le filtre du premier décodage, sous verrou (`Mutex`), et `SourceImage.image(denoise:)`
+        redemande une image à chaque position du curseur.
+      - JPEG, HEIC et RAW sans ces réglages : `DenoiseFilter`, en filtres Core Image sans noyau
+        maison, en valeurs d'affichage (courbe sRGB). Couleur : la luma de l'image et les couleurs
+        d'une copie floutée à demi-échelle (rayon 8 px au maximum). Luminance : `CINoiseReduction`.
+        C'est le niveau « simple » : au maximum, les couleurs bavent un peu autour des contours
+        très saturés.
+      - Retouches : un remplissage copie le grain qui l'entoure, donc il dépend du débruitage.
+        `EditorModel` recalcule les remplissages 300 ms après le dernier changement de débruitage,
+        en gardant les anciens à l'écran entre-temps, et un rendu demandé pendant ce délai calcule
+        les siens (`currentFills`).
+      - Le brouillon d'un RAW (demi-échelle, affiché un instant à l'ouverture) ne porte pas le
+        débruitage de la recette : il arrive avec la pleine résolution.
+      - Mesures (RAF public de X-T4, 26 Mpx, raw.pixls.us, contexte Metal comme celui du canevas,
+        vue de 3000 px, Debug) : curseur de luminance sur le décodage 5 à 15 ms par position en
+        vue entière et 2 à 7 ms à 100 % ; curseur de couleur 17 à 20 ms en vue entière (au-dessus
+        d'une image, c'est le moteur RAW sur le GPU) ; ensuite un autre curseur (exposition) sur
+        un débruitage stabilisé : 2 ms, Core Image garde l'image. Même image en non-RAW :
+        luminance 5 à 6 ms, couleur 4 à 11 ms (15 à 70 ms avant de flouter à demi-échelle).
+      - Leçon : changer un réglage de bruit sur le même `CIRAWFilter` ne refait pas le
+        dématriçage (Core Image garde cet étage), alors qu'un nouveau filtre sur le même fichier
+        redécode tout (250 à 700 ms).
+      - Leçon : ne pas marquer en `insertingIntermediate(cache: true)` une image par position de
+        curseur. Mesuré sur 40 positions : 6 Go d'empreinte et des rendus de 25 à 260 ms, contre
+        une empreinte stable et 18 ms sans marquage. Une image réutilisée telle quelle est gardée
+        par Core Image sans qu'on le demande.
+      - Leçon : `CIGuidedFilter` (lissage guidé par les contours) a donné des couleurs fausses et
+        des taches sur l'essai : écarté. Le flou de couleur en lumière linéaire fait des taches
+        arc-en-ciel sur fond clair : le faire en valeurs d'affichage.
+      - Limite : pas de RAW bruité à haut ISO dans les fichiers publics essayés (160 ISO, poussés
+        de 3 IL pour voir le bruit), où le curseur de luminance du moteur RAW agit peu puisqu'il
+        se cale sur la sensibilité. La qualité à haut ISO reste à juger par Michaël sur ses photos.
+      - Retour de Michaël le 19/11/2026, à l'usage : « pas mal » ; le curseur de luminance floute
+        un peu la photo, mais aide à petites doses. Pas de suite prévue : c'est le comportement
+        attendu d'un débruitage sans modèle, et le développement des RAW bruités peut passer par
+        un outil dédié (PureRAW).
+      - Le champ `noiseReduction` disparaît de la recette : les sidecars qui le portaient
+        s'ouvrent sans lui (pas de rétrocompatibilité à ce stade).
 - [ ] Recadrage, redressement, rotation, perspective simple.
       Fait le 30/10/2026 : cadre à poignées, grille des tiers, rapports verrouillables
       (original, carré, 3:2, 4:3, 16:9, 5:4), redressement ±45° avec rognage automatique des
@@ -1924,6 +1974,26 @@ Interface
       écrire dans une propriété observée par beaucoup de vues ; le journal « Brush stroke »
       (notice) donne la répartition modèle / encodage / GPU par trait.
 - [ ] Super‑résolution et débruitage via modèles open source convertis en Core ML.
+      Débruitage, état des lieux du 19/11/2026 (l'étape 1, sans modèle, est dans la phase 2) :
+      - macOS 27 apporte un décodeur RAW « version 9 » (`CIRAWDecoderVersion.version9`, API
+        publique) qui dématrice et débruite par un modèle Core ML en tuiles ; à choisir par
+        fichier (`supportedDecoderVersions`), ressources téléchargées à la demande
+        (`downloadResources`). Sur cette machine (27.2) : 69 boîtiers listés
+        (`supportedCameraModels(with:)`), chez Fujifilm seulement X-T5 et X-T50 ; un RAF de X-T4
+        et un de X100V l'acceptent quand même, un RAF de X-T30 (le boîtier de Michaël) non.
+        Essai sur le RAF de X-T4 : rendu nettement plus propre que la version 8 (plus de
+        « vermicelles » X-Trans), premier décodage 1,4 s au lieu de 0,6 à 0,7 s, curseur de
+        luminance 10 à 14 ms, pas de réglage du bruit de couleur. Piste : un choix « Enhanced »
+        là où le fichier l'accepte ; `RAWDecoder` est le bon endroit.
+      - Modèles tiers déjà en Core ML sous licence permissive (recherche du 19/11/2026, non
+        téléchargés) : seul SCUNet (`scunet_color_real_psnr`, Apache 2.0, conversion
+        communautaire `markhamilton/scunet-coreml` sur Hugging Face, 67 Mo, tuiles de 512 px,
+        sans réglage de force) passe le filtre de la licence ; à reconvertir depuis les poids
+        d'origine ou à valider contre PyTorch. NAFNet (MIT, entraîné sur SIDD) n'existe pas en
+        Core ML pour le débruitage : à convertir soi-même. Écartés pour licence non commerciale :
+        Nagi Denoise (poids CC BY-NC), MPRNet et MIRNetv2. Un tel modèle se calcule une fois, hors
+        du fil principal, puis se mélange à l'original (comme les retouches), et servirait
+        surtout aux JPEG/HEIC et aux boîtiers sans version 9.
 - [x] Outil de retouche/suppression d'objets (approche simple d'abord : clonage,
       inpainting basique). Faisabilité sans modèle vérifiée le 9/11/2026, voir « Étude de
       faisabilité : pinceau correcteur » plus haut, essai sur de vraies photos compris.

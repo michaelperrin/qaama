@@ -6,7 +6,7 @@ import Foundation
 /// Vignette, black and white and the LUT are not listed: they are off until first switched on, so
 /// each carries its own switch next to its settings.
 public enum AdjustmentGroup: String, CaseIterable, Codable, Sendable {
-    case whiteBalance, light, curves, color, colorMixer, detail, effects
+    case whiteBalance, light, curves, color, colorMixer, detail, denoise, effects
 
     /// The single-value adjustments of the group.
     var values: [WritableKeyPath<AdjustmentSet, Double?> & Sendable] {
@@ -14,9 +14,9 @@ public enum AdjustmentGroup: String, CaseIterable, Codable, Sendable {
         case .whiteBalance: [\.temperature, \.tint]
         case .light: [\.exposure, \.highlights, \.shadows, \.blackPoint, \.contrast]
         case .color: [\.vibrance, \.saturation]
-        case .detail: [\.sharpness, \.noiseReduction]
+        case .detail: [\.sharpness]
         case .effects: [\.dehaze, \.grain]
-        case .curves, .colorMixer: []
+        case .curves, .colorMixer, .denoise: []
         }
     }
 }

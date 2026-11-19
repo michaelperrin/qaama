@@ -26,12 +26,15 @@ public nonisolated enum EditRenderer {
             throw RenderError.noImage
         }
         let loaded = try SourceImageLoader.load(source)
-        return try await ImageExporter.jpegData(for: render(image: loaded.image, recipe: recipe, masks: masks))
+        return try await ImageExporter.jpegData(for: render(source: loaded, recipe: recipe, masks: masks))
     }
 
-    /// The recipe applied to a decoded image, retouch fills and model masks resolved first. The ones
-    /// in `fills` and `masks` are reused: they must have been computed for this recipe and image.
-    public static func render(image: CIImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:], fills: [UUID: CIImage] = [:]) async -> CIImage {
+    /// The recipe applied to a decoded photo: its noise reduction first, which is part of the
+    /// decoding, then the retouch fills and model masks resolved, then the pipeline. The fills and
+    /// masks given are reused: they must have been computed for this recipe and photo, the fills on
+    /// the photo decoded with this recipe's noise reduction.
+    public static func render(source: SourceImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:], fills: [UUID: CIImage] = [:]) async -> CIImage {
+        let image = source.image(denoise: recipe.sourceDenoise)
         let resolvedFills = recipe.retouches.isEmpty ? [:] : RetouchRenderer.resolveAll(recipe.retouches, image: image, existing: fills)
         let reference = recipe.geometry.map { GeometryRenderer.straighten(image, with: $0) } ?? image
         let resolved = await ModelMasks.resolveAll(in: recipe, reference: reference, existing: masks)

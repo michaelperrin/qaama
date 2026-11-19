@@ -4,6 +4,7 @@ import EditModel
 import Foundation
 import ImageIO
 import LibraryKit
+import RenderEngine
 import Testing
 import UniformTypeIdentifiers
 
@@ -118,6 +119,74 @@ struct EditorModelTests {
         model.reset()
         await model.save()
         #expect(source.savedOutputs.last?.isReset == true)
+    }
+
+    /// A 64 × 64 gray image where every pixel is pushed toward a color of its own.
+    private func makeSpeckledImage() throws -> URL {
+        let side = 64
+        var bytes = [UInt8](repeating: 255, count: side * side * 4)
+        for index in 0 ..< side * side {
+            for channel in 0 ..< 3 {
+                var hash = UInt32(truncatingIfNeeded: index &* 73_856_093 ^ channel &* 83_492_791)
+                hash ^= hash >> 13
+                hash = hash &* 1_274_126_177
+                hash ^= hash >> 16
+                bytes[index * 4 + channel] = UInt8(88 + Int(hash % 81))
+            }
+        }
+        let provider = try #require(CGDataProvider(data: Data(bytes) as CFData))
+        let image = try #require(CGImage(width: side, height: side, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: side * 4,
+                                         space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                                         provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("speckled-\(UUID().uuidString).png")
+        let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        #expect(CGImageDestinationFinalize(destination))
+        return url
+    }
+
+    /// How far from gray the middle of a JPEG is, on average, in 8-bit levels.
+    private func colorfulness(of jpeg: Data) throws -> Double {
+        let source = try #require(CGImageSourceCreateWithData(jpeg as CFData, nil))
+        let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        let side = 32
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let context = try #require(CGContext(data: &pixels, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+                                             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        context.draw(image, in: CGRect(x: -16, y: -16, width: image.width, height: image.height))
+        var total = 0
+        for index in 0 ..< side * side {
+            total += abs(Int(pixels[index * 4]) - Int(pixels[index * 4 + 1])) + abs(Int(pixels[index * 4 + 1]) - Int(pixels[index * 4 + 2]))
+        }
+        return Double(total) / Double(side * side)
+    }
+
+    @Test func noiseReductionIsPartOfTheSavedRenderAndOfTheUndoHistory() async throws {
+        let url = try makeSpeckledImage()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let source = StubSource(imageURL: url)
+        let model = EditorModel(assetID: "stub", source: source, renderer: nil)
+        let undoManager = UndoManager()
+        model.undoManager = undoManager
+        await model.open()
+        #expect(model.sourceImage?.defaultDenoise == DenoiseAmounts.none, "an image that isn't RAW starts without any")
+        let speckled = try await colorfulness(of: model.renderJPEG())
+
+        model.recipe.global.denoise = Denoise(color: 0.6)
+        model.recipe.global.denoise = Denoise(color: 1)
+        model.commitChange()
+        #expect(undoManager.undoActionName == "Color Noise Reduction" && model.hasUnsavedChanges)
+        let cleaned = try await colorfulness(of: model.renderJPEG())
+        #expect(cleaned < speckled * 0.4)
+
+        // Switched off, the group keeps its amounts and the photo gets its noise back.
+        model.recipe.global.setEnabled(false, for: .denoise)
+        model.commitChange()
+        #expect(try await colorfulness(of: model.renderJPEG()) > speckled * 0.9)
+        undoManager.undo()
+        undoManager.undo()
+        #expect(model.recipe.global.denoise == nil && model.recipe.isIdentity)
+        model.close()
     }
 
     @Test func undoAndRedoFollowCommittedGestures() async throws {

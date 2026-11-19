@@ -11,7 +11,7 @@ import UniformTypeIdentifiers
 /// already resolved (missing ones are resolved during the render) and, when the source is a file,
 /// where to read the metadata to carry over.
 public nonisolated struct ExportInput: Sendable {
-    public var image: CIImage
+    public var source: SourceImage
     public var recipe: EditRecipe
     public var masks: [UUID: CIImage]
     public var fills: [UUID: CIImage]
@@ -23,16 +23,24 @@ public nonisolated struct ExportInput: Sendable {
     /// original says.
     public var location: LocationCorrection?
 
-    public init(image: CIImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:], fills: [UUID: CIImage] = [:], metadataURL: URL? = nil,
+    public init(source: SourceImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:], fills: [UUID: CIImage] = [:], metadataURL: URL? = nil,
                 captureDate: Date? = nil, location: LocationCorrection? = nil)
     {
-        self.image = image
+        self.source = source
         self.recipe = recipe
         self.masks = masks
         self.fills = fills
         self.metadataURL = metadataURL
         self.captureDate = captureDate
         self.location = location
+    }
+
+    /// Same, for pixels that come from no file.
+    public init(image: CIImage, recipe: EditRecipe, masks: [UUID: CIImage] = [:], fills: [UUID: CIImage] = [:], metadataURL: URL? = nil,
+                captureDate: Date? = nil, location: LocationCorrection? = nil)
+    {
+        self.init(source: SourceImage(image: image, isRAW: false), recipe: recipe, masks: masks, fills: fills, metadataURL: metadataURL,
+                  captureDate: captureDate, location: location)
     }
 }
 
@@ -54,7 +62,7 @@ public nonisolated enum ExportRenderer {
     /// The edited image with its watermark and frame, at the size the settings ask for, origin at zero.
     /// `watermarkPicture` is the decoded picture of an image watermark, when there is one.
     public static func render(_ input: ExportInput, settings: ExportSettings, watermarkPicture: CIImage? = nil) async -> CIImage {
-        let edited = await EditRenderer.render(image: input.image, recipe: input.recipe, masks: input.masks, fills: input.fills)
+        let edited = await EditRenderer.render(source: input.source, recipe: input.recipe, masks: input.masks, fills: input.fills)
         return resize(compose(edited, settings: settings, watermarkPicture: watermarkPicture), to: settings.size)
     }
 
