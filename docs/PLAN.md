@@ -887,6 +887,38 @@ Bibliothèque
       les fichiers). Journal « Compared N photos in … ms ». Non vérifié à l'écran : les
       écritures sur la vraie photothèque. Piste si la borne gêne : pour les dossiers, lire le
       catalogue au lieu des fichiers.
+      Note et drapeau dans les menus, fait le 19/11/2026 à la demande de Michaël
+      (`DecisionMenuItems`) : dans le menu contextuel des vignettes (sur la sélection si la photo
+      en fait partie) et dans celui de la photo ouverte, une rangée de cinq étoiles (palette du
+      système, comme les étiquettes du Finder), Remove Rating, puis Pick, Reject et Remove Flag ;
+      Remove Rating et Remove Flag seulement si une photo en a un, les drapeaux seulement là où la
+      bibliothèque en a. Le menu Image garde ses sous-menus Rating et Flag, qui portent les
+      touches (1 à 5, 0 pour Remove Rating, P, X, U).
+      - Taille des étoiles : la palette dessine à sa propre taille, plus grande, un symbole
+        donné par son nom ou dans un `Label`, et ignore police et `imageScale` ; elle garde la
+        taille d'une `Image(nsImage:)` donnée seule (agrandie d'environ un cinquième) : symbole
+        de 11 points, vu dans un menu ouvert par sonde. Ses étoiles sont toujours réparties sur
+        toute la largeur du menu : sonde sur la palette avec titre, dans une `Section` et en
+        `Picker` (`.pickerStyle(.palette)`), même répartition ; rien pour les serrer à gauche.
+      - Sous-menu Rating : entrées en étoiles (« ★★★☆☆ »), à la demande de Michaël. Une
+        `accessibilityLabel` sur la bascule n'atteint pas l'entrée de menu (sonde) : VoiceOver
+        lit les caractères.
+      - Essayé et abandonné le même jour : une rangée dessinée par l'appli, qui remplit les
+        étoiles jusqu'à celle survolée, comme Photos (la palette encadre l'étoile survolée, et
+        rien dans le SDK 27.2 ne change ça). SwiftUI ne met pas de vue à nous dans un menu :
+        il fallait retrouver ses entrées par leur titre dans le menu AppKit, leur donner une
+        `NSMenuItem.view`, surveiller tous les menus (`NSMenu.didAddItemNotification`…) et caler
+        les étoiles sur des retraits mesurés sur macOS 27.2. Michaël a préféré revenir aux
+        composants du système plutôt que de garder ce bricolage. Ce que les mesures ont appris,
+        dans un menu vraiment ouvert (sonde : menu contextuel affiché une fraction de seconde,
+        fenêtre à `alphaValue = 0`, cadres des vues des entrées relevés pendant le suivi ;
+        `NSMenu.size` trompe) : les titres commencent à 14 points ; une entrée visible cochée
+        décale tous les titres de 14 points ; dans un menu contextuel, une icône se place à 15
+        points et décale son seul titre (33), alors que dans la barre de menus les entrées à
+        icône ont en plus la colonne des coches sans rien de coché (icône à 27, titre à 47).
+      - Icônes : depuis macOS 27, un menu masque les images de ses entrées
+        (`NSMenuItem.preferredImageVisibility`, automatique par défaut) et SwiftUI n'a pas de
+        réglage pour les montrer. Pick et Reject sont donc sans icône, comme le veut le système.
       Leçon : dans la colonne de détail, un `HStack` grille + colonne se cale sur la largeur
       idéale de la grille (une seule colonne de vignettes, le tout centré) tant que la grille
       n'a pas `frame(maxWidth: .infinity)` ; vu par une fenêtre sonde hors écran sur la source

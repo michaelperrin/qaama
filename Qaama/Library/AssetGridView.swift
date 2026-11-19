@@ -79,6 +79,8 @@ struct AssetGridView: View {
         let canDuplicate = onDuplicate != nil && source.capabilities.contains(.duplication)
         let canDelete = onDelete != nil && source.capabilities.contains(.deletion)
         let albumState = albums.map(AssetGridCell.AlbumState.init)
+        // What the selected photos share, read once per update: a cell reads only its own row.
+        let selectionDecisions = sharedDecisions()
         let side = CGFloat(thumbnailSide)
         let timeline = sections
         let _ = followVisibleRows(in: timeline)
@@ -106,6 +108,7 @@ struct AssetGridView: View {
                                                                                 canAdjustDate: canAdjustDate, location: location,
                                                                                 canShowInFinder: canShowInFinder, canDuplicate: canDuplicate,
                                                                                 canDelete: canDelete, albums: albumState,
+                                                                                decisions: selectionDecisions.map { decisionState(of: asset, sharing: $0) },
                                                                                 generation: menuGeneration),
                                                   source: source, actions: actions)
                                         .equatable()
@@ -305,6 +308,9 @@ struct AssetGridView: View {
         actions.showInFinder = { asset in showInFinder(Set(targetIDs(for: asset))) }
         actions.duplicate = { asset in onDuplicate?(targetIDs(for: asset)) }
         actions.delete = { asset in onDelete?(targetIDs(for: asset)) }
+        actions.decide = { decision, asset in
+            run { try await MetadataEditing.apply(targets(for: asset).map { ($0, decision) }, in: source, undoManager: undoManager) }
+        }
         actions.targetIDs = targetIDs(for:)
         actions.albums = albums
     }
@@ -423,6 +429,36 @@ struct AssetGridView: View {
     /// The same photos by identifier, for what needs nothing else: no lookup, whatever the selection's size.
     private func targetIDs(for asset: LibraryAsset) -> [LibraryAsset.ID] {
         selection.contains(asset.id) ? Array(selection) : [asset.id]
+    }
+
+    /// The rating rows of the context menus as the selected photos share them: nil values when they
+    /// differ, or when the selection is too large to look up on every update. Nil where the library
+    /// stores neither rating nor flag.
+    private func sharedDecisions() -> AssetGridCell.DecisionState? {
+        let canRate = source.capabilities.contains(.rating)
+        let canFlag = source.capabilities.contains(.flag)
+        guard canRate || canFlag else { return nil }
+        // Too many to look up: Remove Rating and Remove Flag are offered, in case.
+        var state = AssetGridCell.DecisionState(rating: nil, flag: nil, hasRating: true, hasFlag: true, canRate: canRate, canFlag: canFlag)
+        if selection.count > 1, selection.count <= AssetInfoModel.selectionLimit {
+            let assets = selection.compactMap { source.asset(id: $0) }
+            state.rating = AssetInfoModel.shared(assets.map(\.rating))
+            state.flag = AssetInfoModel.shared(assets.map(\.flag))
+            state.hasRating = assets.contains { $0.rating > 0 }
+            state.hasFlag = assets.contains { $0.flag != .none }
+        }
+        return state
+    }
+
+    /// The rating rows of a photo's context menu: the selection's when the menu acts on it, else the photo's own.
+    private func decisionState(of asset: LibraryAsset, sharing shared: AssetGridCell.DecisionState) -> AssetGridCell.DecisionState {
+        guard !actsOnSelection(asset) else { return shared }
+        var state = shared
+        state.rating = asset.rating
+        state.flag = asset.flag
+        state.hasRating = asset.rating > 0
+        state.hasFlag = asset.flag != .none
+        return state
     }
 
     private func actsOnSelection(_ asset: LibraryAsset) -> Bool {
@@ -735,6 +771,8 @@ final class AssetGridActions {
     var showInFinder: (LibraryAsset) -> Void = { _ in }
     var duplicate: (LibraryAsset) -> Void = { _ in }
     var delete: (LibraryAsset) -> Void = { _ in }
+    /// Writes a rating or a flag to the photos the menu acts on.
+    var decide: (LibraryDecision, LibraryAsset) -> Void = { _, _ in }
     /// The photos a context menu acts on, by identifier: the selection when the photo is part of it.
     var targetIDs: (LibraryAsset) -> [LibraryAsset.ID] = { [$0.id] }
     var albums: AlbumsAction?
@@ -796,6 +834,8 @@ struct AssetGridCell: View, Equatable {
         var canDuplicate: Bool
         var canDelete: Bool
         var albums: AlbumState?
+        /// Nil where the library stores neither rating nor flag: the rows are left out.
+        var decisions: DecisionState?
         /// Changes after each menu closed, so the menu is built anew the next time it opens.
         var generation = 0
     }
@@ -804,6 +844,18 @@ struct AssetGridCell: View, Equatable {
     nonisolated struct LocationState: Equatable {
         /// The library keeps the original location apart, to go back to.
         var canRevert: Bool
+    }
+
+    /// What the rating and flag rows show and offer.
+    nonisolated struct DecisionState: Equatable {
+        /// The rating of the photos acted on; nil when they differ, or too many are selected to tell.
+        var rating: Int?
+        var flag: ItemFlag?
+        /// Some photo acted on has a rating, or a flag: Remove Rating and Remove Flag are offered.
+        var hasRating: Bool
+        var hasFlag: Bool
+        var canRate: Bool
+        var canFlag: Bool
     }
 
     /// The album items depend on these; the closures of `AlbumsAction` are read from `actions`.
@@ -893,6 +945,13 @@ struct AssetGridCell: View, Equatable {
         if menu.albums != nil {
             Divider()
             AlbumMenuItems(albums: actions.albums, placement: .contextMenu(count: menu.count)) { actions.targetIDs(asset) }
+        }
+        if let decisions = menu.decisions {
+            Divider()
+            DecisionMenuItems(placement: .contextMenu, rating: decisions.rating, flag: decisions.flag,
+                              hasRating: decisions.hasRating, hasFlag: decisions.hasFlag,
+                              setRating: decisions.canRate ? { actions.decide(.rating($0), asset) } : nil,
+                              setFlag: decisions.canFlag ? { actions.decide(.flag($0), asset) } : nil)
         }
         Divider()
         if menu.canDuplicate {

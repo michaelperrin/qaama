@@ -261,13 +261,16 @@ struct LibraryContentView: View {
         if let editorSession {
             let model = editorSession.model
             guard let asset = model.asset else { return nil }
-            return DecisionsAction(rating: asset.rating, flag: asset.flag,
+            return DecisionsAction(rating: asset.rating, flag: asset.flag, hasRating: asset.rating > 0, hasFlag: asset.flag != .none,
                                    setRating: capabilities.contains(.rating) ? { rating in Task { await model.setRating(rating) } } : nil,
                                    setFlag: capabilities.contains(.flag) ? { flag in Task { await model.setFlag(flag) } } : nil)
         }
         guard !selection.isEmpty else { return nil }
         let shown = selection.count <= AssetInfoModel.selectionLimit ? selection.compactMap { source.asset(id: $0) } : []
+        let isTooLarge = shown.isEmpty
         return DecisionsAction(rating: AssetInfoModel.shared(shown.map(\.rating)), flag: AssetInfoModel.shared(shown.map(\.flag)),
+                               hasRating: isTooLarge || shown.contains { $0.rating > 0 },
+                               hasFlag: isTooLarge || shown.contains { $0.flag != .none },
                                setRating: capabilities.contains(.rating) ? { decide(.rating($0)) } : nil,
                                setFlag: capabilities.contains(.flag) ? { decide(.flag($0)) } : nil)
     }

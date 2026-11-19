@@ -153,6 +153,15 @@ struct EditorView: View {
     /// that the grid's context menu has too. Only what applies is listed.
     @ViewBuilder
     private var photoMenu: some View {
+        if let asset = model.asset {
+            let capabilities = model.source.capabilities
+            let model = model
+            DecisionMenuItems(placement: .contextMenu, rating: asset.rating, flag: asset.flag,
+                              hasRating: asset.rating > 0, hasFlag: asset.flag != .none,
+                              setRating: capabilities.contains(.rating) ? { rating in Task { await model.setRating(rating) } } : nil,
+                              setFlag: capabilities.contains(.flag) ? { flag in Task { await model.setFlag(flag) } } : nil)
+            Divider()
+        }
         if let removeFromAlbum {
             Button("Remove from Album", action: removeFromAlbum)
         }

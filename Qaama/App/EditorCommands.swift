@@ -110,7 +110,11 @@ struct DecisionsAction {
     /// selection is too large to tell. The menu checks it.
     let rating: Int?
     let flag: ItemFlag?
-    /// Nil where the library stores no rating: the menu is disabled.
+    /// Some photo has a rating, or a flag, for Remove Rating and Remove Flag; true when the selection
+    /// is too large to tell.
+    let hasRating: Bool
+    let hasFlag: Bool
+    /// Nil where the library stores no rating: the items are disabled.
     let setRating: ((Int) -> Void)?
     /// Nil where the library stores no flag (Photos).
     let setFlag: ((ItemFlag) -> Void)?
@@ -178,12 +182,12 @@ extension FocusedValues {
 /// File › New Album…, New Album Folder…, Export… and Show in Finder, View › Show Inspector, Zoom In and Out (the
 /// canvas of the open photo, else the grid), Zoom to Fit and Actual Size, the thumbnail shape (square
 /// or whole photo), Go to Month, and the Image menu:
-/// Adjust Date & Time, Rating, Flag, the albums (Add to Album, Add to the last album, Remove from
+/// Adjust Date & Time, Rating and Flag (`DecisionMenuItems`), the albums (Add to Album, Add to the last album, Remove from
 /// Album), Duplicate, Delete and Adjustments (copy, paste, create a preset). Act on the key window:
 /// its inspector column, its export, its selection or open photo, its focused editor.
 ///
-/// The 0 to 5, P, X and U keys belong to the Rating and Flag items, so they work in the grid and in
-/// the editor alike, and nowhere else: a second holder of the same key would fire too. A key without
+/// The 1 to 5, 0, P, X and U keys belong to the items of the Rating and Flag submenus, so they work
+/// in the grid and in the editor alike, and nowhere else: a second holder of the same key would fire too. A key without
 /// a modifier only reaches the menu when no text field took it. The same goes for the Delete key,
 /// which Photos' conventions share between two items: it deletes the photos, except in an album,
 /// where it takes them out of the album and deleting them is ⌘⌫.
@@ -320,27 +324,9 @@ struct EditorCommands: Commands {
             }
             .disabled(locationAction == nil)
             Divider()
-            Menu("Rating") {
-                ForEach(0 ... 5, id: \.self) { stars in
-                    Toggle(Self.ratingTitle(stars), isOn: Binding(get: { decisions?.rating == stars }, set: { _ in decisions?.setRating?(stars) }))
-                        .keyboardShortcut(KeyEquivalent(Character("\(stars)")), modifiers: [])
-                    if stars == 0 {
-                        Divider()
-                    }
-                }
-            }
-            .disabled(decisions?.setRating == nil)
-            Menu("Flag") {
-                // Choosing the flag in place again removes it, as clicking it does.
-                Toggle("Pick", isOn: flagBinding(.picked))
-                    .keyboardShortcut("p", modifiers: [])
-                Toggle("Reject", isOn: flagBinding(.rejected))
-                    .keyboardShortcut("x", modifiers: [])
-                Divider()
-                Button("Remove Flag") { decisions?.setFlag?(.none) }
-                    .keyboardShortcut("u", modifiers: [])
-            }
-            .disabled(decisions?.setFlag == nil)
+            DecisionMenuItems(placement: .menuBar, rating: decisions?.rating, flag: decisions?.flag,
+                              hasRating: decisions?.hasRating ?? false, hasFlag: decisions?.hasFlag ?? false,
+                              setRating: decisions?.setRating, setFlag: decisions?.setFlag)
             Divider()
             AlbumMenuItems(albums: albumsCommand?.action, placement: .menuBar, targets: albumsCommand?.targets ?? { [] })
             Divider()
@@ -374,16 +360,4 @@ struct EditorCommands: Commands {
     }
 
     private static let canvasZoomStep: CGFloat = 1.25
-
-    private static func ratingTitle(_ stars: Int) -> String {
-        switch stars {
-        case 0: "No Rating"
-        case 1: "1 Star"
-        default: "\(stars) Stars"
-        }
-    }
-
-    private func flagBinding(_ flag: ItemFlag) -> Binding<Bool> {
-        Binding(get: { decisions?.flag == flag }, set: { _ in decisions?.setFlag?(decisions?.flag == flag ? .none : flag) })
-    }
 }

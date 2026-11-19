@@ -72,9 +72,16 @@ can feed a website one day. Dates are when the feature landed.
   through rows and months (up and down keep the column, into the month above or below), ⇧ with
   them extends or shrinks it, and the grid scrolls to keep the photo in view; back from the
   editor, the arrows go on from the photo just edited (2026-11-18).
-- Image › Rating and Image › Flag: rate (No Rating to 5 Stars, keys 0–5) and pick, reject or
-  unflag (P, X, U) the photos selected in the grid or the photo open in the editor; the menu
-  checks the current value. Undoable (2026-11-06).
+- Rating and flag from the context menus of the grid's thumbnails (acting on the selection when
+  the photo is part of it) and of the photo open in the editor: a row of five stars filled up to
+  the rating, as the Finder shows its tags, then Remove Rating; below a separator, Pick and Reject,
+  checked at the current flag, then Remove Flag. Choosing the current rating or flag again clears
+  it. Remove Rating and Remove Flag are offered only when a photo has one, Pick and Reject only for
+  folder photos (Photos has no flags). Undoable (2026-11-19).
+- Image › Rating and Image › Flag: rate (items drawn as stars, ★☆☆☆☆ to ★★★★★, keys 1–5, Remove
+  Rating with 0) and pick,
+  reject or unflag (P, X, U) the photos selected in the grid or the photo open in the editor; the
+  menu checks the current value. Undoable (2026-11-06, Remove Rating 2026-11-19).
 - Rating, flag and keywords in the Info panel next to the grid, to read and to change without
   opening a photo. With several photos
   selected (up to 50), the panel shows what they share (rating, flag, keywords, camera, lens,
