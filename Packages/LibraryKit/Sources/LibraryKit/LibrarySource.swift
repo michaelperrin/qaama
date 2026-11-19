@@ -40,6 +40,10 @@ public protocol LibrarySource: AnyObject, Observable {
     /// Thumbnail for a square of `pixelSize` a side (account for the screen's scale factor), with enough
     /// pixels to fill it or to fit in it, as `fit` says.
     func thumbnail(for asset: LibraryAsset, pixelSize: CGSize, fit: ThumbnailFit) async -> CGImage?
+    /// A coarse thumbnail to show at once while `thumbnail(for:pixelSize:fit:)` is being made, for
+    /// sources where that takes long (a card reads the whole file for it); nil when the source has
+    /// nothing faster to offer.
+    func quickThumbnail(for asset: LibraryAsset) async -> CGImage?
     /// Full-resolution image, oriented for display.
     func fullSizeImage(for asset: LibraryAsset) async -> CGImage?
     /// Sets the star rating (0 to 5) of a photo.
@@ -272,6 +276,10 @@ public extension LibrarySource {
 
     func prefetchThumbnails(around _: Int, pixelSize _: CGSize, fit _: ThumbnailFit) {}
 
+    func quickThumbnail(for _: LibraryAsset) async -> CGImage? {
+        nil
+    }
+
     var hasPlaces: Bool {
         false
     }
@@ -326,6 +334,9 @@ public nonisolated enum LibraryCapability: Sendable, Hashable {
     case deletion
     /// Making a copy of a photo in the library.
     case duplication
+    /// Opening a photo in the editor, storing its edit, pasting adjustments on it and exporting it:
+    /// what the photos of a library allow, and those still on a card don't.
+    case editing
 }
 
 /// Errors shared by the library sources.
@@ -349,6 +360,7 @@ public nonisolated enum LibrarySourceError: Error, LocalizedError, Sendable {
             case .originalLocation: "This library doesn't keep the original location apart."
             case .deletion: "Photos can't be deleted from this library."
             case .duplication: "Photos can't be duplicated in this library."
+            case .editing: "Photos can't be edited here: import them first."
             }
         case let .folderUnreadable(url):
             "The folder “\(url.lastPathComponent)” can't be read."

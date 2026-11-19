@@ -13,6 +13,10 @@ enum LibrarySelection: Hashable {
     case subfolder(FolderLibrarySource.ID, String)
     /// A library filtered as a preset says.
     case filterPreset(FilterPreset.ID)
+    /// A card or a camera plugged in, to import from.
+    case device(CameraLibrarySource.ID)
+    /// The photos of the last import, in the library they went to.
+    case lastImport
 
     /// The sidebar's entry of the library a preset filters.
     init(_ library: FilterPreset.Library) {
@@ -34,6 +38,8 @@ extension LibraryCatalog {
         case let .folder(id): folders.first { $0.id == id }?.displayName ?? "Folder"
         case let .subfolder(_, path): path.split(separator: "/").last.map(String.init) ?? "Folder"
         case let .filterPreset(id): filterPresets.preset(id: id)?.name ?? "Filter Preset"
+        case let .device(id): cameras.source(id: id)?.displayName ?? "Device"
+        case .lastImport: "Last Import"
         }
     }
 }
@@ -142,7 +148,7 @@ struct MainWindowView: View {
         case let .folder(id): .folder(id: id, path: nil)
         case let .subfolder(id, path): .folder(id: id, path: path)
         case let .filterPreset(id): catalog.filterPresets.preset(id: id)?.library
-        case .map, nil: nil
+        case .map, .device, .lastImport, nil: nil
         }
     }
 
@@ -171,6 +177,22 @@ struct MainWindowView: View {
                     .id(preset.id)
             } else {
                 ContentUnavailableView("Filter Preset Removed", systemImage: "line.3.horizontal.decrease.circle")
+            }
+        case let .device(id):
+            if let device = catalog.cameras.source(id: id) {
+                CameraLibraryView(source: device, catalog: catalog)
+                    .id(device.id)
+            } else {
+                ContentUnavailableView("Device Disconnected", systemImage: "sdcard",
+                                       description: Text("Plug it in again to see its photos."))
+            }
+        case .lastImport:
+            if let record = catalog.cameras.history?.lastImport {
+                LastImportView(record: record, catalog: catalog, maps: maps)
+                    .id(record.id)
+            } else {
+                ContentUnavailableView("No Import Yet", systemImage: "square.and.arrow.down",
+                                       description: Text("Photos imported from a card or a camera show here."))
             }
         case nil:
             ContentUnavailableView("Select a Library", systemImage: "sidebar.left",

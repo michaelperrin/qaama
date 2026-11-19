@@ -1,9 +1,10 @@
 import LibraryKit
 import SwiftUI
 
-/// Lists the map of every photo, then the Apple Photos library with its album hierarchy, the
-/// folders the user added with their subdirectories, and the filter presets the user saved. The
-/// first two sections are outlines over `SidebarItem`, so every row selects the same way.
+/// Lists the map of every photo, the cards and cameras plugged in, then the Apple Photos library
+/// with its album hierarchy, the folders the user added with their subdirectories, and the filter
+/// presets the user saved. The Photos and folder sections are outlines over `SidebarItem`, so every
+/// row selects the same way.
 ///
 /// Albums are managed from here: the context menus create albums and folders and delete albums, and
 /// photos dragged from the grid onto an album are added to it.
@@ -29,6 +30,25 @@ struct SidebarView: View {
             Label("Map", systemImage: "map")
                 .help("Every photo of the Photos library and of the folders, where it was taken")
                 .tag(LibrarySelection.map)
+            // Once photos were imported: the last batch, to go on with (rate, file in albums).
+            if let last = catalog.cameras.history?.lastImport {
+                Label("Last Import", systemImage: "square.and.arrow.down")
+                    .help("\(last.count.formatted()) photos from “\(last.deviceName)”, \(last.date.formatted(date: .abbreviated, time: .shortened))")
+                    .tag(LibrarySelection.lastImport)
+            }
+            // Only while one is plugged in, and at the top: a card just inserted is what one came for.
+            if !catalog.cameras.sources.isEmpty {
+                Section("Devices") {
+                    ForEach(catalog.cameras.sources) { device in
+                        Label(device.displayName, systemImage: device.kind.symbol)
+                            .help("Photos on “\(device.displayName)”, to import")
+                            .tag(LibrarySelection.device(device.id))
+                            .contextMenu {
+                                Button("Eject") { Task { try? await device.eject() } }
+                            }
+                    }
+                }
+            }
             Section("Apple Photos") {
                 OutlineGroup(photosItems, children: \.children) { item in
                     row(item)
@@ -215,6 +235,16 @@ struct SidebarView: View {
         default: break
         }
         Task { try? await catalog.removeFolder(folder) }
+    }
+}
+
+private extension CameraDeviceKind {
+    var symbol: String {
+        switch self {
+        case .card: "sdcard"
+        case .phone: "iphone"
+        case .camera: "camera"
+        }
     }
 }
 

@@ -29,6 +29,9 @@ public nonisolated struct LibraryAsset: Identifiable, Hashable, Sendable {
     public var pairedAssetID: String?
     /// Where the photo was taken as the library holds it, corrections included; nil when nothing says.
     public var location: GeoCoordinate?
+    /// True for a photo still on a card or a camera that was imported already: the import grid
+    /// shows it dimmed. Never set for the photos of a library.
+    public var isImported = false
 
     public init(id: String, pixelWidth: Int, pixelHeight: Int, creationDate: Date?, isFavorite: Bool, rating: Int = 0,
                 flag: ItemFlag = .none, keywords: [String] = [], modificationDate: Date? = nil, hasEdit: Bool = false,

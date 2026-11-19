@@ -101,6 +101,23 @@ public final nonisolated class CatalogStore: Sendable {
         }
     }
 
+    /// The identifiers of the items at these paths of a folder, missing ones left out, in no
+    /// particular order: what an import just copied, once the folder has been listed again.
+    public func itemIDs(inFolder folderID: UUID, relativePaths: [String]) async throws -> [UUID] {
+        try await writer.read { db in
+            var ids: [UUID] = []
+            // In batches: SQLite limits the number of values a statement can name.
+            for start in stride(from: 0, to: relativePaths.count, by: 500) {
+                let batch = Array(relativePaths[start ..< min(start + 500, relativePaths.count)])
+                let found = try CatalogItem
+                    .filter(CatalogItem.Col.folderID == folderID && batch.contains(CatalogItem.Col.relativePath) && CatalogItem.Col.isMissing == false)
+                    .fetchAll(db)
+                ids.append(contentsOf: found.map(\.id))
+            }
+            return ids
+        }
+    }
+
     public func item(fileIdentifier: Data) async throws -> CatalogItem? {
         try await writer.read { db in
             try CatalogItem.filter(CatalogItem.Col.fileIdentifier == fileIdentifier).fetchOne(db)

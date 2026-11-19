@@ -17,6 +17,37 @@ can feed a website one day. Dates are when the feature landed.
   woven by date whatever library they come from, where they can be rated, tagged, re-dated and
   edited; each change goes to the library the photo belongs to, and is undoable. Search and the
   filters both kinds of library know (rating, RAW, JPEG twins) narrow the map (2026-11-13).
+- Devices, at the top of the sidebar while one is plugged in: an SD card in a reader, a camera
+  or an iPhone shows there, and its photos in the same grid as a library, by month, newest
+  first. While the device is read, the grid already shows as many empty thumbnails as it holds
+  photos, with a progress bar, and they fill with the photos as they are found; the photos then
+  take their places by date. A small thumbnail read from each file's header shows at once, then
+  the sharp one. A RAW and the JPEG shot with it show as one photo; videos are counted, not
+  shown (2026-11-19).
+- A double click, or the space bar, shows a photo of the device as large as the window, with its
+  name, its date and its place among the others; the arrow keys go from photo to photo, the
+  next one being read in advance, and Escape goes back to the grid (2026-11-19).
+- Import: the selected photos of a device, or all of them, go to the Apple Photos library,
+  with an album found by typing part of its name or made on the spot, in a folder of albums
+  or not, or are copied into one of the folders of the
+  sidebar, in a folder per day (2026/2026-11-19) or as they are. Each copy is checked against
+  the size the device announced before it takes its place; photos already there are left alone;
+  a RAW comes with its JPEG. A bar shows how far the import is, which goes on while the window
+  shows something else and can be stopped. Undo moves what was imported to the Trash, or deletes
+  it from Photos, which asks first. The device
+  can be ejected when done, or from its context menu in the sidebar (2026-11-19).
+- New photos only: the photos of a device that were imported before show dimmed, with a check
+  mark, and the title says how many are new. With nothing selected, Import brings the new ones
+  only; selected photos are imported whatever they are. Undoing an import makes its photos new
+  again (2026-11-19).
+- The import sheet lists the day folders the photos will go to, with how many photos each
+  (2026-11-19).
+- Last Import, at the top of the sidebar once photos were imported: the photos of the last
+  import alone, in the library they went to, to rate them, file them in albums or edit them
+  (2026-11-19).
+- Photos can be deleted from a card or a camera, from the context menu or Image › Delete, after
+  a confirmation: for good, a card has no Trash. A RAW goes with its JPEG; a locked card offers
+  no deletion (2026-11-19).
 
 ### Browsing
 - Thumbnail grid that stays fast on very large libraries (74,000 photos listed in well under a

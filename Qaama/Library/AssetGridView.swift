@@ -16,9 +16,9 @@ import SwiftUI
 /// date), the grid is cut into one section per month, each under its name. The headers scroll with
 /// the photos: a first version pinned the header of the month on screen under the toolbar, as a bar,
 /// which sat badly there (Michaël, 2026-11-10); the dates on screen are told in the window's subtitle
-/// instead. Cells keep their row as identifier whatever their section, and sections are identified by
-/// their month: a photo added elsewhere or the dates arriving late leave the thumbnails on screen as
-/// they are. Measured with a probe (docs/PLAN.md): among 74,000 cells in 125 sections, a jump to a far
+/// instead. Sections are identified by their month and cells by their row and their section
+/// (`GridRowID`): a photo added elsewhere in the same month leaves the thumbnails on screen as they
+/// are, and a row that passes to another month is a new cell. Measured with a probe (docs/PLAN.md): among 74,000 cells in 125 sections, a jump to a far
 /// row lands in 25 ms, to the point.
 struct AssetGridView: View {
     let source: any LibrarySource
@@ -78,6 +78,7 @@ struct AssetGridView: View {
         let canShowInFinder = source.hasFileURLs
         let canDuplicate = onDuplicate != nil && source.capabilities.contains(.duplication)
         let canDelete = onDelete != nil && source.capabilities.contains(.deletion)
+        let canEdit = source.capabilities.contains(.editing)
         let albumState = albums.map(AssetGridCell.AlbumState.init)
         // What the selected photos share, read once per update: a cell reads only its own row.
         let selectionDecisions = sharedDecisions()
@@ -91,7 +92,8 @@ struct AssetGridView: View {
                     Section {
                         // Iterate indices, not elements: ForEach over elements walks the whole collection to compute
                         // identities, which is far too slow for a lazily computed library of tens of thousands of rows.
-                        ForEach(section.range, id: \.self) { index in
+                        ForEach(GridSectionRows(section), id: \.self) { cell in
+                            let index = cell.row
                             // A cell reads the listing, so it is asked again when the listing changes, and
                             // that can come before the months above are: with the row it had, which a
                             // listing that just shrank (a subfolder opened, a filter set) no longer has.
@@ -104,8 +106,8 @@ struct AssetGridView: View {
                                 if source.assets.indices.contains(index) {
                                     let asset = source.assets[index]
                                     AssetGridCell(asset: asset, index: index, side: side, fit: thumbnailFit, isSelected: selection.contains(asset.id),
-                                                  menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canPaste: canPaste,
-                                                                                canAdjustDate: canAdjustDate, location: location,
+                                                  menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canEdit: canEdit,
+                                                                                canPaste: canPaste, canAdjustDate: canAdjustDate, location: location,
                                                                                 canShowInFinder: canShowInFinder, canDuplicate: canDuplicate,
                                                                                 canDelete: canDelete, albums: albumState,
                                                                                 decisions: selectionDecisions.map { decisionState(of: asset, sharing: $0) },
@@ -148,14 +150,14 @@ struct AssetGridView: View {
             // The first report is when the grid can scroll; the later ones find a listing that came late.
             // A place the grid was asked to open at comes before the one it holds while its width changes.
             if !restorePlace(), let held, source.assets.indices.contains(held.row) {
-                scrollPosition.scrollTo(id: held.row, anchor: viewport.anchor(forCellTop: held.top, side: thumbnailSide))
+                scrollTo(row: held.row, anchor: viewport.anchor(forCellTop: held.top, side: thumbnailSide))
             }
         }
         .onChange(of: place?.pending) { restorePlace() }
         .onChange(of: navigator?.jump) { _, jump in
             // The first row of the month goes under its header, which then sits at the top of the grid.
             guard let jump, source.assets.indices.contains(jump.row) else { return }
-            scrollPosition.scrollTo(id: jump.row, anchor: viewport.anchor(underHeaderForSide: thumbnailSide))
+            scrollTo(row: jump.row, anchor: viewport.anchor(underHeaderForSide: thumbnailSide))
         }
         // The months can change under a grid that doesn't move: the dates read late, a photo added.
         .onChange(of: source.timeline, initial: true) { reportVisible(rows: viewport.visibleRows, in: sections) }
@@ -178,7 +180,7 @@ struct AssetGridView: View {
             // Whatever changed the size (pinch, slider, menu), one photo stays where it is: the one
             // under the pointer for a pinch, the one at the center of the view otherwise.
             if let target = viewport.target(forSide: newSide) {
-                scrollPosition.scrollTo(id: target.item, anchor: target.anchor)
+                scrollTo(row: target.item, anchor: target.anchor)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
@@ -188,7 +190,7 @@ struct AssetGridView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSMenu.didEndTrackingNotification)) { _ in menuGeneration += 1 }
         // View › Zoom In, Zoom Out and the thumbnail shape act on this grid while it is shown.
         .focusedSceneValue(\.hasAssetGrid, true)
-        .focusedSceneValue(\.exportAction, selection.isEmpty ? nil : ExportAction { export(source.assets(withIDs: selection)) })
+        .focusedSceneValue(\.exportAction, selection.isEmpty || !canEdit ? nil : ExportAction { export(source.assets(withIDs: selection)) })
         .focusedSceneValue(\.showInFinderAction, canShowInFinder && !selection.isEmpty ? ShowInFinderAction { showInFinder(selection) } : nil)
         .sheet(isPresented: Binding(get: { exportModel != nil }, set: {
             if !$0 {
@@ -226,6 +228,13 @@ struct AssetGridView: View {
     private var sections: DateTimeline {
         let count = source.assets.count
         return (source.timeline ?? .undated(count: count)).fitted(to: count)
+    }
+
+    /// Scrolls to a row of the listing: cells are identified by their row and their section
+    /// (`GridRowID`), so the section is looked up first.
+    private func scrollTo(row: Int, anchor: UnitPoint) {
+        guard let id = sections.rowID(row) else { return }
+        scrollPosition.scrollTo(id: id, anchor: anchor)
     }
 
     /// Has the viewport tell which rows are on screen, as the grid scrolls. Not a state change: a
@@ -284,7 +293,7 @@ struct AssetGridView: View {
         // The listing may have changed since: the photo is looked for, then its old row is settled for.
         let stillThere = source.assets.indices.contains(wanted.row) && source.assets[wanted.row].id == wanted.assetID
         let row = stillThere ? wanted.row : source.index(of: wanted.assetID) ?? min(wanted.row, source.assets.count - 1)
-        scrollPosition.scrollTo(id: row, anchor: wanted.top.map { viewport.anchor(forCellTop: $0, side: thumbnailSide) } ?? .center)
+        scrollTo(row: row, anchor: wanted.top.map { viewport.anchor(forCellTop: $0, side: thumbnailSide) } ?? .center)
     }
 
     /// Points the cells' actions at this version of the grid. Not a state change: a plain object.
@@ -400,7 +409,7 @@ struct AssetGridView: View {
         case .up, .left: startsSection && source.timeline != nil ? viewport.anchor(underHeaderForSide: thumbnailSide) : .top
         case .down, .right: .bottom
         }
-        scrollPosition.scrollTo(id: to, anchor: anchor)
+        scrollTo(row: to, anchor: anchor)
     }
 
     /// Where the arrow keys move from: the photo last clicked or moved to while it stays selected,
@@ -825,6 +834,9 @@ struct AssetGridCell: View, Equatable {
     nonisolated struct MenuState: Equatable {
         /// The photos the menu acts on: the selection when the photo is part of it, else 1.
         var count: Int
+        /// The photos can be opened in the editor, take adjustments and be exported: not those
+        /// still on a card.
+        var canEdit: Bool
         var canPaste: Bool
         var canAdjustDate: Bool
         /// Nil where the library stores no location: the Location submenu is left out.
@@ -912,17 +924,21 @@ struct AssetGridCell: View, Equatable {
 
     @ViewBuilder
     private var contextMenu: some View {
-        ContextMenuOpening(report: { actions.menuIsOpening(for: asset.id, at: index) }) {
-            Button("Open in Editor") { actions.open(asset.id) }
+        if menu.canEdit {
+            ContextMenuOpening(report: { actions.menuIsOpening(for: asset.id, at: index) }) {
+                Button("Open in Editor") { actions.open(asset.id) }
+            }
         }
         if menu.canShowInFinder {
             Button("Show in Finder") { actions.showInFinder(asset) }
         }
-        Divider()
-        Button("Copy Adjustments") { actions.copyAdjustments(asset) }
-            .disabled(!asset.hasEdit)
-        Button(menu.count > 1 ? "Paste Adjustments to \(menu.count) Photos" : "Paste Adjustments") { actions.pasteAdjustments(asset) }
-            .disabled(!menu.canPaste)
+        if menu.canEdit {
+            Divider()
+            Button("Copy Adjustments") { actions.copyAdjustments(asset) }
+                .disabled(!asset.hasEdit)
+            Button(menu.count > 1 ? "Paste Adjustments to \(menu.count) Photos" : "Paste Adjustments") { actions.pasteAdjustments(asset) }
+                .disabled(!menu.canPaste)
+        }
         if menu.canAdjustDate || menu.location != nil {
             Divider()
         }
@@ -953,15 +969,26 @@ struct AssetGridCell: View, Equatable {
                               setRating: decisions.canRate ? { actions.decide(.rating($0), asset) } : nil,
                               setFlag: decisions.canFlag ? { actions.decide(.flag($0), asset) } : nil)
         }
-        Divider()
+        if menu.canDuplicate || menu.canEdit {
+            Divider()
+        }
         if menu.canDuplicate {
             Button(PhotoFilingAction.duplicateTitle(count: menu.count)) { actions.duplicate(asset) }
         }
-        Button(menu.count > 1 ? "Export \(menu.count) Photos…" : "Export…") { actions.export(asset) }
+        if menu.canEdit {
+            Button(menu.count > 1 ? "Export \(menu.count) Photos…" : "Export…") { actions.export(asset) }
+        }
         if menu.canDelete {
             // Last and apart, as what destroys is in a context menu.
-            Divider()
-            Button(PhotoFilingAction.deleteTitle(count: menu.count), role: .destructive) { actions.delete(asset) }
+            if menu.canEdit {
+                Divider()
+                Button(PhotoFilingAction.deleteTitle(count: menu.count), role: .destructive) { actions.delete(asset) }
+            } else {
+                // The only item of the photos of a device: it is the one that tells the menu opens.
+                ContextMenuOpening(report: { actions.menuIsOpening(for: asset.id, at: index) }) {
+                    Button(PhotoFilingAction.deleteTitle(count: menu.count), role: .destructive) { actions.delete(asset) }
+                }
+            }
         }
     }
 

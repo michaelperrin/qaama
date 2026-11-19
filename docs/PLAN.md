@@ -1996,6 +1996,267 @@ Interface
         vérité ;
       - les gestes regroupés tels qu'aujourd'hui (une entrée par geste, pas par mouvement de
         curseur), et peut-être fusionner les retouches successives d'un même réglage.
+- [ ] Import de photos depuis une carte SD ou un appareil (demande de Michaël, 19/11/2026) :
+      la carte apparaît dans la barre latérale, on voit ses vignettes, on choisit les photos, la
+      destination (dossier ou album Photos) et les options, puis on importe. Rien n'est codé
+      dans l'appli ; ce qui suit est le cadrage discuté ce jour-là et le résultat du prototype.
+      - **Brique système** : ImageCaptureCore, présent aussi sur iPadOS. Lu dans les en-têtes du
+        SDK : `ICDeviceBrowser` annonce cartes en stockage de masse et
+        appareils USB ; `ICCameraFile` donne vignette (`requestThumbnailData`, taille maximale
+        réglable), métadonnées et téléchargement vers un dossier (`requestDownload`, options
+        `ICDownloadsDirectoryURL` et `ICDeleteAfterDownload`) ; `ICCameraDevice` supprime
+        (`requestDeleteFiles`, résultat par fichier, erreurs typées), éjecte (`requestEject`)
+        et dit si la carte est verrouillée (`isLocked`, aussi par fichier sur `ICCameraItem`).
+      - **Faisabilité vérifiée le 19/11/2026** (`Experiments/card-import/`, sonde signée avec
+        quatre jeux de droits, sur une carte de 16 Go en FAT32 : 1154 JPEG, 77 CR2, 2 RAF,
+        23 MOV, environ 23 Mo/s en lecture) :
+        - **Bac à sable** : seul ou avec les droits actuels de Qaama, la carte n'est même pas
+          annoncée. Avec `com.apple.security.device.usb` en plus, tout passe (liste, vignettes,
+          copie dans le conteneur, suppression), sans autre droit ni question bloquante.
+        - **Liste** : premiers fichiers après 0,4 s, un par rappel, les 1256 après 20 à 25 s :
+          à afficher au fur et à mesure. Types réduits à `public.image` et `public.movie`,
+          `isRaw` juste. Les THM des vidéos ne sont pas listés. Un fichier nommé hors de la
+          convention des appareils (`QAAMATST.JPG`) n'a pas été listé, renommé `QAMA0001.JPG`
+          il l'a été (pas creusé).
+        - **Pas de chemin** : `mountPoint` et `fileSystemPath` sont vides, bac à sable ou non,
+          et le volume ne se lit pas directement depuis le bac à sable. Tout passe par
+          l'appareil : pas de lecture par ImageIOKit sans télécharger.
+        - **Vignettes, le point dur** : `requestThumbnailData` coûte 650 ms par photo, pareil
+          à 160 px, à 400 px, ou pour 40 demandes envoyées d'un coup (servies une à une) : le
+          temps de lire le fichier entier. Un écran de 40 vignettes : 25 s ; la carte : plus de
+          13 minutes. En lisant seulement les 128 premiers ko (`requestReadData`) et en sortant
+          la vignette EXIF avec ImageIO : 82 ms à froid, 8 ms ensuite, mais 160 × 120 px.
+        - **Aperçu en grand** : la vignette se demande jusqu'à 4096 px, JPEG comme RAF
+          (4096 × 2731), en 0,4 à 0,8 s la première fois, 50 à 250 ms ensuite.
+        - **Copie** : un RAF de 28,6 Mo en 1,27 s, taille vérifiée. **Suppression** : 3 ms, le
+          fichier quitte la carte sans passer par son dossier `.Trashes`, le délégué est prévenu.
+        - **Pour comparaison**, ImageIO directement sur le volume, hors bac à sable (ce que
+          donnerait la carte désignée par `fileImporter`) : 1154 JPEG listés en 0,36 s,
+          vignette EXIF en 10 ms, vignette de 400 px décodée en 349 ms.
+        - **Non essayé** : paires RAW + JPEG (aucune sur cette carte), vignette EXIF des RAW,
+          carte ou fichier verrouillé, éjection, carte retirée pendant une copie, sort du THM
+          d'une vidéo copiée ou supprimée, appareil branché en USB.
+        - **Conséquences** : ajouter le droit USB à l'appli ; la grille affiche d'abord les
+          vignettes EXIF (lecture partielle), puis affine les seules cellules visibles par
+          `requestThumbnailData`, en file, annulable au défilement ; l'aperçu en grand est une
+          grande vignette, sans téléchargement.
+      - **Architecture** (revue le 19/11/2026 en lisant la grille) : la carte ne stocke rien
+        (ni notes, ni recettes, ni catalogue), mais elle se présente quand même comme un
+        `LibrarySource`, sans aucune capacité (`CameraLibrarySource`) : `AssetGridView` sert
+        alors telle quelle, avec ses mois, sa sélection, ses flèches et son zoom. Ce qui parle
+        à l'appareil est derrière un protocole (`CameraConnection`, `CameraBrowser`), pour
+        tester sans carte ; ImageCaptureCore n'en est qu'une mise en œuvre
+        (`ImageCaptureBrowser`). Vers un dossier, on copiera et le scan sur changement externe
+        fera apparaître les photos. Vers Photos, la création d'une photo depuis un fichier et
+        son rangement dans un album sont à écrire.
+      - **Étape 1 faite le 19/11/2026 : voir la carte dans l'appli.**
+        - Droit `com.apple.security.device.usb` ajouté ; section « Devices » en haut de la
+          barre latérale tant qu'un appareil est branché (`CameraDevices`), symbole selon le
+          type (carte, téléphone, appareil). L'iPhone de Michaël, branché, y apparaît aussi :
+          ImageCaptureCore l'annonce comme les cartes.
+        - `CameraLibraryView` : la grille, le nom et le nombre de photos en titre, un bandeau
+          pendant la lecture. La carte n'est lue qu'une fois sélectionnée.
+        - Liste : les fichiers annoncés un par un sont regroupés (une mise à jour de la grille
+          toutes les 0,5 s), triés du plus récent au plus ancien, les paires RAW + JPEG d'un
+          même dossier en une photo, les vidéos comptées et laissées de côté (décision à
+          prendre). Mesuré sur la carte, vue affichée : premières photos à 0,9 s, les 1233
+          à 22,5 s.
+        - Vignettes en deux temps, `LibrarySource.quickThumbnail` (nouveau, nil par défaut)
+          puis `thumbnail` : la vignette EXIF lue dans les 128 premiers ko, rognée à la forme
+          de la photo (les appareils la livrent en 4:3 avec des bandes noires pour une photo
+          en 3:2 : vu sur la première capture), puis la vignette nette. Les CR2 ont une
+          vignette EXIF, les RAF non (ils attendent la nette).
+        - `CameraRequestQueue` : une demande à la fois, les lectures courtes avant les
+          lectures de fichier entier, et une demande dont la tâche est annulée (cellule sortie
+          de l'écran) n'atteint jamais l'appareil.
+        - Leçon : demander les vignettes nettes pendant que l'appareil liste ses fichiers
+          ralentit la liste (1000 fichiers en 34 s au lieu de tous en 25 s) et lit pour rien,
+          les rangées bougeant encore. Elles attendent donc la fin de la liste. Un écran de
+          24 vignettes est net en moins de 30 s après.
+        - Nouvelle capacité `LibraryCapability.editing`, que la carte n'a pas : le menu
+          contextuel de la grille n'offre alors ni l'éditeur, ni copier/coller les réglages,
+          ni l'export. Un double-clic ne fait encore rien.
+        - **Retour de Michaël le même jour** : « ça marche pas mal », mais pendant le
+          chargement une vignette passait d'une photo à une tout autre. Vérifié d'abord sur la
+          carte que la vignette EXIF et la vignette nette montrent bien la même photo (73
+          photos comparées en 8 × 8 niveaux de gris : écart moyen 2/255, maximum 9). Puis
+          reproduit dans une sonde avec un faux appareil lent (photos anciennes rouges,
+          nouvelles bleues). Trois causes, corrigées :
+          1. **La grille, pour toutes les bibliothèques** : quand un mois s'insère au-dessus,
+             ses rangées sont celles qu'un autre mois tenait l'instant d'avant, et le
+             `LazyVGrid` garde à l'écran les anciennes cellules sans jamais installer les
+             nouvelles (les rangées sont bien construites avec les nouvelles photos, mais ni
+             `==` ni `body` de leurs cellules ne sont appelés ; pareil fenêtre à l'écran). La
+             carte y tombait sans arrêt, ses mois arrivant au fil de la lecture. Les cellules
+             sont désormais identifiées par leur rangée et leur section (`GridRowID`,
+             LibraryKit) : une rangée qui change de mois est une nouvelle cellule. Mesuré
+             avant et après sur 74 000 photos en 238 mois : sélection 10 à 24 ms, saut à un
+             mois 73 à 93 ms, mêmes dates à l'arrivée, redimensionnement 35 à 46 ms : pas de
+             différence.
+          2. Une cellule gardait les pixels de la photo précédente de sa rangée jusqu'à
+             l'arrivée de la nouvelle vignette : sans conséquence quand elle arrive en
+             quelques millisecondes, une autre photo affichée pendant des secondes avec une
+             carte. `AssetThumbnailView` les efface après 150 ms si rien n'est arrivé.
+          3. L'attente de la fin de la liste, dans `thumbnail`, ignorait l'annulation : les
+             demandes des cellules sorties de l'écran ou changées de photo restaient en
+             attente jusqu'au bout. Elle rend la main dès l'annulation.
+          Leçon : une sonde avec un faux appareil lent et des couleurs par lot dit en une
+          seconde ce qu'une cellule affiche vraiment ; les captures sur la vraie carte ne le
+          montraient pas.
+        - **Cases grises au bon nombre (demande de Michaël, 19/11/2026)**, à la place des
+          photos qui arrivent au fur et à mesure : pendant la lecture, la vue montre une
+          grille de vignettes vides et une barre de progression, puis les photos prennent
+          leur place d'un coup, triées (`CameraLibrarySource` ne liste plus rien avant la
+          fin ; `listingProgress` dit combien en attendre). Les remplir avant la fin n'est pas
+          possible : la place d'une photo dépend des dates de toutes les autres, et l'appareil
+          les annonce sans ordre. Le nombre vient du pourcentage que l'appareil donne
+          (`contentCatalogPercentCompleted`) : photos trouvées divisées par la part annoncée.
+          Mesuré : son compte court devant les fichiers remis, donc 560, 950 puis 1129 dans la
+          première seconde pour 1233 photos, 1188 à partir de la deuxième ; l'estimation
+          n'est donc prise qu'à partir de 10 % et gardée tant qu'une suivante ne s'en écarte
+          pas de plus de 5 %. Sur la carte : cases grises à 0,7 s, « About 1 188 photos »,
+          photos en place à 21 s, toutes les vignettes rapides de l'écran 0,3 s après.
+          Essayée et écartée : l'option `ICEnumerationChronologicalOrder`, qui ne livre pas
+          les fichiers par date sur cette carte et ne change pas la durée (13 à 21 s avec ou
+          sans, d'une fois sur l'autre). Du coup l'attente de fin de liste dans `thumbnail`
+          (cause 3 ci-dessus) n'existe plus : aucune cellule ne demande rien avant la fin.
+        - **Les cases grises se remplissent pendant la lecture (demande de Michaël, même
+          jour)** : `CameraLibrarySource.foundPhotos` donne les photos trouvées dans l'ordre
+          où l'appareil les annonce, et la grille de lecture (`CameraReadingGrid`, non
+          sélectionnable) montre leur vignette EXIF sur les premières cases. Cet ordre n'est
+          pas celui de la grille finale (dates mêlées, vu sur la capture à 8 s) : à la fin de
+          la lecture, toutes les photos changent de place une fois, pour se ranger par date.
+          Durée de lecture inchangée (21 s). Pour que chaque photo arrive directement à sa
+          place, il faudrait connaître tous les fichiers d'emblée : possible seulement en
+          lisant le volume directement (0,4 s pour 1154 fichiers), donc avec un accès à la
+          carte accordé par l'utilisateur dans un dialogue. Non fait, à décider.
+        - **Étape 2 faite le 19/11/2026 : aperçu en grand et import vers un dossier.**
+          - Aperçu (`CameraPhotoViewer`) : double-clic ou barre d'espace, à la place de la
+            grille comme l'éditeur ; l'image est demandée à la taille de la vue, par pas de
+            1024 px, 4096 au plus (`previewPixels`), sur une voie de la file qui passe avant
+            les vignettes de la grille ; les deux photos voisines sont lues d'avance. Mesuré
+            sur la carte : vignette EXIF tout de suite, image nette en moins de 1,5 s, photo
+            suivante déjà nette 0,15 s après la flèche. Flèches et Échap vérifiés par des
+            touches envoyées à la sonde ; le retour à la grille remet sa place et sélectionne
+            la photo vue (`GridPlaceKeeper`, comme l'éditeur), non vérifié à l'écran.
+          - Import (`CameraLibrarySource.startImport`, `CameraImport`) : chaque fichier est
+            copié par l'appareil dans un dossier temporaire de l'appli, comparé à la taille
+            annoncée, puis déplacé à sa place : une carte retirée ne laisse pas de fichier
+            partiel parmi les photos. Rangement par jour (`ImportLayout`). Un fichier de même
+            nom et même taille déjà là est compté « déjà importé » ; même nom et autre taille :
+            le nouveau prend le nom libre suivant. Annulation : le dossier de destination
+            enregistre « Import Photos », qui met les fichiers à la corbeille
+            (`FolderLibrarySource.registerImport`). Éjection en option, et par le menu
+            contextuel de la barre latérale.
+          - Choix d'interface : pas de cases à cocher, la sélection de la grille dit quoi
+            importer (« Import 12 Selected… » ou « Import All… »), comme dans Photos.
+          - Mesuré sur la carte : 3 photos dont un RAF, 51 Mo, en 2,6 s (le débit de la
+            carte) ; un second passage les trouve déjà là.
+          - Pas vérifié : le parcours dans l'appli lancée (bouton, feuille, barre, undo,
+            écriture dans un vrai dossier depuis le bac à sable, éjection réelle) ; la feuille
+            et la barre ne sont vues que rendues hors écran.
+          - Retour de Michaël (19/11/2026) : « ça marche impeccable », « un très bon début » ;
+            il faudra l'import dans Apple Photos avec choix de l'album et une case de recherche
+            du nom d'album, les nouvelles photos seulement, et le reste du MVP.
+          - **Destination Apple Photos, faite le même jour** : `ImportDestination.library`
+            reçoit, photo par photo, les fichiers copiés et vérifiés ;
+            `PhotoKitAssetChanges.create` en fait une photo (un RAW venu avec son JPEG : le
+            JPEG en ressource principale, le RAW en ressource alternative, convention des
+            paires dans Photos, non vérifiée sur une vraie paire), ajoutée à l'album choisi
+            dans la même modification. La feuille propose « Apple Photos » au-dessus des
+            dossiers, et l'album se choisit par la recherche d'« Add to Album »
+            (`AlbumSearchView`, réutilisée telle quelle). Annulation : supprime les photos
+            créées, ce que Photos demande à l'utilisateur, sans rétablissement possible.
+            Testé avec une fausse bibliothèque ; **rien n'a été écrit dans la photothèque de
+            Michaël** : la création réelle dans Photos reste à essayer dans l'appli.
+          - Bouton « New… » à côté de « Choose… » (demande de Michaël, même jour) : une
+            feuille demande le nom du nouvel album et le dossier d'albums où le créer
+            (`NewAlbumSheet`, `PhotosAlbumFolderChoice`), création annulable par l'éditeur
+            d'albums. Albums multiples à l'import : non fait, avis donné à Michaël (un seul
+            album à l'import, le classement dans d'autres se fait ensuite depuis « Dernier
+            import » avec « Add to Album »), à décider.
+          - Reste du MVP : « nouvelles photos seulement » (photos déjà importées grisées ;
+            Photos ne refuse pas les doublons par lui-même, il faudra donc garder une trace
+            des imports), aperçu de l'arborescence de destination, « Dernier import »,
+            suppression sur la carte.
+        - **Étape 3 faite le 19/11/2026 : le reste du MVP.**
+          - Nouvelles photos seulement : `ImportHistory` (fichier JSON d'Application Support,
+            donnée de l'utilisateur comme les préréglages de filtres, pas le catalogue : rien
+            sur le disque ne dit qu'une photo vient d'une carte) retient la signature de
+            chaque fichier importé (nom, taille, date de prise de vue). Les photos déjà
+            importées portent `LibraryAsset.isImported` : grisées avec une coche, bouton
+            « Import N New… », sous-titre « N new ». Annuler un import les rend nouvelles
+            (même étape du menu Édition que la corbeille).
+          - Dernier import : entrée « Last Import » en haut de la barre latérale, vue du
+            dossier ou de Photos restreinte aux photos importées
+            (`LibraryCatalog.library(forLastImport:)`). Leçon : la restriction
+            `onlyAssetIDs` est celle d'un groupe ouvert depuis la carte, avec son bouton
+            « Back to the Map » qui la lève ; l'import a donc la sienne,
+            `LibraryQuery.fixedAssetIDs`, que rien dans l'interface ne lève.
+          - Aperçu des dossiers de destination dans la feuille (jour et nombre de photos) ;
+            pas de case pour décocher une journée.
+          - Suppression sur la carte : menu contextuel et Image › Delete, après confirmation,
+            sans annulation (seconde exception à « tout est annulable »). Vérifié sur la
+            carte avec un fichier de test posé pour l'occasion : supprimé en 30 ms, le compte
+            de fichiers de la carte est revenu à sa valeur de départ.
+          - Pas vérifié dans l'appli lancée : tout ce qui précède à l'écran, et « Last
+            Import » pour Photos (aucune photo créée dans la photothèque de Michaël).
+          - Reste : cases pour décocher une journée, noter pendant la revue sur la carte,
+            suppression après import, seconde copie, application de mots-clés et de
+            préréglages à l'import, renommage, préréglages d'import, vidéos.
+        - Vérifié : 36 tests avec un faux appareil ou sur les identifiants de rangée ; la vraie vue rendue hors écran sur la
+          carte (sonde). Pas vérifié : l'appli elle-même lancée (une instance de Michaël
+          tournait sur le même conteneur), donc le droit USB dans Qaama, la section de la
+          barre latérale à l'œil, le retrait de la carte.
+      - **MVP de l'import** (reste, après l'étape 1) :
+        - cases à cocher, import vers un
+          dossier, en arrière-plan : les photos apparaissent au fur et à mesure et on peut déjà
+          travailler dessus ;
+        - « nouvelles photos seulement » : les photos déjà importées restent visibles, grisées
+          et décochées (nom, taille, date de prise de vue ; demande de garder une trace des
+          imports) ;
+        - rangement par date à destination, avec l'aperçu des dossiers qui seront créés et du
+          nombre de photos dans chacun, une journée entière pouvant être décochée ;
+        - éjecter la carte après l'import (case à cocher) ;
+        - « Dernier import » dans la barre latérale.
+      - **Sur la carte, avant l'import** :
+        - clic droit « Delete » : suppression directe sur la carte, grisée avec une explication
+          si la carte ou le fichier est verrouillé ;
+        - double-clic : aperçu en grand, une grande vignette demandée à la taille de l'écran
+          (mesuré : jusqu'à 4096 px). Le zoom à 100 %, qui demande de télécharger le fichier,
+          n'est pas nécessaire (Michaël, 19/11/2026 : « le but est de voir l'image un peu plus
+          grande que la vignette ») : seulement si c'est simple. Une visionneuse (zoom, flèches,
+          supprimer, cocher), pas l'éditeur : une photo ne se modifie qu'une fois importée ;
+        - noter et marquer pendant la revue : gardé en mémoire puis écrit dans le sidecar à
+          l'import, les rejetées n'étant pas importées.
+      - **Ensuite** :
+        - destination Photos et album ;
+        - suppression sur la carte après import, seulement une fois la copie vérifiée ;
+        - seconde copie de sauvegarde vers un autre disque pendant l'import ;
+        - appliquer à l'import : mots-clés, auteur et copyright, préréglage d'ajustements (une
+          recette écrite dans le sidecar ; dépend des préréglages) ;
+        - renommage par modèle (date, nom de la séance, numéro de séquence) ;
+        - préréglages d'import (destination, rangement, renommage, options sous un nom) ;
+        - ouvrir l'import à l'insertion d'une carte, en option dans les réglages.
+      - **Écarté** (accord de Michaël) : conversion en DNG, aperçus 1:1 et « smart previews »
+        (`PreviewCache` suffit), mode « déplacer » (copier puis supprimer après vérification
+        est plus sûr), prise de vue connectée, dossier surveillé (les dossiers se rescannent
+        déjà à chaque changement).
+      - **Points qui demandent du soin** :
+        - annulation : annuler un import vers un dossier met les copies à la corbeille ; toute
+          suppression sur la carte est définitive (pas de corbeille), donc confirmation et pas
+          d'annulation, seconde exception à « tout est annulable » après Photos ;
+        - paires RAW + JPEG importées et supprimées comme une seule photo ;
+        - fichiers annexes écrits par l'appareil (XMP, son, vignette vidéo) : les emporter à la
+          suppression ou les laisser, à décider ;
+        - carte retirée en plein import : pas de fichier à moitié copié ;
+        - vidéos présentes sur la carte : les ignorer ou les copier, à décider ;
+        - fichiers nommés hors de la convention des appareils, que l'appareil ne liste pas :
+          accepté tel quel (Michaël, 19/11/2026).
+      - Idées reprises de Lightroom Classic (de mémoire, sans l'avoir rouvert) : nouvelles
+        photos seulement, aperçu de l'arborescence de destination, seconde copie, application
+        à l'import, renommage, préréglages d'import. Noter pendant la revue et supprimer sur
+        la carte vont au-delà de ce que proposent Lightroom et Photos.
 - [ ] Extension d'édition pour Photos (`PHEditingExtension`) et extension de partage.
 - [ ] HDR (gain map, EDR sur écran compatible), vidéo courte peut‑être.
 - [ ] iCloud (si compte développeur), puis déclinaison iPad si le cœur reste portable.

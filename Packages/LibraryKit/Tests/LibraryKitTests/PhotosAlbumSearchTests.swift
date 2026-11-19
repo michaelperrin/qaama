@@ -126,4 +126,18 @@ struct PhotosAlbumSearchTests {
         model.query = "islande"
         #expect(model.matches.isEmpty)
     }
+
+    @Test func theFoldersANewAlbumCanGoInComeInTheSidebarsOrderWithTheirDepth() {
+        let tree = [
+            Self.album("Loose"),
+            Self.folder("Travels", [Self.album("Rome"), Self.folder("2024", [Self.album("Lisbon"), Self.folder("Summer", [])])]),
+            Self.folder("Family", []),
+        ]
+        let folders = PhotosAlbumFolderChoice.all(in: tree)
+        #expect(folders.map(\.title) == ["Travels", "2024", "Summer", "Family"])
+        #expect(folders.map(\.depth) == [0, 1, 2, 0])
+        #expect(folders[2].ancestors == ["Travels", "2024"])
+        // An album is no place for an album; a library without folders offers none.
+        #expect(PhotosAlbumFolderChoice.all(in: [Self.album("Loose")]).isEmpty)
+    }
 }

@@ -73,6 +73,9 @@ targets:
         com.apple.security.personal-information.photos-library: true
         com.apple.security.files.user-selected.read-write: true
         com.apple.security.files.bookmarks.app-scope: true
+        # Cards and cameras, through ImageCaptureCore: without it none is ever announced, not even
+        # a card in the built-in reader (measured, Experiments/card-import).
+        com.apple.security.device.usb: true
         # Outgoing connections, for MapKit only: the tiles of the maps and the names of places.
         com.apple.security.network.client: true
     settings:
