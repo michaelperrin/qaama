@@ -20,6 +20,9 @@ struct SidebarView: View {
     /// The album question being asked: a name for a new album or folder, or a deletion to confirm.
     @State private var albumDialog: AlbumDialog?
     @State private var albumError: String?
+    /// The import being named, and what is typed for it.
+    @State private var renamedImport: ImportRecord?
+    @State private var importName = ""
     /// The album row photos are being dragged over.
     @State private var dropTargetID: String?
     @Environment(\.undoManager) private var undoManager
@@ -30,11 +33,22 @@ struct SidebarView: View {
             Label("Map", systemImage: "map")
                 .help("Every photo of the Photos library and of the folders, where it was taken")
                 .tag(LibrarySelection.map)
-            // Once photos were imported: the last batch, to go on with (rate, file in albums).
-            if let last = catalog.cameras.history?.lastImport {
-                Label("Last Import", systemImage: "square.and.arrow.down")
-                    .help("\(last.count.formatted()) photos from “\(last.deviceName)”, \(last.date.formatted(date: .abbreviated, time: .shortened))")
-                    .tag(LibrarySelection.lastImport)
+            // Once photos were imported: the last batches, by date, to go on with (rate, file in albums).
+            if let imports = catalog.cameras.history?.imports, !imports.isEmpty {
+                Section("Last Imports") {
+                    ForEach(imports) { record in
+                        Label(record.title, systemImage: "square.and.arrow.down")
+                            .badge(record.count)
+                            .help(record.summary)
+                            .tag(LibrarySelection.importRecord(record.id))
+                            .contextMenu {
+                                Button("Rename…") {
+                                    importName = record.name ?? ""
+                                    renamedImport = record
+                                }
+                            }
+                    }
+                }
             }
             // Only while one is plugged in, and at the top: a card just inserted is what one came for.
             if !catalog.cameras.sources.isEmpty {
@@ -119,6 +133,17 @@ struct SidebarView: View {
                 selection = .photos
             }
         })
+        .alert("Rename Import", isPresented: Binding(get: { renamedImport != nil }, set: {
+            if !$0 {
+                renamedImport = nil
+            }
+        }), presenting: renamedImport) { record in
+            TextField(record.dateTitle, text: $importName)
+            Button("Rename") { catalog.cameras.history?.rename(record.id, to: importName, undoManager: undoManager) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Leave the name empty to list the import under its date.")
+        }
         .alert("Couldn't Update the Albums", isPresented: Binding(get: { albumError != nil }, set: {
             if !$0 {
                 albumError = nil

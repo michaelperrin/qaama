@@ -42,9 +42,14 @@ can feed a website one day. Dates are when the feature landed.
   again (2026-11-19).
 - The import sheet lists the day folders the photos will go to, with how many photos each
   (2026-11-19).
-- Last Import, at the top of the sidebar once photos were imported: the photos of the last
-  import alone, in the library they went to, to rate them, file them in albums or edit them
+- Last Imports, a section of the sidebar once photos were imported: the last ten imports, each
+  under its date and time, or a name given from its context menu, kept across launches. An entry
+  shows the photos that import brought, alone, in the library they went to, to rate them, file
+  them in albums or edit them (2026-11-19).
+- Hide Already Imported, a checkbox of a device's toolbar: only the photos left to import show
   (2026-11-19).
+- An import can delete from the device what it copied, once it is over: only the photos that
+  made it, for good; asked each time (2026-11-19).
 - Photos can be deleted from a card or a camera, from the context menu or Image › Delete, after
   a confirmation: for good, a card has no Trash. A RAW goes with its JPEG; a locked card offers
   no deletion (2026-11-19).

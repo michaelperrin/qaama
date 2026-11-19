@@ -33,16 +33,21 @@ public nonisolated struct ImportRecord: Hashable, Codable, Sendable, Identifiabl
     public var id: UUID
     public var date: Date
     public var deviceName: String
+    /// The name the user gave the import, if any: the sidebar then shows it in place of the date.
+    public var name: String?
     public var destination: Destination
     /// The photos made in the Photos library, by identifier.
     public var photoIDs: [String]
     /// The image files copied into the folder, as paths relative to it.
     public var relativePaths: [String]
 
-    public init(id: UUID = UUID(), date: Date = .now, deviceName: String, destination: Destination, photoIDs: [String] = [], relativePaths: [String] = []) {
+    public init(id: UUID = UUID(), date: Date = .now, deviceName: String, name: String? = nil, destination: Destination,
+                photoIDs: [String] = [], relativePaths: [String] = [])
+    {
         self.id = id
         self.date = date
         self.deviceName = deviceName
+        self.name = name
         self.destination = destination
         self.photoIDs = photoIDs
         self.relativePaths = relativePaths
@@ -55,13 +60,18 @@ public nonisolated struct ImportRecord: Hashable, Codable, Sendable, Identifiabl
 }
 
 /// What was imported from cards and cameras so far: enough to tell, when a card is read again, the
-/// photos it still holds that were imported already, and to show the last import again.
+/// photos it still holds that were imported already, and to show the last imports again, each as
+/// the sidebar lists it, by date.
 ///
 /// Kept in a JSON file of Application Support in the app, in memory in tests. User data, unlike the
 /// catalog: nothing on disk says a photo came from a card, so it couldn't be rebuilt.
 @Observable
 public final class ImportHistory {
-    public private(set) var lastImport: ImportRecord?
+    /// The last imports, the most recent first; the oldest leaves when there are more than `limit`.
+    public private(set) var imports: [ImportRecord] = []
+    /// How many imports are kept to be shown again. The files they brought stay known as imported
+    /// whatever becomes of the list.
+    public static let limit = 10
     /// Called when the files known as imported change, for the devices on screen to follow.
     @ObservationIgnored public var onChange: (() -> Void)?
 
@@ -73,7 +83,29 @@ public final class ImportHistory {
     /// What the file holds.
     private nonisolated struct Saved: Codable, Sendable {
         var signatures: [ImportedFileSignature]
-        var lastImport: ImportRecord?
+        var imports: [ImportRecord]
+
+        init(signatures: [ImportedFileSignature], imports: [ImportRecord]) {
+            self.signatures = signatures
+            self.imports = imports
+        }
+
+        private enum LegacyKeys: String, CodingKey {
+            case lastImport
+        }
+
+        /// The file first kept one import only, under `lastImport` (a few hours on 2026-11-19):
+        /// read as a list of one, so what was imported that day isn't taken for new.
+        init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            signatures = try container.decode([ImportedFileSignature].self, forKey: .signatures)
+            if let imports = try container.decodeIfPresent([ImportRecord].self, forKey: .imports) {
+                self.imports = imports
+            } else {
+                let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+                imports = try [legacy.decodeIfPresent(ImportRecord.self, forKey: .lastImport)].compactMap(\.self)
+            }
+        }
     }
 
     /// Without a file nothing outlives the object: what tests and previews get.
@@ -99,7 +131,7 @@ public final class ImportHistory {
             guard let saved else { return }
             // What was imported while the file was being read stays.
             signatures.formUnion(saved.signatures)
-            lastImport = lastImport ?? saved.lastImport
+            imports = Self.listed(imports + saved.imports.filter { saved in !imports.contains { $0.id == saved.id } })
             logger.notice("Loaded the import history: \(saved.signatures.count) files")
             onChange?()
         case let .failure(error):
@@ -111,20 +143,24 @@ public final class ImportHistory {
         signatures.contains(signature)
     }
 
-    /// Remembers an import: its files count as imported from now on, and it becomes the last one.
+    public func record(id: ImportRecord.ID) -> ImportRecord? {
+        imports.first { $0.id == id }
+    }
+
+    /// Remembers an import: its files count as imported from now on, and it heads the list.
     /// Undoing forgets it again, in the same step of the Edit menu as the undo the destination
     /// registers right before or after this call. `isRedoable` is false where the photos can't be
     /// brought back (the Photos library deletes them for good on undo).
     public func record(_ record: ImportRecord, files: [ImportedFileSignature], isRedoable: Bool = true, undoManager: UndoManager?) {
         let added = Set(files).subtracting(signatures)
-        let previous = lastImport
+        let previous = imports
         signatures.formUnion(added)
-        lastImport = record
+        imports = Self.listed(imports.filter { $0.id != record.id } + [record])
         changed()
         undoManager?.registerUndo(withTarget: self) { history in
             MainActor.assumeIsolated {
                 history.signatures.subtract(added)
-                history.lastImport = previous
+                history.imports = previous
                 history.changed()
                 if isRedoable {
                     undoManager?.registerUndo(withTarget: history) { history in
@@ -135,6 +171,26 @@ public final class ImportHistory {
         }
     }
 
+    /// Names an import, or takes its name away (nil, or nothing but spaces): it is then listed
+    /// under its date again. Undoable.
+    public func rename(_ id: ImportRecord.ID, to name: String?, undoManager: UndoManager?) {
+        let cleaned = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let wanted = cleaned?.isEmpty == false ? cleaned : nil
+        guard let index = imports.firstIndex(where: { $0.id == id }), imports[index].name != wanted else { return }
+        let previous = imports[index].name
+        imports[index].name = wanted
+        changed()
+        undoManager?.registerUndo(withTarget: self) { history in
+            MainActor.assumeIsolated { history.rename(id, to: previous, undoManager: undoManager) }
+        }
+        undoManager?.setActionName("Rename Import")
+    }
+
+    /// The most recent first, and no more than the list keeps.
+    private static func listed(_ imports: [ImportRecord]) -> [ImportRecord] {
+        Array(imports.sorted { $0.date > $1.date }.prefix(limit))
+    }
+
     /// Waits for the file to hold the last change, for tests.
     func settled() async {
         await writing?.value
@@ -143,7 +199,7 @@ public final class ImportHistory {
     private func changed() {
         onChange?()
         guard let fileURL else { return }
-        let saved = Saved(signatures: Array(signatures), lastImport: lastImport)
+        let saved = Saved(signatures: Array(signatures), imports: imports)
         let logger = logger
         writing = Task.detached { [writing] in
             await writing?.value

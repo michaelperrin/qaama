@@ -12,6 +12,8 @@ enum CameraImportTarget {
 /// What the user chose for an import: where the photos go and what happens after.
 struct CameraImportChoice {
     var target: CameraImportTarget
+    /// Delete from the device the photos that were copied, once the import is over.
+    var deletesImported: Bool
     /// Eject the device once everything is copied.
     var ejects: Bool
 }
@@ -29,6 +31,8 @@ struct CameraImportSheet: View {
     let albumEditor: PhotosAlbumEditor
     /// The window's: a sheet has none of its own to undo with later.
     let undoManager: UndoManager?
+    /// False for a device that can't delete, or a card whose lock is on.
+    let canDelete: Bool
     let onImport: (CameraImportChoice) -> Void
     let onCancel: () -> Void
 
@@ -40,6 +44,8 @@ struct CameraImportSheet: View {
     /// The search for the album to add the photos to.
     @State private var albumSearch: AlbumSearchRequest?
     @State private var isNamingAlbum = false
+    /// Asked each time, never remembered: what it does can't be undone.
+    @State private var deletesImported = false
     /// The album made here, which the list of albums may not hold yet.
     @State private var createdAlbum: (id: String, title: String)?
 
@@ -89,6 +95,10 @@ struct CameraImportSheet: View {
                             }
                         }
                     }
+                    Toggle("Delete from “\(deviceName)” what was imported", isOn: $deletesImported)
+                        .disabled(!canDelete)
+                        .help(canDelete ? "Once the import is over, the photos that were copied are deleted from the device, for good. Those that couldn't be copied stay."
+                            : "“\(deviceName)” is locked, or can't delete photos")
                     Toggle("Eject “\(deviceName)” when done", isOn: $ejects)
                 } header: {
                     Text(photoCount == 1 ? "Import 1 photo from “\(deviceName)”" : "Import \(photoCount.formatted()) photos from “\(deviceName)”")
@@ -104,7 +114,7 @@ struct CameraImportSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Import") {
                     let photos = CameraImportTarget.photos(albumID: albumTitle == nil ? nil : albumID, title: albumTitle)
-                    onImport(CameraImportChoice(target: folder.map { .folder($0, layout) } ?? photos, ejects: ejects))
+                    onImport(CameraImportChoice(target: folder.map { .folder($0, layout) } ?? photos, deletesImported: deletesImported && canDelete, ejects: ejects))
                 }
                 .keyboardShortcut(.defaultAction)
             }
@@ -313,5 +323,5 @@ struct CameraImportBar: View {
 
 #Preview("Import sheet, no folder") {
     CameraImportSheet(deviceName: "EOS_DIGITAL", photoDates: Array(repeating: Date.now, count: 24), folders: [], albums: PhotosAlbumList(),
-                      albumEditor: PhotosAlbumEditor(library: PhotoKitAlbumLibrary()), undoManager: nil, onImport: { _ in }, onCancel: {})
+                      albumEditor: PhotosAlbumEditor(library: PhotoKitAlbumLibrary()), undoManager: nil, canDelete: true, onImport: { _ in }, onCancel: {})
 }

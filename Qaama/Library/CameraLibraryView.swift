@@ -22,6 +22,8 @@ struct CameraLibraryView: View {
     /// The import whose result the user has read: its bar is gone.
     @State private var dismissedImportID: CameraImport.ID?
     @State private var ejectError: String?
+    /// Whether the photos imported already are left out of the grid; kept across launches.
+    @AppStorage("importHidesImported") private var hidesImported = false
     /// The photos to delete from the device once the user has confirmed.
     @State private var deletion: DeletionRequest?
     @State private var deletionError: String?
@@ -33,6 +35,13 @@ struct CameraLibraryView: View {
             case .listed:
                 if let viewedID {
                     CameraPhotoViewer(source: source, assetID: viewedID, onClose: closeViewer)
+                } else if source.hidesImported, source.assets.isEmpty, source.photoCount > 0 {
+                    // The grid would say the device holds no photo.
+                    ContentUnavailableView("Everything Is Imported", systemImage: "checkmark.circle",
+                                           description: Text("Uncheck Hide Already Imported to see the photos of “\(source.displayName)”."))
+                        .navigationTitle(source.displayName)
+                        .navigationSubtitle(subtitle)
+                        .toolbar { hideImportedItem }
                 } else {
                     grid
                 }
@@ -66,9 +75,11 @@ struct CameraLibraryView: View {
             }
         }
         .task { await source.load() }
+        .onChange(of: hidesImported, initial: true) { source.hidesImported = hidesImported }
         .sheet(isPresented: $isChoosingDestination) {
             CameraImportSheet(deviceName: source.displayName, photoDates: photosToImport.map(\.creationDate), folders: catalog.folders,
-                              albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor, undoManager: undoManager, onImport: { choice in
+                              albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor, undoManager: undoManager,
+                              canDelete: source.capabilities.contains(.deletion), onImport: { choice in
                                   isChoosingDestination = false
                                   startImport(choice)
                               }, onCancel: { isChoosingDestination = false })
@@ -108,7 +119,7 @@ struct CameraLibraryView: View {
         if !selection.isEmpty {
             return "Import \(selection.count.formatted()) Selected…"
         }
-        return source.newPhotoCount == source.assets.count ? "Import All…" : "Import \(source.newPhotoCount.formatted()) New…"
+        return source.newPhotoCount == source.photoCount ? "Import All…" : "Import \(source.newPhotoCount.formatted()) New…"
     }
 
     private var isImporting: Bool {
@@ -147,6 +158,13 @@ struct CameraLibraryView: View {
                 history?.record(ImportRecord(deviceName: source.displayName, destination: .photos(albumID: albumID), photoIDs: job.createdPhotoIDs),
                                 files: job.importedFiles, isRedoable: false, undoManager: undoManager)
             }
+            if choice.deletesImported {
+                do {
+                    try await source.deleteImported(by: job)
+                } catch {
+                    deletionError = error.localizedDescription
+                }
+            }
             guard choice.ejects, !job.isCancelled, job.failures.isEmpty else { return }
             do {
                 try await source.eject()
@@ -180,6 +198,7 @@ struct CameraLibraryView: View {
                 ToolbarItem {
                     ThumbnailSizeSlider()
                 }
+                hideImportedItem
                 ToolbarItem(placement: .primaryAction) {
                     Button(importTitle) { isChoosingDestination = true }
                         .disabled(isImporting || (selection.isEmpty && source.newPhotoCount == 0))
@@ -210,6 +229,20 @@ struct CameraLibraryView: View {
         }
     }
 
+    /// The toolbar's checkbox that leaves the photos imported already out of the grid.
+    @ToolbarContentBuilder
+    private var hideImportedItem: some ToolbarContent {
+        // Apart from the thumbnail size, which it would otherwise share a capsule with.
+        ToolbarSpacer(.fixed)
+        ToolbarItem {
+            Toggle("Hide Already Imported", isOn: $hidesImported)
+                .toggleStyle(.checkbox)
+                // The toolbar draws its capsule on the view's bounds: without this the label touches its edge.
+                .padding(.horizontal, 8)
+                .help("Show only the photos that weren't imported yet")
+        }
+    }
+
     private func view(_ id: LibraryAsset.ID) {
         gridPlace.open(id, leavingGridAt: gridPlace.read())
         viewedID = id
@@ -227,7 +260,7 @@ struct CameraLibraryView: View {
         guard source.state != .listing, source.state != .idle else {
             return source.listingProgress.map { "About \($0.total.formatted()) photos" } ?? ""
         }
-        let count = source.assets.count
+        let count = source.photoCount
         var photos = count == 1 ? "1 photo" : "\(count.formatted()) photos"
         // Only once some were imported: before that, they are all new.
         if source.newPhotoCount < count {

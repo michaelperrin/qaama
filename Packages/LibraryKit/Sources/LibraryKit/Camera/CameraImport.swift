@@ -115,6 +115,8 @@ public final class CameraImport: Identifiable {
     /// The files of the device that are at the destination now, copied by this import or found
     /// there: what the history remembers as imported.
     public private(set) var importedFiles: [ImportedFileSignature] = []
+    /// The same files as the device names them: what deleting the imported photos from it takes.
+    public private(set) var importedFileIDs: [CameraFile.ID] = []
     public private(set) var isFinished = false
     public private(set) var isCancelled = false
 
@@ -158,9 +160,10 @@ public final class CameraImport: Identifiable {
 
     /// What became of one photo: the files copied or the photo made, whether some files were there
     /// already, what failed.
-    func record(copied: [URL] = [], photoID: String? = nil, skipped: Int = 0, errors: [String] = [], files: [ImportedFileSignature] = []) {
+    func record(copied: [URL] = [], photoID: String? = nil, skipped: Int = 0, errors: [String] = [], files: [CameraFile] = []) {
         done += 1
-        importedFiles.append(contentsOf: files)
+        importedFiles.append(contentsOf: files.map(ImportedFileSignature.init))
+        importedFileIDs.append(contentsOf: files.map(\.id))
         imported.append(contentsOf: copied)
         createdPhotoIDs.append(contentsOf: [photoID].compactMap(\.self))
         failures.append(contentsOf: errors)

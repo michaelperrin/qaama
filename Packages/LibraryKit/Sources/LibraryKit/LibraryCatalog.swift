@@ -60,8 +60,8 @@ public final class LibraryCatalog {
     /// The views made for the presets shown so far, kept for the session. Asked from views' bodies,
     /// hence not observed.
     @ObservationIgnored private var presetLibraries: [FilterPreset.ID: PresetLibrary] = [:]
-    /// The view made for the last import, and the import it was made for.
-    @ObservationIgnored private var lastImportLibrary: (record: ImportRecord.ID, library: PresetLibrary)?
+    /// The views made for the imports shown so far, kept for the session.
+    @ObservationIgnored private var importLibraries: [ImportRecord.ID: PresetLibrary] = [:]
     private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "LibraryCatalog")
 
     /// `filterPresets` are kept in memory unless a store with a file is handed in (the app's), and
@@ -188,15 +188,14 @@ public final class LibraryCatalog {
         return library
     }
 
-    // MARK: - Last import
+    // MARK: - Imports
 
-    /// What the last import shows through: a view of its own of the library the photos went to, cut
+    /// What an import shows through: a view of its own of the library the photos went to, cut
     /// down to those photos, so the library's own entry of the sidebar stays as it is. Nil when
-    /// there was no import, or the folder it went to was removed. Call `refreshLastImport()` for
-    /// the photos to be found.
-    public func library(forLastImport record: ImportRecord) -> PresetLibrary? {
-        if let known = lastImportLibrary, known.record == record.id {
-            return known.library
+    /// the folder it went to was removed. Call `refreshImport(_:)` for the photos to be found.
+    public func library(forImport record: ImportRecord) -> PresetLibrary? {
+        if let known = importLibraries[record.id] {
+            return known
         }
         let library: PresetLibrary
         switch record.destination {
@@ -212,15 +211,15 @@ public final class LibraryCatalog {
             view.query.fixedAssetIDs = []
             library = .folder(view, scannedBy: folder, path: nil)
         }
-        lastImportLibrary = (record.id, library)
+        importLibraries[record.id] = library
         return library
     }
 
-    /// Finds the photos of the last import in the catalog, for a folder: the files an import copied
+    /// Finds the photos of an import in the catalog, for a folder: the files an import copied
     /// are only known there once the folder has been listed again, so this is called when the view
     /// shows and each time the folder's listing changes.
-    public func refreshLastImport(_ record: ImportRecord) async {
-        guard case let .folder(id) = record.destination, case let .folder(view, _, _) = library(forLastImport: record) else { return }
+    public func refreshImport(_ record: ImportRecord) async {
+        guard case let .folder(id) = record.destination, case let .folder(view, _, _) = library(forImport: record) else { return }
         let ids = await (try? store.itemIDs(inFolder: id, relativePaths: record.relativePaths)) ?? []
         let found = Set(ids.map(\.uuidString))
         if view.query.fixedAssetIDs != found {

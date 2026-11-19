@@ -15,8 +15,8 @@ enum LibrarySelection: Hashable {
     case filterPreset(FilterPreset.ID)
     /// A card or a camera plugged in, to import from.
     case device(CameraLibrarySource.ID)
-    /// The photos of the last import, in the library they went to.
-    case lastImport
+    /// The photos one of the last imports brought, in the library they went to.
+    case importRecord(ImportRecord.ID)
 
     /// The sidebar's entry of the library a preset filters.
     init(_ library: FilterPreset.Library) {
@@ -39,7 +39,7 @@ extension LibraryCatalog {
         case let .subfolder(_, path): path.split(separator: "/").last.map(String.init) ?? "Folder"
         case let .filterPreset(id): filterPresets.preset(id: id)?.name ?? "Filter Preset"
         case let .device(id): cameras.source(id: id)?.displayName ?? "Device"
-        case .lastImport: "Last Import"
+        case let .importRecord(id): cameras.history?.record(id: id)?.title ?? "Import"
         }
     }
 }
@@ -148,7 +148,7 @@ struct MainWindowView: View {
         case let .folder(id): .folder(id: id, path: nil)
         case let .subfolder(id, path): .folder(id: id, path: path)
         case let .filterPreset(id): catalog.filterPresets.preset(id: id)?.library
-        case .map, .device, .lastImport, nil: nil
+        case .map, .device, .importRecord, nil: nil
         }
     }
 
@@ -186,13 +186,14 @@ struct MainWindowView: View {
                 ContentUnavailableView("Device Disconnected", systemImage: "sdcard",
                                        description: Text("Plug it in again to see its photos."))
             }
-        case .lastImport:
-            if let record = catalog.cameras.history?.lastImport {
-                LastImportView(record: record, catalog: catalog, maps: maps)
+        case let .importRecord(id):
+            if let record = catalog.cameras.history?.record(id: id) {
+                ImportRecordView(record: record, catalog: catalog, maps: maps)
                     .id(record.id)
             } else {
-                ContentUnavailableView("No Import Yet", systemImage: "square.and.arrow.down",
-                                       description: Text("Photos imported from a card or a camera show here."))
+                // Undone, or pushed out of the list by newer imports.
+                ContentUnavailableView("Import No Longer Listed", systemImage: "square.and.arrow.down",
+                                       description: Text("Its photos are still in the library they were imported into."))
             }
         case nil:
             ContentUnavailableView("Select a Library", systemImage: "sidebar.left",

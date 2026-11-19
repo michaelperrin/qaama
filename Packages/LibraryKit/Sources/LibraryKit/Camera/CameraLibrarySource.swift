@@ -46,8 +46,18 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
     public private(set) var currentImport: CameraImport?
     /// How many videos the device holds: they aren't listed, the grid shows photos only.
     public private(set) var movieCount = 0
-    /// How many of the photos listed weren't imported yet.
+    /// How many photos the device holds that weren't imported yet.
     public private(set) var newPhotoCount = 0
+    /// How many photos the device holds, listed or not (`hidesImported`).
+    public private(set) var photoCount = 0
+    /// Leaves the photos imported already out of the listing: only what is left to import shows.
+    public var hidesImported = false {
+        didSet {
+            if hidesImported != oldValue, state == .listed {
+                publish()
+            }
+        }
+    }
 
     /// Nothing is stored about the photos; they can be deleted from the device where it allows
     /// it (not a card whose lock is on), which is known once it is listed.
@@ -70,8 +80,9 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
     private var byID: [LibraryAsset.ID: LibraryAsset] = [:]
     /// The photos among `files`, videos left aside, as they are announced; emptied once listed.
     private var announced: [LibraryAsset] = []
-    /// How many photos `files` holds.
-    private var photoCount = 0
+    /// How many photos `files` holds, a RAW and its JPEG counted apart: what the listing in
+    /// progress goes by.
+    private var announcedCount = 0
     private var listingStart = ContinuousClock.now
     /// Decoded thumbnails; the system drops them under memory pressure.
     private let quickCache = NSCache<NSString, CGImage>()
@@ -116,7 +127,7 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
         case let .added(added):
             for file in added {
                 if files.updateValue(file, forKey: file.id) == nil, !file.isMovie {
-                    photoCount += 1
+                    announcedCount += 1
                     if state == .listing {
                         announced.append(LibraryAsset(file))
                     }
@@ -128,13 +139,13 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
             }
         case let .progress(fraction):
             guard state == .listing else { return }
-            let expected = Self.expectedCount(found: photoCount, fraction: fraction, previous: listingProgress?.total)
-            listingProgress = expected.map { IndexingProgress(done: photoCount, total: $0) }
+            let expected = Self.expectedCount(found: announcedCount, fraction: fraction, previous: listingProgress?.total)
+            listingProgress = expected.map { IndexingProgress(done: announcedCount, total: $0) }
             foundPhotos = announced
         case let .removed(ids):
             for id in ids {
                 if let removed = files.removeValue(forKey: id), !removed.isMovie {
-                    photoCount -= 1
+                    announcedCount -= 1
                     announced.removeAll { $0.id == id }
                 }
             }
@@ -169,10 +180,12 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
             listing.markImported { id in files[id].map { history.contains(ImportedFileSignature($0)) } ?? false }
         }
         movieCount = listing.movieCount
+        photoCount = listing.assets.count
         newPhotoCount = listing.assets.count { !$0.isImported }
-        byID = Dictionary(uniqueKeysWithValues: listing.assets.map { ($0.id, $0) })
-        assets = AssetCollection(listing.assets)
-        timeline = DateTimeline(dates: listing.assets.map(\.creationDate))
+        let shown = hidesImported ? listing.assets.filter { !$0.isImported } : listing.assets
+        byID = Dictionary(uniqueKeysWithValues: shown.map { ($0.id, $0) })
+        assets = AssetCollection(shown)
+        timeline = DateTimeline(dates: shown.map(\.creationDate))
     }
 
     /// The history of imports changed: the photos are marked again.
@@ -307,13 +320,14 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
         var copied: [URL] = []
         var skipped = 0
         var errors: [String] = []
-        var signatures: [ImportedFileSignature] = []
+        // The files that are at the destination now, copied or found there.
+        var arrived: [CameraFile] = []
         for file in [asset.id, asset.pairedAssetID].compactMap(\.self).compactMap({ files[$0] }) {
             // File system work, however short, stays off the main actor.
             let placement = await Task.detached { CameraImportFiles.placement(name: file.name, byteSize: file.byteSize, in: directory) }.value
             guard case let .copy(destination) = placement else {
                 skipped += 1
-                signatures.append(ImportedFileSignature(file))
+                arrived.append(file)
                 continue
             }
             let result: Result<URL, any Error>? = await queue.run(.copy) {
@@ -329,13 +343,13 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
             switch result {
             case let .success(url):
                 copied.append(url)
-                signatures.append(ImportedFileSignature(file))
+                arrived.append(file)
             case let .failure(error): errors.append(error.localizedDescription)
             // Cancelled before its turn: the photo isn't counted as gone through.
             case nil: return
             }
         }
-        job.record(copied: copied, skipped: skipped, errors: errors, files: signatures)
+        job.record(copied: copied, skipped: skipped, errors: errors, files: arrived)
     }
 
     /// Copies the files of one photo into a folder of their own, checks them, and hands them to
@@ -363,9 +377,35 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
             }
         }
         do {
-            try await job.record(photoID: makePhoto(photo), files: photoFiles.map(ImportedFileSignature.init))
+            try await job.record(photoID: makePhoto(photo), files: photoFiles)
         } catch {
             job.record(errors: [error.localizedDescription])
+        }
+    }
+
+    /// Deletes from the device the files an import brought, or found already at the destination:
+    /// never one that failed, nor one the import didn't get to. For good, as any deletion from a
+    /// device. Returns how many files were deleted.
+    @discardableResult
+    public func deleteImported(by job: CameraImport) async throws -> Int {
+        guard job.isFinished, capabilities.contains(.deletion) else { throw LibrarySourceError.unsupported(.deletion) }
+        let ids = job.importedFileIDs.filter { files[$0] != nil }
+        guard !ids.isEmpty else { return 0 }
+        let result: Result<[CameraFile.ID], any Error>? = await queue.run(.copy) {
+            do {
+                return try await .success(connection.delete(ids))
+            } catch {
+                return .failure(error)
+            }
+        }
+        guard let result else { return 0 }
+        do {
+            let deleted = try result.get()
+            receive(.removed(deleted))
+            logger.notice("Deleted \(deleted.count) imported files from \(self.displayName, privacy: .public)")
+            return deleted.count
+        } catch {
+            throw LibrarySourceError.deletionFailed(error.localizedDescription)
         }
     }
 

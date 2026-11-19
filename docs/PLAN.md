@@ -2193,6 +2193,23 @@ Interface
             `onlyAssetIDs` est celle d'un groupe ouvert depuis la carte, avec son bouton
             « Back to the Map » qui la lève ; l'import a donc la sienne,
             `LibraryQuery.fixedAssetIDs`, que rien dans l'interface ne lève.
+          - Demande de Michaël après essai : plusieurs entrées, avec la date et l'heure,
+            conservées au relancement. Fait : section « Imports » de la barre latérale, les
+            dix derniers imports (`ImportHistory.imports`), chacun sous sa date ; les fichiers
+            d'un import sorti de la liste restent connus comme importés. Le premier format du
+            fichier (un seul import, quelques heures le 19/11) est encore lu.
+          - Retours de Michaël (19/11/2026) : section renommée « Last Imports » ; un import
+            peut recevoir un nom (clic droit › « Rename… », annulable, `ImportRecord.name`),
+            et retrouve sa date si le nom est vidé ; case « Hide Already Imported » dans la
+            barre d'outils de l'appareil (`CameraLibrarySource.hidesImported`, retenue).
+            Question posée : faut-il confirmer l'annulation d'un import ? Avis donné : non,
+            vers un dossier les fichiers vont à la corbeille et le rétablissement les en
+            ressort ; vers Photos, c'est Photos qui demande. À décider par Michaël.
+          - Noter et marquer pendant la revue sur la carte : remis à plus tard (Michaël,
+            19/11/2026).
+          - Suppression sur l'appareil après import (case de la feuille, jamais retenue) :
+            seules les photos arrivées à destination sont supprimées
+            (`deleteImported(by:)`), une fois l'import fini.
           - Aperçu des dossiers de destination dans la feuille (jour et nombre de photos) ;
             pas de case pour décocher une journée.
           - Suppression sur la carte : menu contextuel et Image › Delete, après confirmation,

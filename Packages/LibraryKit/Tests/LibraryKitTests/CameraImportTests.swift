@@ -253,7 +253,7 @@ struct CameraImportTests {
         // The card on screen follows at once.
         #expect(card.newPhotoCount == 1)
         #expect(card.assets.filter(\.isImported).map(\.id).sorted() == ["DCIM/100/IMG_0001.JPG", "DCIM/100/IMG_0002.CR2"])
-        #expect(history.lastImport?.relativePaths == ["IMG_0001.JPG"])
+        #expect(history.imports.first?.relativePaths == ["IMG_0001.JPG"])
 
         // Pulled out, the app relaunched, the card plugged in again: the history was kept.
         await history.settled()
@@ -261,7 +261,7 @@ struct CameraImportTests {
         await reopened.load()
         #expect(reopened.contains(ImportedFileSignature(files[0])))
         #expect(!reopened.contains(ImportedFileSignature(files[3])))
-        #expect(reopened.lastImport == history.lastImport)
+        #expect(reopened.imports == history.imports)
         browser.onDisconnect?("first")
         let (again, _) = try await plug(id: "second")
         #expect(again.newPhotoCount == 1)
@@ -270,13 +270,13 @@ struct CameraImportTests {
         // Undoing the import makes its photos new again; redoing, imported again.
         undoManager.undo()
         #expect(again.newPhotoCount == 3)
-        #expect(history.lastImport == nil)
+        #expect(history.imports.isEmpty)
         undoManager.redo()
         #expect(again.newPhotoCount == 1)
-        #expect(history.lastImport != nil)
+        #expect(history.imports.count == 1)
     }
 
-    @Test func theLastImportShowsItsPhotosAloneInTheFolderTheyWentTo() async throws {
+    @Test func anImportShowsItsPhotosAloneInTheFolderTheyWentTo() async throws {
         let base = FileManager.default.temporaryDirectory.appendingPathComponent("CameraImportTests-\(UUID().uuidString)")
         let root = base.appendingPathComponent("Photos")
         try FileManager.default.createDirectory(at: root.appendingPathComponent("2021/2021-11-10"), withIntermediateDirectories: true)
@@ -297,7 +297,7 @@ struct CameraImportTests {
         }
         folder.registerImport(of: imported.map { root.appendingPathComponent($0) }, undoManager: nil)
         let record = ImportRecord(deviceName: "EOS_DIGITAL", destination: .folder(id: folder.id), relativePaths: imported)
-        guard case let .folder(view, scannedBy, _) = catalog.library(forLastImport: record) else {
+        guard case let .folder(view, scannedBy, _) = catalog.library(forImport: record) else {
             Issue.record("The last import should show through a view of its folder")
             return
         }
@@ -307,16 +307,151 @@ struct CameraImportTests {
         // Before the folder has listed the new files, nothing shows: never the whole folder.
         #expect(view.assets.isEmpty)
         await waitUntil { folder.assets.count == 4 }
-        await catalog.refreshLastImport(record)
+        await catalog.refreshImport(record)
         await waitUntil { view.assets.count == 2 }
         #expect(view.assets.count == 2)
         // The folder's own entry still shows everything, and the same view serves the same import.
         #expect(folder.assets.count == 4)
-        if case let .folder(again, _, _) = catalog.library(forLastImport: record) {
+        if case let .folder(again, _, _) = catalog.library(forImport: record) {
             #expect(again === view)
         }
         // A folder removed from the sidebar takes its last import with it.
-        #expect(catalog.library(forLastImport: ImportRecord(deviceName: "X", destination: .folder(id: UUID()), relativePaths: [])) == nil)
+        #expect(catalog.library(forImport: ImportRecord(deviceName: "X", destination: .folder(id: UUID()), relativePaths: [])) == nil)
+    }
+
+    @Test func importsAreListedMostRecentFirstAndKeptAcrossLaunches() async {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("CameraImportTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: base) }
+        let file = base.appendingPathComponent("History.json")
+        let history = ImportHistory(fileURL: file)
+        let start = Date(timeIntervalSince1970: 1_790_000_000)
+        // More imports than the list keeps, not told in order.
+        let records = (0 ..< ImportHistory.limit + 3).map { number in
+            ImportRecord(date: start.addingTimeInterval(Double(number) * 3600), deviceName: "Card \(number)", destination: .photos(albumID: nil), photoIDs: ["photo-\(number)"])
+        }
+        for record in records.shuffled() {
+            history.record(record, files: [ImportedFileSignature(name: "IMG_\(record.deviceName).JPG", byteSize: 10, captureDate: record.date)], undoManager: nil)
+        }
+        #expect(history.imports.count == ImportHistory.limit)
+        #expect(history.imports.map(\.deviceName) == records.reversed().prefix(ImportHistory.limit).map(\.deviceName))
+        #expect(history.record(id: records[5].id)?.photoIDs == ["photo-5"])
+        // An import pushed out of the list: its photos still count as imported.
+        #expect(history.record(id: records[0].id) == nil)
+        #expect(history.contains(ImportedFileSignature(name: "IMG_Card 0.JPG", byteSize: 10, captureDate: records[0].date)))
+
+        await history.settled()
+        let relaunched = ImportHistory(fileURL: file)
+        await relaunched.load()
+        #expect(relaunched.imports == history.imports)
+        #expect(relaunched.contains(ImportedFileSignature(name: "IMG_Card 0.JPG", byteSize: 10, captureDate: records[0].date)))
+
+        // Undoing one of them takes it out of the list, the others stay.
+        let undoManager = UndoManager()
+        undoManager.groupsByEvent = false
+        undoManager.beginUndoGrouping()
+        let newest = ImportRecord(date: start.addingTimeInterval(100 * 3600), deviceName: "Newest", destination: .photos(albumID: nil), photoIDs: ["n"])
+        relaunched.record(newest, files: [], undoManager: undoManager)
+        undoManager.endUndoGrouping()
+        #expect(relaunched.imports.first?.deviceName == "Newest")
+        undoManager.undo()
+        #expect(relaunched.imports == history.imports)
+    }
+
+    @Test func aHistoryThatKeptOneImportOnlyIsStillRead() async throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("CameraImportTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let file = base.appendingPathComponent("History.json")
+        let record = ImportRecord(deviceName: "EOS_DIGITAL", destination: .photos(albumID: nil), photoIDs: ["a"])
+        let signature = ImportedFileSignature(name: "IMG_0001.JPG", byteSize: 300, captureDate: date(2021, 11, 10))
+        // As the first version of the file was written.
+        struct Legacy: Encodable {
+            var signatures: [ImportedFileSignature]
+            var lastImport: ImportRecord?
+        }
+        try JSONEncoder().encode(Legacy(signatures: [signature], lastImport: record)).write(to: file)
+
+        let history = ImportHistory(fileURL: file)
+        await history.load()
+        #expect(history.imports == [record])
+        #expect(history.contains(signature))
+    }
+
+    @Test func anImportCanBeNamedAndGoBackToItsDate() {
+        let history = ImportHistory()
+        let record = ImportRecord(deviceName: "EOS_DIGITAL", destination: .photos(albumID: nil), photoIDs: ["a"])
+        history.record(record, files: [], undoManager: nil)
+        let undoManager = UndoManager()
+        undoManager.groupsByEvent = false
+
+        undoManager.beginUndoGrouping()
+        history.rename(record.id, to: "  Venice  ", undoManager: undoManager)
+        undoManager.endUndoGrouping()
+        #expect(history.record(id: record.id)?.name == "Venice")
+        #expect(undoManager.undoActionName == "Rename Import")
+        undoManager.undo()
+        #expect(history.record(id: record.id)?.name == nil)
+        undoManager.redo()
+        #expect(history.record(id: record.id)?.name == "Venice")
+        // Nothing but spaces: no name.
+        history.rename(record.id, to: "   ", undoManager: nil)
+        #expect(history.record(id: record.id)?.name == nil)
+    }
+
+    @Test func thePhotosImportedAlreadyCanBeLeftOutOfTheListing() async {
+        let files = [
+            CameraFile(id: "DCIM/100/IMG_0001.JPG", byteSize: 300, creationDate: date(2021, 11, 10)),
+            CameraFile(id: "DCIM/100/IMG_0002.JPG", byteSize: 200, creationDate: date(2021, 11, 11)),
+            CameraFile(id: "DCIM/100/IMG_0003.JPG", byteSize: 100, creationDate: date(2021, 11, 12)),
+        ]
+        let history = ImportHistory()
+        history.record(ImportRecord(deviceName: "EOS_DIGITAL", destination: .photos(albumID: nil)), files: [ImportedFileSignature(files[1])], undoManager: nil)
+        let connection = FakeCameraConnection()
+        let source = CameraLibrarySource(connection: connection, history: history)
+        await source.load()
+        connection.send(.added(files))
+        connection.send(.listed)
+        #expect(source.assets.count == 3)
+        #expect(source.photoCount == 3)
+        #expect(source.newPhotoCount == 2)
+
+        source.hidesImported = true
+        #expect(source.assets.map(\.id) == ["DCIM/100/IMG_0003.JPG", "DCIM/100/IMG_0001.JPG"])
+        #expect(source.asset(id: "DCIM/100/IMG_0002.JPG") == nil)
+        #expect(source.timeline?.count == 2)
+        // What the device holds is still told.
+        #expect(source.photoCount == 3)
+        #expect(source.newPhotoCount == 2)
+        source.hidesImported = false
+        #expect(source.assets.count == 3)
+    }
+
+    @Test func thePhotosAnImportBroughtCanBeDeletedFromTheDeviceAndNoOthers() async throws {
+        let fixture = try await makeFixture([
+            CameraFile(id: "DCIM/100/IMG_0001.JPG", byteSize: 300, creationDate: date(2021, 11, 10)),
+            CameraFile(id: "DCIM/100/IMG_0002.CR2", byteSize: 900, creationDate: date(2021, 11, 11), isRAW: true),
+            CameraFile(id: "DCIM/100/IMG_0002.JPG", byteSize: 200, creationDate: date(2021, 11, 11)),
+            CameraFile(id: "DCIM/100/IMG_0003.JPG", byteSize: 100, creationDate: date(2021, 11, 12)),
+            CameraFile(id: "DCIM/100/IMG_0004.JPG", byteSize: 100, creationDate: date(2021, 11, 13)),
+        ])
+        defer { try? FileManager.default.removeItem(at: fixture.base) }
+        // One photo can't be read from the device, one isn't asked for.
+        fixture.connection.contents["DCIM/100/IMG_0003.JPG"] = nil
+        let picked = fixture.source.assets.filter { $0.id != "DCIM/100/IMG_0004.JPG" }
+        let job = try #require(fixture.source.startImport(of: picked, into: .folder(fixture.folder, layout: .flat), named: "Photos"))
+        // Not before the import is over.
+        await #expect(throws: LibrarySourceError.self) { try await fixture.source.deleteImported(by: job) }
+        await job.wait()
+        #expect(job.failures.count == 1)
+
+        #expect(try await fixture.source.deleteImported(by: job) == 3)
+        #expect(fixture.connection.requests.last == "delete DCIM/100/IMG_0002.CR2, DCIM/100/IMG_0002.JPG, DCIM/100/IMG_0001.JPG")
+        // The photo that failed and the one left out are still on the device.
+        #expect(fixture.source.assets.map(\.id) == ["DCIM/100/IMG_0004.JPG", "DCIM/100/IMG_0003.JPG"])
+        // And the copies are where the import put them.
+        #expect(fixture.files() == ["IMG_0001.JPG", "IMG_0002.CR2", "IMG_0002.JPG"])
+        // Asked again: nothing left to delete.
+        #expect(try await fixture.source.deleteImported(by: job) == 0)
     }
 
     @Test func aFileIsToldByItsNameItsSizeAndItsDate() {
