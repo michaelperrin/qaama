@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Five clickable stars. Clicking the current rating again clears it. The 0 to 5 keys are the
-/// Image › Rating menu's.
+/// Image › Rating menu's. In the text's colors, as the menus draw them: next to photos the interface
+/// stays quiet (see AGENTS.md on color).
 struct RatingView: View {
     let rating: Int
     let onChange: (Int) -> Void
@@ -13,7 +14,7 @@ struct RatingView: View {
                     onChange(star == rating ? 0 : star)
                 } label: {
                     Image(systemName: star <= rating ? "star.fill" : "star")
-                        .foregroundStyle(star <= rating ? .yellow : .secondary)
+                        .foregroundStyle(star <= rating ? .primary : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help(star == 1 ? "1 star" : "\(star) stars")
