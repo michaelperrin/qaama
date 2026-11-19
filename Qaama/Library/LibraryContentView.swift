@@ -40,6 +40,14 @@ struct LibraryContentView: View {
     /// Grid or map, for every library that has a map.
     @AppStorage(LibraryDisplay.key) private var display = LibraryDisplay.grid
     @State private var ownMaps = PhotoMapModels()
+    /// The app's Filter panels, so this library's panel is found as it was left; nil (previews)
+    /// keeps them for as long as this view lives.
+    @Environment(LibraryFilterPanels.self) private var filterPanels: LibraryFilterPanels?
+    @State private var ownFilterPanels = LibraryFilterPanels()
+    /// Saves the Filter panel's settings as a preset of this library and updates the preset on screen, where the window can.
+    @Environment(\.filterPresetSaving) private var presetSaving
+    /// The window's title when it isn't the library's name: the preset the library is shown for.
+    @Environment(\.libraryTitle) private var title
     /// Where the grid is scrolled, for the grid that comes back after the editor or after Back.
     @State private var gridPlace = GridPlaceKeeper()
     @Environment(\.undoManager) private var undoManager
@@ -105,7 +113,7 @@ struct LibraryContentView: View {
             EditorView(session: editorSession, filing: filingAction, removeFromAlbum: albumsCommand?.action.remove.map { remove in { remove([]) } }) {
                 closeEditor(editorSession)
             }
-            .navigationTitle(source.displayName)
+            .navigationTitle(title ?? source.displayName)
             .navigationSubtitle("Editing")
             .toolbar {
                 // Icon-only toolbar buttons get the system's round Liquid Glass bezel.
@@ -155,7 +163,7 @@ struct LibraryContentView: View {
             LibraryInspector(source: source, selection: selection, onAdjustDate: adjustDate)
                 .inspectorColumnWidth(EditorInspector.width)
         }
-        .navigationTitle(source.displayName)
+        .navigationTitle(title ?? source.displayName)
         // The grid's subtitle starts with the dates on screen, which change as it scrolls: set from
         // a view of its own, so scrolling doesn't run this body again.
         .background {
@@ -198,7 +206,7 @@ struct LibraryContentView: View {
                     ThumbnailFitToggle()
                 }
             }
-            LibraryQueryToolbar(source: source, showsSort: !showsMap)
+            LibraryQueryToolbar(source: source, panels: filterPanels ?? ownFilterPanels, presets: presetSaving, showsSort: !showsMap)
             ToolbarSpacer(.fixed, placement: .primaryAction)
             ToolbarItem(placement: .primaryAction) {
                 InspectorVisibilityToggle(isVisible: $isInspectorVisible)

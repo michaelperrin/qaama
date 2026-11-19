@@ -50,7 +50,7 @@ struct PhotoMapModelTests {
         model.show(region: Self.france, worldWidth: 20000, spacing: 90)
 
         // Favorites: photos 0, 5 and 10, of which 0 and 10 are in Paris.
-        source.query.favoritesOnly = true
+        source.query.filters.favoritesOnly = true
         await model.load(from: source)
         await model.waitUntilSettled()
         #expect(model.locatedCount == 2)
@@ -68,14 +68,14 @@ struct PhotoMapModelTests {
         #expect(source.assets.count == 2)
         #expect(await source.locatedAssets().count == 6)
 
-        source.query.minimumRating = 3
+        source.query.filters.rating = .atLeast(3)
         #expect(PhotoMapModel.Content(source) != content)
     }
 
     @Test func aChangeOfThePhotosIsLoadedAgain() async throws {
         let source = SampleLibrarySource()
         let model = await loadedModel(source)
-        source.query.minimumRating = 4
+        source.query.filters.rating = .atLeast(4)
         await model.load(from: source)
         // Ratings follow the number modulo 6: photos 4 and 10 are placed and rated 4.
         #expect(model.locatedCount == 2)

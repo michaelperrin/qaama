@@ -25,9 +25,10 @@ actor FakePhotosLibrary: PhotosIndexLibrary {
     }
 
     static func reading(_ id: String, _ fileName: String?, at second: TimeInterval = 0, keywords: [String] = [],
-                        location: GeoCoordinate? = nil) -> PhotosAssetReading
+                        location: GeoCoordinate? = nil, edited: Bool = false) -> PhotosAssetReading
     {
-        PhotosAssetReading(id: id, fileName: fileName, captureDate: Date(timeIntervalSince1970: second), keywords: keywords, location: location)
+        PhotosAssetReading(id: id, fileName: fileName, captureDate: Date(timeIntervalSince1970: second), keywords: keywords, location: location,
+                           hasAdjustments: edited)
     }
 
     // MARK: - Changing the library

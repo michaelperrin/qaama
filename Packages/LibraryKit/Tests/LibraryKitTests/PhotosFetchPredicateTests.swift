@@ -4,8 +4,8 @@ import Testing
 
 struct PhotosFetchPredicateTests {
     /// An asset as the predicate sees it: the keys PhotoKit evaluates.
-    private func asset(_ id: String, favorite: Bool = false, rating: Int = 0, mediaType: Int = 1) -> NSDictionary {
-        ["localIdentifier": id, "isFavorite": favorite, "rating": rating, "mediaType": mediaType]
+    private func asset(_ id: String, favorite: Bool = false, rating: Int = 0, mediaType: Int = 1, date: TimeInterval = 0) -> NSDictionary {
+        ["localIdentifier": id, "isFavorite": favorite, "rating": rating, "mediaType": mediaType, "creationDate": Date(timeIntervalSince1970: date)]
     }
 
     private var index: PhotosIndexSnapshot {
@@ -16,9 +16,9 @@ struct PhotosFetchPredicateTests {
                          search: [String]? = nil) -> [String]
     {
         // No predicate: nothing can match, the source lists nothing.
-        guard let predicate = PhotosFetchPredicate.make(query: query, native: native, index: index, searchMatches: search) else { return [] }
-        let library = [asset("raw", favorite: true, rating: 4), asset("pair-raw"), asset("pair-jpeg", rating: 5), asset("jpeg", favorite: true),
-                       asset("video", mediaType: 2)]
+        guard let predicate = PhotosFetchPredicate.make(query: query, native: native, index: index, indexMatches: search) else { return [] }
+        let library = [asset("raw", favorite: true, rating: 4, date: 100), asset("pair-raw", date: 200), asset("pair-jpeg", rating: 5, date: 200),
+                       asset("jpeg", favorite: true, date: 300), asset("video", mediaType: 2)]
         return library.filter { predicate.evaluate(with: $0) }.compactMap { $0["localIdentifier"] as? String }
     }
 
@@ -32,7 +32,7 @@ struct PhotosFetchPredicateTests {
 
     @Test func rawOnlyKeepsTheLibrarysRAWSet() {
         var query = LibraryQuery()
-        query.rawOnly = true
+        query.filters.rawOnly = true
         #expect(matches(query, index: index) == ["raw", "pair-raw"])
 
         // The twins aren't RAW, shown or not.
@@ -42,15 +42,34 @@ struct PhotosFetchPredicateTests {
 
     @Test func combinesWithTheNativeFilters() {
         var query = LibraryQuery()
-        query.rawOnly = true
-        query.favoritesOnly = true
-        query.minimumRating = 3
+        query.filters.rawOnly = true
+        query.filters.favoritesOnly = true
+        query.filters.rating = .atLeast(3)
         #expect(matches(query, index: index) == ["raw"])
 
         // A system whose PhotoKit doesn't filter on ratings ignores that part.
         #expect(matches(query, index: index, native: [.favorite]) == ["raw"])
-        query.favoritesOnly = false
+        query.filters.favoritesOnly = false
         #expect(matches(query, index: index, native: [.favorite]) == ["raw", "pair-raw"])
+    }
+
+    @Test func comparesRatingsEitherWay() {
+        var query = LibraryQuery()
+        query.includesPairedJPEGs = true
+        query.filters.rating = RatingFilter(.atLeast, 4)
+        #expect(matches(query, index: index) == ["raw", "pair-jpeg"])
+        query.filters.rating = RatingFilter(.atMost, 4)
+        #expect(matches(query, index: index) == ["raw", "pair-raw", "jpeg"])
+        query.filters.rating = RatingFilter(.exactly, 0)
+        #expect(matches(query, index: index) == ["pair-raw", "jpeg"])
+    }
+
+    @Test func keepsThePhotosTakenWithinTheDates() {
+        var query = LibraryQuery()
+        query.filters.captureDates = Date(timeIntervalSince1970: 100) ..< Date(timeIntervalSince1970: 300)
+        #expect(matches(query, index: index) == ["raw", "pair-raw"])
+        // Native, so without an index too.
+        #expect(matches(query, index: nil) == ["raw", "pair-raw", "pair-jpeg"])
     }
 
     @Test func searchKeepsTheAssetsTheIndexFound() {
@@ -67,21 +86,21 @@ struct PhotosFetchPredicateTests {
     @Test func searchCombinesWithRAWOnlyAndNativeFilters() {
         var query = LibraryQuery()
         query.searchText = "anything"
-        query.rawOnly = true
+        query.filters.rawOnly = true
         #expect(matches(query, index: index, search: ["raw", "jpeg", "pair-jpeg"]) == ["raw"])
 
-        query.rawOnly = false
-        query.favoritesOnly = true
+        query.filters.rawOnly = false
+        query.filters.favoritesOnly = true
         #expect(matches(query, index: index, search: ["raw", "pair-raw"]) == ["raw"])
     }
 
     @Test func nothingToListWhenTheListsAreEmpty() {
         var query = LibraryQuery()
         query.searchText = "anything"
-        #expect(PhotosFetchPredicate.make(query: query, native: [], index: index, searchMatches: []) == nil)
+        #expect(PhotosFetchPredicate.make(query: query, native: [], index: index, indexMatches: []) == nil)
         // Found photos, none of them RAW.
-        query.rawOnly = true
-        #expect(PhotosFetchPredicate.make(query: query, native: [], index: index, searchMatches: ["jpeg"]) == nil)
+        query.filters.rawOnly = true
+        #expect(PhotosFetchPredicate.make(query: query, native: [], index: index, indexMatches: ["jpeg"]) == nil)
         // No RAW in the library at all.
         #expect(PhotosFetchPredicate.make(query: query, native: [], index: PhotosIndexSnapshot()) == nil)
     }
@@ -94,17 +113,17 @@ struct PhotosFetchPredicateTests {
         // Without an index too: the group doesn't come from it.
         #expect(matches(query, index: nil) == ["raw", "pair-jpeg", "jpeg"])
 
-        query.rawOnly = true
+        query.filters.rawOnly = true
         #expect(matches(query, index: index) == ["raw"])
-        query.rawOnly = false
+        query.filters.rawOnly = false
         query.searchText = "anything"
         #expect(matches(query, index: index, search: ["jpeg", "pair-raw"]) == ["jpeg"])
-        #expect(PhotosFetchPredicate.make(query: query, native: [], index: index, searchMatches: ["pair-raw"]) == nil)
+        #expect(PhotosFetchPredicate.make(query: query, native: [], index: index, indexMatches: ["pair-raw"]) == nil)
     }
 
     @Test func withoutAnIndexOnlyNativeFiltersApply() {
         var query = LibraryQuery()
-        query.rawOnly = true
+        query.filters.rawOnly = true
         #expect(matches(query, index: nil) == ["raw", "pair-raw", "pair-jpeg", "jpeg"])
     }
 }

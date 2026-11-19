@@ -1,9 +1,14 @@
 import LibraryKit
 import SwiftUI
 
-/// Sort and filter controls for a library, as toolbar items. Controls the source doesn't support are hidden.
+/// Sort and filter controls for a library, as toolbar items: the Sort menu and the button of the
+/// Filter panel. Controls the source doesn't support are hidden.
 struct LibraryQueryToolbar: ToolbarContent {
     let source: any LibrarySource
+    /// What the Filter panel of each library shows.
+    let panels: LibraryFilterPanels
+    /// Saving the Filter panel's settings as a preset; nil where presets can't be saved.
+    var presets: FilterPresetSaving?
     /// False next to the map, where the order of the photos shows nowhere.
     var showsSort = true
 
@@ -39,49 +44,7 @@ struct LibraryQueryToolbar: ToolbarContent {
             }
         }
         ToolbarItem {
-            Menu {
-                if supports.contains(.rating) {
-                    Picker("Rating", selection: query.minimumRating) {
-                        Text("Any Rating").tag(0)
-                        ForEach(1 ... 5, id: \.self) { stars in
-                            Text("\(stars)+ Stars").tag(stars)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                    Divider()
-                }
-                if supports.contains(.flag) {
-                    Picker("Flag", selection: query.flag) {
-                        Text("Any Flag").tag(LibraryQuery.FlagFilter.any)
-                        Text("Picked").tag(LibraryQuery.FlagFilter.picked)
-                        Text("Rejected").tag(LibraryQuery.FlagFilter.rejected)
-                        Text("Unflagged").tag(LibraryQuery.FlagFilter.unflagged)
-                        Text("Not Rejected").tag(LibraryQuery.FlagFilter.notRejected)
-                    }
-                    .pickerStyle(.inline)
-                    Divider()
-                }
-                if supports.contains(.edited) {
-                    Toggle("Edited Only", isOn: query.editedOnly)
-                }
-                if supports.contains(.raw) {
-                    Toggle("RAW Only", isOn: query.rawOnly)
-                }
-                if supports.contains(.favorite) {
-                    Toggle("Favorites Only", isOn: query.favoritesOnly)
-                }
-                if supports.contains(.pairedJPEGs) {
-                    Divider()
-                    Toggle("Show JPEG Twins of RAW Files", isOn: query.includesPairedJPEGs)
-                }
-                if !source.query.isUnfiltered {
-                    Divider()
-                    Button("Clear Filters") { source.query = source.query.clearingFilters }
-                }
-            } label: {
-                Label("Filter", systemImage: source.query.isUnfiltered ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
-            }
-            .help("Filters")
+            FilterButton(source: source, panels: panels, presets: presets)
         }
     }
 }

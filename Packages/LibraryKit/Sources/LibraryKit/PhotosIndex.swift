@@ -37,7 +37,7 @@ public final class PhotosIndex {
     public private(set) var snapshot = PhotosIndexSnapshot()
     /// Set while a pass long enough to matter is running.
     public private(set) var progress: IndexingProgress?
-    /// Bumped when a pass changed what `search` and `locatedAssets` read (names, keywords, positions):
+    /// Bumped when a pass changed what `search` and `locatedAssets` read (names, keywords, positions, edits):
     /// searches and maps in use are run again.
     public private(set) var contentVersion = 0
 
@@ -91,10 +91,11 @@ public final class PhotosIndex {
         update()
     }
 
-    /// The assets whose file name or keywords hold every word of `text` (see `PhotosIndexStore.search`),
-    /// among those indexed so far; nil when `text` has no word.
-    public func search(_ text: String) async throws -> [String]? {
-        try await store.search(text)
+    /// The assets whose file name or keywords hold every word of `text`, that were taken within
+    /// `place` and were edited or not as `edits` says (see `PhotosIndexStore.search`), among those
+    /// indexed so far; nil when nothing is asked.
+    public func search(_ text: String, within place: PlaceFilter? = nil, edits: EditsFilter? = nil) async throws -> [String]? {
+        try await store.search(text, within: place, edits: edits)
     }
 
     /// The assets indexed so far that have a position (see `PhotosIndexStore.locatedAssets`).

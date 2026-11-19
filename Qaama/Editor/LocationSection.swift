@@ -60,7 +60,9 @@ struct LocationSection: View {
     private var content: some View {
         if model.isEditing {
             searchField
-            results
+            PlaceSearchResults(search: model.places) { suggestion in
+                Task { await model.pick(suggestion, undoManager: undoManager) }
+            }
         }
         if model.isEditing || model.location != nil {
             map
@@ -81,9 +83,10 @@ struct LocationSection: View {
     private var searchField: some View {
         // Brought into view with the results and the map below it when it takes the keyboard: the
         // section is the last of the panel, often below its fold when the menu bar starts editing.
-        SearchField(text: $model.query, prompt: "Search for a place", controlSize: .regular, revealedBelow: 260,
-                    onMove: { offset in model.moveHighlight(by: offset) },
-                    onSubmit: { Task { await model.pickHighlighted(undoManager: undoManager) } })
+        @Bindable var places = model.places
+        return SearchField(text: $places.query, prompt: "Search for a place", controlSize: .regular, revealedBelow: 260,
+                           onMove: { offset in places.moveHighlight(by: offset) },
+                           onSubmit: { Task { await model.pickHighlighted(undoManager: undoManager) } })
             .accessibilityLabel("Search for a place")
     }
 
@@ -158,30 +161,6 @@ struct LocationSection: View {
         }
     }
 
-    /// What the search found, while something is typed.
-    @ViewBuilder
-    private var results: some View {
-        if !model.query.trimmingCharacters(in: .whitespaces).isEmpty {
-            if model.suggestions.isEmpty {
-                HStack(spacing: 6) {
-                    if model.isSearching {
-                        ProgressView().controlSize(.small)
-                        Text("Searching…")
-                    } else if model.errorMessage == nil {
-                        Text("No places found")
-                    }
-                }
-                .foregroundStyle(.secondary)
-            } else {
-                ForEach(model.suggestions) { suggestion in
-                    PlaceSuggestionRow(suggestion: suggestion, isHighlighted: suggestion.id == model.highlightedID) {
-                        Task { await model.pick(suggestion, undoManager: undoManager) }
-                    }
-                }
-            }
-        }
-    }
-
     @ViewBuilder
     private var footer: some View {
         if model.isEditing {
@@ -194,39 +173,6 @@ struct LocationSection: View {
                 .textSelection(.enabled)
                 .accessibilityLabel("Place: \(named.name)")
         }
-    }
-}
-
-/// One place found by the search: its name and, dimmed, where it is. Chosen by a click, or by
-/// Return when highlighted (the arrow keys move the highlight from the search field).
-private struct PlaceSuggestionRow: View {
-    let suggestion: PlaceSuggestion
-    let isHighlighted: Bool
-    let pick: () -> Void
-
-    var body: some View {
-        Button(action: pick) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(suggestion.title)
-                    .lineLimit(1)
-                if !suggestion.subtitle.isEmpty {
-                    Text(suggestion.subtitle)
-                        .font(.callout)
-                        .lineLimit(1)
-                        .foregroundStyle(isHighlighted ? AnyShapeStyle(Color(nsColor: .alternateSelectedControlTextColor).opacity(0.8)) : AnyShapeStyle(.secondary))
-                }
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            // The colors of a selected row in a list that has the keyboard, as the system draws it.
-            .foregroundStyle(isHighlighted ? AnyShapeStyle(Color(nsColor: .alternateSelectedControlTextColor)) : AnyShapeStyle(.primary))
-            .background(isHighlighted ? AnyShapeStyle(Color(nsColor: .selectedContentBackgroundColor)) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 5))
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .help([suggestion.title, suggestion.subtitle].filter { !$0.isEmpty }.joined(separator: ", "))
-        .accessibilityAddTraits(isHighlighted ? .isSelected : [])
     }
 }
 

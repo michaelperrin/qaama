@@ -587,6 +587,93 @@ Bibliothèque
       favoris, note (prédicats confirmés par sonde, PhotoKit ne documente pas la note).
       Prefetch des vignettes Photos le 30/10/2026 (fenêtre de 60 lignes autour de l'écran via
       `PHCachingImageManager`, libérée au-delà). Reste : filtre par type de fichier.
+      Panneau de filtres le 19/11/2026 (demande de Michaël, sur le principe de celui de
+      Photomator) : le menu de filtres devient un popover à cases à cocher (Favorites, Edited,
+      RAW, Rating, Flag, Date, Location), avec interrupteur général et remise à zéro.
+      - Nouveaux filtres : note comparée dans les deux sens (au moins, au plus, exactement, et
+        « Unrated »), bornes incluses, sinon « plus de 5 étoiles » ne listerait rien ; plage de
+        dates en jours entiers du calendrier ; lieu avec rayon de 50 m à 1 000 km (borne basse à 1 km d'abord, abaissée le même jour à la demande de Michaël ; mètres ou pieds affichés sous 1 km ou 1 mile) (curseur
+        logarithmique, champ, carte qui dessine le disque et où l'on clique le centre, recherche
+        de lieu partagée avec le panneau Info : `PlaceSearchModel`).
+      - Modèle : `LibraryQuery.filters` (`LibraryFilters`) ne dit que ce qui s'applique, c'est
+        tout ce que lisent les sources ; ce que montre le panneau (cases, valeurs gardées case
+        décochée, interrupteur) est `LibraryFilterSettings`, gardé par bibliothèque dans
+        `LibraryFilterPanels`. Si la requête a été changée autrement, le panneau se relit
+        depuis elle.
+      - Dossiers : SQL (dates et position corrigées prises en compte, position retirée = aucun
+        lieu). Pour le lieu, SQLite garde la boîte autour du disque (antiméridien et pôles
+        traités) et la distance (haversine) est mesurée en Swift, SQLite n'ayant pas de
+        trigonométrie garantie. Photos : dates et note en prédicat natif ; lieu par l'index
+        local (positions déjà indexées pour la carte), rendu en liste d'identifiants comme la
+        recherche, donc partiel tant que l'index n'est pas fini (bandeau).
+      - Mesures (Debug, données synthétiques) : lieu sur 74 000 photos indexées, 7 ms pour un
+        rayon de 25 ou 200 km, 32 ms pour 1 000 km (55 000 photos retenues) ; dossier de
+        20 000 photos, 4 ms à 25 km, 59 ms à 200 km, le coût étant le décodage des lignes
+        retenues (377 ms sans filtre). Le rayon n'est appliqué qu'au relâchement du curseur
+        (ou après 300 ms de pause), le disque suit en direct.
+      - Vérifié : tests des filtres, du SQL, du prédicat, de l'index et de l'état du panneau ;
+        mise en page par sonde hors écran, clair et sombre. Non vérifié par moi, à confirmer
+        par Michaël dans l'appli : le popover lui-même (carte MapKit dans un popover, clic sur
+        la carte, champ de recherche et ses résultats au clavier, sélecteurs de date), le
+        disque en couleur d'accent grise sur la carte, le filtre par lieu et par dates sur la
+        vraie photothèque.
+      - Écarts voulus avec Photomator : pas de ligne « File Name » (la recherche de la barre
+        d'outils couvre noms et mots-clés) ; libellés et icônes de Qaama.
+      Filtres enregistrés le 19/11/2026 (demande de Michaël) : « Save as Preset… » en bas du
+      panneau de filtres, nom demandé par la fenêtre, puis une entrée par preset dans une
+      section « Saved Filters » de la barre latérale ; clic droit : « Rename Preset… » et
+      « Delete Preset ».
+      - Choix : un preset = les réglages du panneau + la bibliothèque où il a été enregistré
+        (Photos, un album, un dossier ou un sous-dossier), comme un album intelligent. Il n'y a
+        pas de grille de toutes les bibliothèques à filtrer, et un preset « sans bibliothèque »
+        n'aurait rien à montrer au clic. Pas de preset depuis la carte de toutes les
+        bibliothèques (elle ne liste aucune photo) : à faire si le besoin se présente, au prix
+        d'une `CombinedLibrarySource` par preset.
+      - Chaque preset a sa propre source (`LibraryCatalog.library(for:)`, créée au premier
+        clic avec les filtres déjà posés, gardée pour la session), comme la carte : filtrer
+        dans un preset ne touche pas à ce que montre l'entrée « Photos » ou le dossier. Pour un
+        dossier, la vue suit le catalogue sans scanner (`FolderLibrarySource.makeView()`), et
+        la source du dossier est chargée à côté pour le scan et la surveillance.
+      - Les filtres restent modifiables dans un preset, sans le modifier : revenir sur le
+        preset le remontre tel qu'enregistré.
+      - Mise à jour d'un preset (le même jour, validé par Michaël) : dans un preset, le bouton
+        du panneau devient « Update Preset », bouton scindé du système (`Menu` avec
+        `primaryAction`) dont la flèche ouvre « Save as New Preset… ». Actif seulement si les
+        filtres ne demandent plus la même chose que le preset
+        (`LibraryFilterSettings.asksTheSame`, qui ignore les valeurs derrière une case
+        décochée). Annulable (« Update Filter Preset »).
+      - Dates relatives (le même jour) : la ligne Date porte un sélecteur « Between » / « In the
+        Last », le second avec un nombre et une unité (jours, semaines, mois, années),
+        `RelativeDateSpan`. La plage va du même jour il y a N unités à la fin d'aujourd'hui.
+        `LibraryFilters` reste en dates absolues (les sources n'ont rien appris) : c'est
+        `LibraryFilterSettings.filters(now:)` qui calcule, et `LibraryFilterPanels` redemande
+        aux bibliothèques concernées au changement de jour (`NSCalendarDayChanged`). Le panneau
+        compare désormais la requête à ce qu'il avait demandé, pas à ce que ses réglages
+        diraient maintenant, sinon minuit transformait « 30 derniers jours » en deux dates
+        fixes. Un preset relatif est recalculé à chaque fois qu'on y vient. Champ optionnel
+        dans le JSON : les presets déjà enregistrés se relisent.
+        Non vérifié par moi : le bouton scindé et les champs dans le vrai popover, le passage
+        de minuit avec l'appli ouverte (testé par horloge injectée seulement).
+      - Édité / non édité (le même jour, demande de Michaël) : la case « Edited » devient la
+        ligne « Edits » avec un menu « Edited » / « Not Edited » (`EditsFilter`). Dossiers :
+        `hasEdit` du catalogue (une recette Qaama). Photos : « modifiée par n'importe quelle
+        appli » (choix validé par Michaël, c'est aussi le sens du badge des vignettes), par le
+        l'index local. Le prédicat natif `hasAdjustments` a été sondé d'abord et PhotoKit le
+        refuse sur macOS 27 (journal du 19/11/2026 : « edited filter false ») : colonne
+        `hasAdjustments` de `photosAsset` (migration v10, l'index repart de zéro, une
+        demi-minute en fond), lue par `PhotosIndexer` avec le reste, et le filtre passe par la
+        même recherche dans l'index que le texte et le lieu (liste d'identifiants). « Not
+        Edited » donne une longue liste : 200 ms environ hors acteur principal d'après les
+        mesures de la recherche (52 000 identifiants) ; à optimiser en `NOT IN` si ça gêne.
+        Une retouche enregistrée fait repasser l'index (une seconde après) et relister.
+        Non vérifié par moi sur la vraie photothèque.
+      - Stockage : `FilterPresets.json` dans Application Support (`FilterPresetStore`), pas le
+        catalogue, qui doit rester reconstructible. Enregistrer, renommer et supprimer sont
+        annulables (la suppression ne demande donc pas confirmation).
+      - Vérifié : tests du magasin (tri, fichier, annulation) et des sources propres aux
+        presets ; mise en page du bouton et de la section par sonde hors écran. Non vérifié par
+        moi, à confirmer par Michaël dans l'appli : l'alerte de nom à la fermeture du popover,
+        le clic sur un preset (Photos, album, dossier), le menu contextuel, l'annulation.
       Sélection au clavier le 18/11/2026 (bogue signalé par Michaël : les flèches ne faisaient
       rien après un clic) : la grille prend le focus au clic (`.focusable()` + `@FocusState`,
       sans anneau), sinon la liste de la barre latérale garde les flèches et changerait de

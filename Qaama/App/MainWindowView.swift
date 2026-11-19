@@ -11,6 +11,31 @@ enum LibrarySelection: Hashable {
     case folder(FolderLibrarySource.ID)
     /// A subdirectory of a folder, by relative path.
     case subfolder(FolderLibrarySource.ID, String)
+    /// A library filtered as a preset says.
+    case filterPreset(FilterPreset.ID)
+
+    /// The sidebar's entry of the library a preset filters.
+    init(_ library: FilterPreset.Library) {
+        switch library {
+        case .photos: self = .photos
+        case let .photosAlbum(id): self = .photosAlbum(id)
+        case let .folder(id, path): self = path.map { .subfolder(id, $0) } ?? .folder(id)
+        }
+    }
+}
+
+extension LibraryCatalog {
+    /// The name the sidebar shows for a library.
+    func title(of location: LibrarySelection) -> String {
+        switch location {
+        case .map: "Map"
+        case .photos: "Photos"
+        case let .photosAlbum(id): photosAlbums.album(id: id)?.title ?? "Album"
+        case let .folder(id): folders.first { $0.id == id }?.displayName ?? "Folder"
+        case let .subfolder(_, path): path.split(separator: "/").last.map(String.init) ?? "Folder"
+        case let .filterPreset(id): filterPresets.preset(id: id)?.name ?? "Filter Preset"
+        }
+    }
 }
 
 /// Sidebar of libraries on the left, the selected library's grid on the right.
@@ -27,17 +52,30 @@ struct MainWindowView: View {
     @State private var trail = VisitTrail<LibrarySelection, LibraryPlace>()
     /// The place to put a library back in, between Back and the library's view showing.
     @State private var arrival = LibraryArrival()
+    /// The filter preset being named: one saved from the Filter panel, or one renamed in the sidebar.
+    @State private var presetDialog: FilterPresetDialog?
+    @Environment(\.undoManager) private var undoManager
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(catalog: catalog, selection: $selection, visibility: $columnVisibility, addFolder: { isPickingFolder = true })
+            SidebarView(catalog: catalog, selection: $selection, visibility: $columnVisibility, presetDialog: $presetDialog,
+                        addFolder: { isPickingFolder = true })
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } detail: {
             detail
                 // Albums named in an Info panel open through the sidebar's selection, with a way back.
                 .environment(\.libraryVisits, LibraryVisits(albums: catalog.photosAlbums, currentAlbumID: currentAlbumID, arrival: arrival,
                                                             back: backAction, open: openAlbum))
+                .environment(\.filterPresetSaving, presetLibrary.map { library in
+                    let shown = shownPreset
+                    return FilterPresetSaving(shown: shown, saveAsNew: { settings in presetDialog = .new(library, settings) }, update: { settings in
+                        if let shown {
+                            catalog.filterPresets.update(shown.id, settings: settings, undoManager: undoManager)
+                        }
+                    })
+                })
         }
+        .filterPresetDialog($presetDialog, store: catalog.filterPresets)
         .onChange(of: selection) { _, location in
             // The sidebar was used: there is nothing to go back to any more.
             if let location {
@@ -80,21 +118,31 @@ struct MainWindowView: View {
     /// in the sidebar.
     private var backAction: BackAction? {
         guard let selection, let origin = trail.origin(of: selection) else { return nil }
-        return BackAction(help: "Back to “\(title(of: origin))”") {
+        return BackAction(help: "Back to “\(catalog.title(of: origin))”") {
             guard let back = trail.goBack(from: selection) else { return }
             arrival.expect(back.place, at: back.origin)
             self.selection = back.origin
         }
     }
 
-    /// The name the sidebar shows for a library.
-    private func title(of location: LibrarySelection) -> String {
-        switch location {
-        case .map: "Map"
-        case .photos: "Photos"
-        case let .photosAlbum(id): catalog.photosAlbums.album(id: id)?.title ?? "Album"
-        case let .folder(id): catalog.folders.first { $0.id == id }?.displayName ?? "Folder"
-        case let .subfolder(_, path): path.split(separator: "/").last.map(String.init) ?? "Folder"
+    /// The preset on screen, when the sidebar is on one.
+    private var shownPreset: FilterPreset? {
+        if case let .filterPreset(id) = selection {
+            return catalog.filterPresets.preset(id: id)
+        }
+        return nil
+    }
+
+    /// The library a preset saved from what is on screen filters: the library shown, or the one of
+    /// the preset shown. Nil for the map of every library, which lists no photo.
+    private var presetLibrary: FilterPreset.Library? {
+        switch selection {
+        case .photos: .photos
+        case let .photosAlbum(id): .photosAlbum(id: id)
+        case let .folder(id): .folder(id: id, path: nil)
+        case let .subfolder(id, path): .folder(id: id, path: path)
+        case let .filterPreset(id): catalog.filterPresets.preset(id: id)?.library
+        case .map, nil: nil
         }
     }
 
@@ -117,6 +165,13 @@ struct MainWindowView: View {
             folderView(id: id, path: nil)
         case let .subfolder(id, path):
             folderView(id: id, path: path)
+        case let .filterPreset(id):
+            if let preset = catalog.filterPresets.preset(id: id) {
+                FilterPresetView(preset: preset, catalog: catalog, maps: maps)
+                    .id(preset.id)
+            } else {
+                ContentUnavailableView("Filter Preset Removed", systemImage: "line.3.horizontal.decrease.circle")
+            }
         case nil:
             ContentUnavailableView("Select a Library", systemImage: "sidebar.left",
                                    description: Text("Choose Photos or a folder in the sidebar."))

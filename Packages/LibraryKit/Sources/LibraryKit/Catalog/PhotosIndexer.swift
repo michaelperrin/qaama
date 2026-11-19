@@ -10,8 +10,13 @@ public nonisolated struct PhotosAssetReading: Hashable, Sendable {
     public var keywords: [String]
     /// Where the photo was taken, as the library holds it; nil when it has no position.
     public var location: GeoCoordinate?
+    /// True when the photo was edited, in Photos or by any other app.
+    public var hasAdjustments: Bool
 
-    public init(id: String, fileName: String?, captureDate: Date?, keywords: [String] = [], location: GeoCoordinate? = nil) {
+    public init(id: String, fileName: String?, captureDate: Date?, keywords: [String] = [], location: GeoCoordinate? = nil,
+                hasAdjustments: Bool = false)
+    {
+        self.hasAdjustments = hasAdjustments
         self.id = id
         self.fileName = fileName
         self.captureDate = captureDate
@@ -42,7 +47,7 @@ public nonisolated protocol PhotosIndexLibrary: Sendable {
     func assetIDs() async -> [String]
     /// The images the library itself classifies as RAW, RAW + JPEG pairs included.
     func rawAssetIDs() async -> Set<String>
-    /// Name, capture date, keywords and position of the given assets; those that no longer exist are left out.
+    /// Name, capture date, keywords, position and edited state of the given assets; those that no longer exist are left out.
     func readings(for ids: [String]) async -> [PhotosAssetReading]
     /// The current point in the library's change history, archived; nil when it can't be told.
     func currentChangeToken() async -> Data?
@@ -167,7 +172,8 @@ public nonisolated struct PhotosIndexer: Sendable {
             let batch = Array(ids[start ..< min(start + batchSize, ids.count)])
             let readings = await library.readings(for: batch)
             let entries = readings.map {
-                PhotosAssetEntry(id: $0.id, fileName: $0.fileName, captureDate: $0.captureDate, isRAW: rawIDs.contains($0.id), location: $0.location)
+                PhotosAssetEntry(id: $0.id, fileName: $0.fileName, captureDate: $0.captureDate, isRAW: rawIDs.contains($0.id), location: $0.location,
+                                 hasAdjustments: $0.hasAdjustments)
             }
             let keywords = Dictionary(readings.lazy.filter { !$0.keywords.isEmpty }.map { ($0.id, $0.keywords) }) { first, _ in first }
             do {

@@ -13,7 +13,7 @@ public final class SampleLibrarySource: LibrarySource {
     public private(set) var lastLoadDuration: Duration?
     public var capabilities: Set<LibraryCapability> = [.rating, .flag, .keywords, .captureDate, .location, .originalLocation, .deletion, .duplication]
     public var queryCapabilities: Set<QueryCapability> {
-        [.sortByRating, .sortByFileName, .rating, .flag, .edited, .favorite, .search]
+        [.sortByRating, .sortByFileName, .rating, .flag, .edited, .favorite, .captureDates, .place, .search]
     }
 
     public var query = LibraryQuery.default {

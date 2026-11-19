@@ -18,7 +18,7 @@ struct LibrarySourceNavigationTests {
 
     @Test func neighborFollowsTheQuery() {
         let source = SampleLibrarySource(count: 12)
-        source.query.minimumRating = 4
+        source.query.filters.rating = .atLeast(4)
         let listed = source.assets.map(\.id)
         #expect(listed.count >= 2)
         #expect(source.neighbor(of: listed[0], offset: 1) == listed[1])
@@ -39,7 +39,7 @@ struct LibrarySourceNavigationTests {
         #expect(source.assets(withIDs: picked).map(\.id) == [listed[11], listed[7], listed[3], listed[0]])
         // A photo the query no longer lists stays, after those it does list.
         source.query = .default
-        source.query.minimumRating = 4
+        source.query.filters.rating = .atLeast(4)
         let kept = Set(source.assets.map(\.id))
         let mixed = source.assets(withIDs: Set(listed.prefix(6))).map(\.id)
         #expect(Set(mixed) == Set(listed.prefix(6)))
@@ -56,7 +56,7 @@ struct LibrarySourceNavigationTests {
         #expect(timeline.sections.count >= 13)
         #expect(timeline.years.first == 2023)
         // A filter keeps the timeline in step with what is listed.
-        source.query.favoritesOnly = true
+        source.query.filters.favoritesOnly = true
         #expect(source.timeline?.count == source.assets.count)
         source.query.sort = .rating
         #expect(source.timeline == nil)

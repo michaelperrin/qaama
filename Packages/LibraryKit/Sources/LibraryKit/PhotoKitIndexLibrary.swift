@@ -33,7 +33,7 @@ public nonisolated struct PhotoKitIndexLibrary: PhotosIndexLibrary {
             let metadata = asset.extendedMetadata
             readings.append(PhotosAssetReading(id: asset.localIdentifier, fileName: metadata.originalFilename,
                                                captureDate: asset.creationDate, keywords: metadata.keywords,
-                                               location: asset.geoCoordinate))
+                                               location: asset.geoCoordinate, hasAdjustments: asset.hasAdjustments))
         }
         return readings
     }

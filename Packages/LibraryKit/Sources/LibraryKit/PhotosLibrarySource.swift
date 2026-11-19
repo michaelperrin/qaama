@@ -32,14 +32,15 @@ public final class PhotosLibrarySource: LibrarySource {
         [.rating, .keywords, .captureDate, .location, .deletion, .duplication]
     }
 
-    /// Date and favorite are native; rating filter and sort are too on macOS 27, confirmed by a probe at
-    /// load time since PhotoKit doesn't document them. RAW and the search on names and keywords come
-    /// from the local index, and so do the JPEG twins once it has found pairs stored as two photos.
-    /// Flags don't exist in Photos.
+    /// Dates and favorite are native; rating filter and sort are too on macOS 27, confirmed by a probe at
+    /// load time since PhotoKit doesn't document them. Edited isn't: the same probe found a predicate
+    /// on `hasAdjustments` refused, so it comes from the index, with what follows. RAW, the place and the search on names and
+    /// keywords come from the local index, and so do the JPEG twins once it has found pairs stored as
+    /// two photos. Flags don't exist in Photos.
     public var queryCapabilities: Set<QueryCapability> {
         var supported = nativeCapabilities
         if let index {
-            supported.formUnion([.raw, .search])
+            supported.formUnion([.raw, .place, .edited, .search])
             if !index.snapshot.twinIDs.isEmpty {
                 supported.insert(.pairedJPEGs)
             }
@@ -47,7 +48,7 @@ public final class PhotosLibrarySource: LibrarySource {
         return supported
     }
 
-    private var nativeCapabilities: Set<QueryCapability> = [.favorite]
+    private var nativeCapabilities: Set<QueryCapability> = [.favorite, .captureDates]
 
     /// Positions come from the index, which reads them from Photos' database.
     public var hasPlaces: Bool {
@@ -115,7 +116,7 @@ public final class PhotosLibrarySource: LibrarySource {
         do {
             let located = try await index.locatedAssets()
             let shown: [LocatedAsset]
-            if album == nil, search == nil, query.isUnfiltered {
+            if album == nil, found == nil, query.isUnfiltered {
                 let hidden = query.includesPairedJPEGs ? [] : listedSnapshot.twinIDs
                 shown = hidden.isEmpty ? located : await Task.detached(priority: .userInitiated) { located.filter { !hidden.contains($0.id) } }.value
             } else {
@@ -123,7 +124,7 @@ public final class PhotosLibrarySource: LibrarySource {
                 let current = UncheckedSendable(fetchResult)
                 var whole: PhotosListing?
                 if query.onlyAssetIDs != nil {
-                    whole = listing(searchMatches: search?.matches)
+                    whole = listing(indexMatches: found?.matches)
                     whole?.query.onlyAssetIDs = nil
                 }
                 shown = await Task.detached(priority: .userInitiated) { [whole] in
@@ -143,13 +144,21 @@ public final class PhotosLibrarySource: LibrarySource {
         index?.progress
     }
 
-    /// Search and the hiding of JPEG twins wait for the index; the RAW set is complete from the start.
+    /// Search, the place filter and the hiding of JPEG twins wait for the index; the RAW set is
+    /// complete from the start.
     public var indexingNotice: String? {
         guard indexingProgress != nil else { return nil }
-        if !searchText.isEmpty {
+        let lookup = lookup
+        if !lookup.text.isEmpty {
             return "Still indexing the Photos library: the search only covers the photos indexed so far."
         }
-        if !query.rawOnly, !query.includesPairedJPEGs {
+        if lookup.place != nil {
+            return "Still indexing the Photos library: the location filter only covers the photos indexed so far."
+        }
+        if lookup.edits != nil {
+            return "Still indexing the Photos library: the edits filter only covers the photos indexed so far."
+        }
+        if !query.filters.rawOnly, !query.includesPairedJPEGs {
             return "Still indexing the Photos library: some JPEG twins of RAW photos may show until it finishes."
         }
         return nil
@@ -180,14 +189,27 @@ public final class PhotosLibrarySource: LibrarySource {
     private let index: PhotosIndex?
     /// The index answers the current listing was built with; a newer snapshot triggers a refetch.
     @ObservationIgnored private var listedSnapshot = PhotosIndexSnapshot()
-    /// The text last searched in the index and the assets found for it; nil when nothing is searched.
-    @ObservationIgnored private var search: (text: String, matches: [String])?
+    /// What the index was last asked and the assets it found; nil when the listing asks it nothing.
+    @ObservationIgnored private var found: (lookup: IndexLookup, matches: [String])?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     /// The reading of the dates in progress, and its number: a reading the listing has outrun is dropped.
     @ObservationIgnored private var timelineTask: Task<Void, Never>?
     @ObservationIgnored private var timelineGeneration = 0
-    /// A listing costs tens of ms: one per pause in typing, not one per keystroke.
+    /// A listing costs tens of ms: one per pause in typing or in dragging the radius of a place, not
+    /// one per keystroke.
     private static let typingDelay = Duration.milliseconds(150)
+
+    /// What a listing asks the index before PhotoKit: the words searched, the place filtered by,
+    /// and whether the photos must have been edited.
+    private struct IndexLookup: Equatable {
+        var text = ""
+        var place: PlaceFilter?
+        var edits: EditsFilter?
+
+        var isEmpty: Bool {
+            text.isEmpty && place == nil && edits == nil
+        }
+    }
 
     public init(album: PhotosAlbum? = nil, index: PhotosIndex? = nil) {
         self.album = album
@@ -208,12 +230,13 @@ public final class PhotosLibrarySource: LibrarySource {
         // The RAW set and the pairs already known take a few tens of ms; the rest runs in the background.
         await index?.start()
         followIndex()
-        if let index, !searchText.isEmpty {
-            search = await (searchText, (try? index.search(searchText)) ?? [])
+        let lookup = lookup
+        if let index, !lookup.isEmpty {
+            found = await (lookup, (try? index.search(lookup.text, within: lookup.place, edits: lookup.edits)) ?? [])
         }
         let clock = ContinuousClock()
         let start = clock.now
-        let listing = listing(searchMatches: search?.matches)
+        let listing = listing(indexMatches: found?.matches)
         apply(listing.fetch(), for: listing)
         lastLoadDuration = clock.now - start
         logger.notice("Fetched \(self.assets.count) photos in \(self.lastLoadDuration!.formatted(.units(allowed: [.milliseconds])), privacy: .public)")
@@ -636,7 +659,7 @@ public final class PhotosLibrarySource: LibrarySource {
             let exception = QAACatchException { count = PHAsset.fetchAssets(with: options).count }
             return exception == nil && count >= 0
         }
-        var supported: Set<QueryCapability> = [.favorite]
+        var supported: Set<QueryCapability> = [.favorite, .captureDates]
         if accepts({ $0.predicate = NSPredicate(format: "rating >= %d", 1) }) {
             supported.insert(.rating)
         }
@@ -649,51 +672,53 @@ public final class PhotosLibrarySource: LibrarySource {
 
     // MARK: - Search and index changes
 
-    /// The words to look for in the index; empty without an index, which leaves search unsupported.
-    private var searchText: String {
-        index == nil ? "" : query.searchText.trimmingCharacters(in: .whitespaces)
+    /// What the current query asks the index; empty without an index, which leaves search and the
+    /// place filter unsupported.
+    private var lookup: IndexLookup {
+        guard index != nil else { return IndexLookup() }
+        return IndexLookup(text: query.searchText.trimmingCharacters(in: .whitespaces), place: query.filters.place, edits: query.filters.edits)
     }
 
     private func queryChanged() {
-        let text = searchText
-        if text == search?.text ?? "" {
+        let lookup = lookup
+        if lookup == found?.lookup ?? IndexLookup() {
             searchTask?.cancel()
             refetch()
-        } else if text.isEmpty {
+        } else if lookup.isEmpty {
             searchTask?.cancel()
-            search = nil
+            found = nil
             refetch()
         } else {
             runSearch(after: Self.typingDelay)
         }
     }
 
-    /// Asks the index for the assets matching the search text, then lists them, both off the main actor
-    /// so typing stays fluid. The listing in place stays until the answer is there.
+    /// Asks the index for the assets matching the search text and the place, then lists them, both off
+    /// the main actor so typing stays fluid. The listing in place stays until the answer is there.
     private func runSearch(after delay: Duration = .zero) {
         searchTask?.cancel()
-        let text = searchText
-        guard let index, !text.isEmpty else { return }
+        let lookup = lookup
+        guard let index, !lookup.isEmpty else { return }
         searchTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled else { return }
             do {
                 let clock = ContinuousClock()
                 let start = clock.now
-                let matches = try await index.search(text) ?? []
+                let matches = try await index.search(lookup.text, within: lookup.place, edits: lookup.edits) ?? []
                 guard let self, !Task.isCancelled else { return }
                 // An index pass that changed nothing for this search isn't worth a new listing.
-                if search?.text == text, search?.matches == matches, index.snapshot == listedSnapshot {
+                if let found, found.lookup == lookup, found.matches == matches, index.snapshot == listedSnapshot {
                     return
                 }
-                let found = clock.now
-                let listing = listing(searchMatches: matches)
+                let asked = clock.now
+                let listing = listing(indexMatches: matches)
                 let result = await Task.detached(priority: .userInitiated) { listing.fetch() }.value
                 // The query moved on while PhotoKit was listing: a newer search or refetch takes over.
                 guard !Task.isCancelled else { return }
-                search = (text, matches)
+                found = (lookup, matches)
                 apply(result, for: listing)
-                logger.notice("Search: \(matches.count) matches in \((found - start).formatted(.units(allowed: [.milliseconds])), privacy: .public), \(self.assets.count) photos listed in \((clock.now - found).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
+                logger.notice("Search: \(matches.count) matches in \((asked - start).formatted(.units(allowed: [.milliseconds])), privacy: .public), \(self.assets.count) photos listed in \((clock.now - asked).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
             } catch {
                 self?.logger.error("Search failed: \(error.localizedDescription, privacy: .public)")
             }
@@ -714,7 +739,7 @@ public final class PhotosLibrarySource: LibrarySource {
 
     private func indexChanged() {
         if let index, fetchResult != nil {
-            if search != nil {
+            if found != nil {
                 runSearch()
             } else if index.snapshot != listedSnapshot {
                 refetch()
@@ -726,15 +751,15 @@ public final class PhotosLibrarySource: LibrarySource {
     // MARK: - Listing
 
     /// The current query, index answers and search results, frozen for one fetch.
-    private func listing(searchMatches: [String]?) -> PhotosListing {
-        PhotosListing(query: query, native: nativeCapabilities, index: index?.snapshot, searchMatches: searchMatches, albumID: album?.id)
+    private func listing(indexMatches: [String]?) -> PhotosListing {
+        PhotosListing(query: query, native: nativeCapabilities, index: index?.snapshot, indexMatches: indexMatches, albumID: album?.id)
     }
 
     private func refetch() {
         probeNativeQueries()
         let clock = ContinuousClock()
         let start = clock.now
-        let listing = listing(searchMatches: search?.matches)
+        let listing = listing(indexMatches: found?.matches)
         apply(listing.fetch(), for: listing)
         logger.notice("Refetched \(self.assets.count) photos in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
     }

@@ -17,12 +17,33 @@ public final class LibraryCatalog {
     public private(set) var folders: [FolderLibrarySource] = []
     private var albumSources: [String: PhotosLibrarySource] = [:]
     public private(set) var isLoaded = false
+    /// The filters the user saved, each with the library it filters (`library(for:)`).
+    public let filterPresets: FilterPresetStore
 
     /// Renders full-size edits for sources that cache previews. Set once by the app.
     public var previewRenderer: PreviewRenderer? {
         didSet {
             folders.forEach { $0.previewRenderer = previewRenderer }
             folderViews.values.forEach { $0.previewRenderer = previewRenderer }
+            for case let .folder(view, _, _) in presetLibraries.values {
+                view.previewRenderer = previewRenderer
+            }
+        }
+    }
+
+    /// What a filter preset shows: a view of its library that is the preset's own, so its filters
+    /// leave the library as its own entry of the sidebar shows it.
+    public enum PresetLibrary {
+        case photos(PhotosLibrarySource)
+        /// The view, the folder's own source (which scans it and watches it), and the subdirectory
+        /// the preset is about, if any.
+        case folder(FolderLibrarySource, scannedBy: FolderLibrarySource, path: String?)
+
+        public var source: any LibrarySource {
+            switch self {
+            case let .photos(source): source
+            case let .folder(view, _, _): view
+            }
         }
     }
 
@@ -34,11 +55,16 @@ public final class LibraryCatalog {
     /// A second view of each folder, which follows the catalog without scanning: the folder's own
     /// source does that.
     private var folderViews: [UUID: FolderLibrarySource] = [:]
+    /// The views made for the presets shown so far, kept for the session. Asked from views' bodies,
+    /// hence not observed.
+    @ObservationIgnored private var presetLibraries: [FilterPreset.ID: PresetLibrary] = [:]
     private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "LibraryCatalog")
 
-    public init(store: CatalogStore, previewCache: PreviewCache = PreviewCache()) {
+    /// `filterPresets` are kept in memory unless a store with a file is handed in (the app's).
+    public init(store: CatalogStore, previewCache: PreviewCache = PreviewCache(), filterPresets: FilterPresetStore = FilterPresetStore()) {
         self.store = store
         self.previewCache = previewCache
+        self.filterPresets = filterPresets
         photosIndex = PhotosIndex(store: PhotosIndexStore(catalog: store), library: PhotoKitIndexLibrary())
         photos = PhotosLibrarySource(index: photosIndex)
         photosForMap = PhotosLibrarySource(index: photosIndex)
@@ -55,6 +81,7 @@ public final class LibraryCatalog {
     /// Restores the folders saved in the catalog. Unresolvable bookmarks are dropped.
     public func load() async {
         guard !isLoaded else { return }
+        await filterPresets.load()
         do {
             var restored: [FolderLibrarySource] = []
             for var folder in try await store.folders() {
@@ -122,12 +149,39 @@ public final class LibraryCatalog {
         return source
     }
 
+    /// The view of its library a preset shows, made on first use with the preset's filters, so its
+    /// first listing is the filtered one, and kept for the session. Nil when the library is gone
+    /// (an album deleted, a folder removed) or, for an album, not listed yet (`photosAlbums.isLoaded`).
+    public func library(for preset: FilterPreset) -> PresetLibrary? {
+        presetLibraries = presetLibraries.filter { filterPresets.preset(id: $0.key) != nil }
+        let known = presetLibraries[preset.id]
+        let library: PresetLibrary
+        switch preset.library {
+        case .photos:
+            library = known ?? .photos(PhotosLibrarySource(index: photosIndex))
+        case let .photosAlbum(id):
+            guard let album = photosAlbums.album(id: id) else { return nil }
+            library = known ?? .photos(PhotosLibrarySource(album: album, index: photosIndex))
+        case let .folder(id, path):
+            // A folder removed and added again is another source: its view is made again.
+            guard let folder = folders.first(where: { $0.id == id }) else { return nil }
+            if case let .folder(view, scannedBy, _) = known, scannedBy === folder {
+                library = .folder(view, scannedBy: folder, path: path)
+            } else {
+                library = .folder(folder.makeView(), scannedBy: folder, path: path)
+            }
+        }
+        if known == nil {
+            library.source.query.filters = preset.settings.filters()
+        }
+        presetLibraries[preset.id] = library
+        return library
+    }
+
     private func makeSource(folder: CatalogFolder, url: URL) -> FolderLibrarySource {
         let source = FolderLibrarySource(folder: folder, url: url, store: store, previewCache: previewCache)
         source.previewRenderer = previewRenderer
-        let view = FolderLibrarySource(folder: folder, url: url, store: store, previewCache: previewCache, scans: false)
-        view.previewRenderer = previewRenderer
-        folderViews[folder.id] = view
+        folderViews[folder.id] = source.makeView()
         return source
     }
 }

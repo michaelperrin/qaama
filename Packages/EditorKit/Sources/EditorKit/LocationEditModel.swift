@@ -3,34 +3,13 @@ import ImageIOKit
 import LibraryKit
 import Observation
 
-/// A place a search by name found: what the list of results shows, and where it is.
-public nonisolated struct PlaceSuggestion: Identifiable, Hashable, Sendable {
-    public let id = UUID()
-    /// The place's own name ("Étretat", "Tour Eiffel").
-    public var title: String
-    /// Where it is, to tell places of the same name apart ("Seine-Maritime, France").
-    public var subtitle: String
-    public var coordinate: GeoCoordinate
-
-    public init(title: String, subtitle: String, coordinate: GeoCoordinate) {
-        self.title = title
-        self.subtitle = subtitle
-        self.coordinate = coordinate
-    }
-}
-
 /// Assigning a location to the photos shown in an Info panel, without its view: the location they
-/// share, the search for a place by name, and the writing of a place picked from the results, put
-/// down on the map or dragged there, as one undoable step.
+/// share, the search for a place by name (`places`), and the writing of a place picked from the
+/// results, put down on the map or dragged there, as one undoable step.
 ///
 /// The JPEG twin of a RAW + JPEG pair stored as two photos goes with its RAW, as for a corrected date.
 @Observable
 public final class LocationEditModel {
-    /// Finds places by name, closest to `near` first when it is given. Handed in (the app's goes to
-    /// Apple's service through MapKit), so this stays free of MapKit and testable. Throws when it
-    /// couldn't search (no network, too many requests).
-    public typealias Search = @MainActor (_ text: String, _ near: GeoCoordinate?) async throws -> [PlaceSuggestion]
-
     /// The photos shown.
     public private(set) var assets: [LibraryAsset] = []
     /// Where every photo shown was taken, when they all say the same place; nil otherwise.
@@ -50,27 +29,19 @@ public final class LocationEditModel {
     public var isEditing = false {
         didSet {
             if !isEditing {
-                query = ""
+                places.query = ""
             }
         }
     }
 
-    /// What is typed in the search field. Each change starts a new search after a short pause.
-    public var query = "" {
-        didSet {
-            if query != oldValue {
-                scheduleSearch()
-            }
-        }
+    /// The search for the place to assign: its field, its results and their highlight.
+    public let places: PlaceSearchModel
+    /// What went wrong with the last write, else with the last search, to show as is.
+    public var errorMessage: String? {
+        writeError ?? places.errorMessage
     }
 
-    /// What the last search found, best match first.
-    public private(set) var suggestions: [PlaceSuggestion] = []
-    /// The result Return picks, moved by the arrow keys.
-    public private(set) var highlightedID: PlaceSuggestion.ID?
-    public private(set) var isSearching = false
-    /// What went wrong with the last search or the last write, to show as is.
-    public private(set) var errorMessage: String?
+    private var writeError: String?
     /// Where the map should center: on another photo's place, or on a place picked from the search.
     /// Not on a pin put down or dragged on the map, which is in view already: the map mustn't move
     /// under the pointer.
@@ -79,16 +50,11 @@ public final class LocationEditModel {
     /// next photo of a series was often taken nearby.
     public private(set) var lastAssigned: GeoCoordinate?
 
-    @ObservationIgnored private let search: Search
-    @ObservationIgnored private let searchDelay: Duration
     @ObservationIgnored private var source: (any LibrarySource)?
-    @ObservationIgnored private var pendingSearch: Task<Void, Never>?
 
-    /// `searchDelay` is the pause after a keystroke before searching: the service limits how often it
-    /// is asked, and a word half typed is seldom the place meant.
-    public init(searchDelay: Duration = .milliseconds(300), search: @escaping Search) {
-        self.searchDelay = searchDelay
-        self.search = search
+    /// `searchDelay` and `search` are the place search's (see `PlaceSearchModel`).
+    public init(searchDelay: Duration = .milliseconds(300), search: @escaping PlaceSearchModel.Search) {
+        places = PlaceSearchModel(delay: searchDelay, search: search)
     }
 
     // MARK: - Showing
@@ -99,7 +65,7 @@ public final class LocationEditModel {
         let isAnotherSelection = Set(assets.map(\.id)) != Set(self.assets.map(\.id))
         if isAnotherSelection {
             isEditing = false
-            errorMessage = nil
+            writeError = nil
         }
         self.source = source
         self.assets = assets
@@ -112,6 +78,7 @@ public final class LocationEditModel {
         if isAnotherSelection {
             focus = startingPoint
         }
+        places.near = startingPoint
     }
 
     private static func samePlace(_ one: GeoCoordinate?, _ other: GeoCoordinate?) -> Bool {
@@ -140,15 +107,16 @@ public final class LocationEditModel {
             return (asset, coordinate)
         }
         lastAssigned = coordinate
+        places.near = coordinate
         guard !changes.isEmpty else { return }
         // Shown at once: Photos tells of the change a moment later.
         location = coordinate
         isMixed = false
         do {
             try await MetadataEditing.setLocations(changes, in: source, undoManager: undoManager)
-            errorMessage = nil
+            writeError = nil
         } catch {
-            errorMessage = error.localizedDescription
+            writeError = error.localizedDescription
             show(assets, in: source)
         }
     }
@@ -170,72 +138,24 @@ public final class LocationEditModel {
         guard let source else { return }
         do {
             _ = try await work(source)
-            errorMessage = nil
+            writeError = nil
         } catch {
-            errorMessage = error.localizedDescription
+            writeError = error.localizedDescription
         }
         show(assets, in: source)
     }
 
     /// Assigns a place found by the search, and closes the search: its results are done with.
     public func pick(_ suggestion: PlaceSuggestion, undoManager: UndoManager?) async {
-        pendingSearch?.cancel()
-        query = ""
+        places.query = ""
         focus = suggestion.coordinate
         await assign(suggestion.coordinate, undoManager: undoManager)
     }
 
     /// Picks the highlighted result, as Return does.
     public func pickHighlighted(undoManager: UndoManager?) async {
-        guard let suggestion = suggestions.first(where: { $0.id == highlightedID }) else { return }
+        guard let suggestion = places.highlighted else { return }
         await pick(suggestion, undoManager: undoManager)
-    }
-
-    /// Moves the highlight through the results, as the arrow keys do, staying within them.
-    public func moveHighlight(by offset: Int) {
-        guard !suggestions.isEmpty else { return }
-        let current = suggestions.firstIndex { $0.id == highlightedID } ?? -1
-        let next = min(max(current + offset, 0), suggestions.count - 1)
-        highlightedID = suggestions[next].id
-    }
-
-    // MARK: - Searching
-
-    private func scheduleSearch() {
-        pendingSearch?.cancel()
-        let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
-            suggestions = []
-            highlightedID = nil
-            isSearching = false
-            return
-        }
-        isSearching = true
-        let near = startingPoint
-        pendingSearch = Task { [searchDelay, search] in
-            if searchDelay > .zero {
-                try? await Task.sleep(for: searchDelay)
-            }
-            guard !Task.isCancelled else { return }
-            do {
-                let found = try await search(text, near)
-                guard !Task.isCancelled else { return }
-                suggestions = found
-                highlightedID = found.first?.id
-                errorMessage = nil
-            } catch {
-                guard !Task.isCancelled else { return }
-                suggestions = []
-                highlightedID = nil
-                errorMessage = error.localizedDescription
-            }
-            isSearching = false
-        }
-    }
-
-    /// Waits for the search under way, for tests.
-    func searchSettled() async {
-        await pendingSearch?.value
     }
 }
 

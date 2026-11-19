@@ -35,7 +35,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     }
 
     public var queryCapabilities: Set<QueryCapability> {
-        [.sortByRating, .sortByFileName, .rating, .flag, .edited, .raw, .pairedJPEGs, .search]
+        [.sortByRating, .sortByFileName, .rating, .flag, .edited, .raw, .pairedJPEGs, .captureDates, .place, .search]
     }
 
     /// Sorting and filtering, answered by the catalog; changing it restarts the observation. A group
@@ -121,6 +121,15 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         self.previewCache = previewCache
         self.trash = trash
         hasSecurityScope = url.startAccessingSecurityScopedResource()
+    }
+
+    /// Another view of this folder, with a query of its own, that follows the catalog without
+    /// scanning: this source does that. For what lists the folder its own way (the map of every
+    /// library, a filter preset).
+    public func makeView() -> FolderLibrarySource {
+        let view = FolderLibrarySource(folder: folder, url: folderURL, store: store, previewCache: previewCache, scans: false, trash: trash)
+        view.previewRenderer = previewRenderer
+        return view
     }
 
     isolated deinit {

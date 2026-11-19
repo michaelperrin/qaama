@@ -178,6 +178,18 @@ nonisolated enum CatalogSchema {
                 t.add(column: "locationRemoved", .boolean).notNull().defaults(to: false)
             }
         }
+
+        migrator.registerMigration("v10-photos-edited") { db in
+            // Whether a photo of the Photos library was edited, by any app: PhotoKit refuses a
+            // predicate on `hasAdjustments` (probed on macOS 27), so the Edits filter asks the index.
+            // Read with the rest in the same pass; the index starts over to fill it.
+            try db.execute(sql: "DELETE FROM photosAssetKeyword")
+            try db.execute(sql: "DELETE FROM photosAsset")
+            try db.execute(sql: "DELETE FROM photosIndexState")
+            try db.alter(table: "photosAsset") { t in
+                t.add(column: "hasAdjustments", .boolean).notNull().defaults(to: false)
+            }
+        }
         return migrator
     }
 }

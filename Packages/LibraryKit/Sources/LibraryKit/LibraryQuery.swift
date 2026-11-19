@@ -10,25 +10,11 @@ public nonisolated struct LibraryQuery: Hashable, Sendable {
         case fileName
     }
 
-    public enum FlagFilter: String, CaseIterable, Sendable {
-        case any
-        case picked
-        case rejected
-        case unflagged
-        /// Everything but the rejects: the usual culling view.
-        case notRejected
-    }
-
     public var sort: Sort = .captureDate
     /// Newest first by default; file names sort ascending by default when chosen.
     public var ascending = false
-    /// 0 keeps unrated photos; 3 keeps three stars and up.
-    public var minimumRating = 0
-    public var flag: FlagFilter = .any
-    public var editedOnly = false
-    public var rawOnly = false
-    /// Photos' hearts.
-    public var favoritesOnly = false
+    /// What a photo must be to be listed. The Filter panel writes them (`LibraryFilterPanels`).
+    public var filters = LibraryFilters()
     /// Matches file names and keywords.
     public var searchText = ""
     /// Restricts a folder source to one of its subdirectories (relative path); nil means the whole folder.
@@ -47,8 +33,7 @@ public nonisolated struct LibraryQuery: Hashable, Sendable {
 
     /// True when no filter is active (sorting doesn't count).
     public var isUnfiltered: Bool {
-        minimumRating == 0 && flag == .any && !editedOnly && !rawOnly && !favoritesOnly
-            && searchText.trimmingCharacters(in: .whitespaces).isEmpty
+        filters.isEmpty && searchText.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     /// The same listing without its filters: the sort and the scopes stay.
@@ -67,26 +52,7 @@ public nonisolated struct LibraryQuery: Hashable, Sendable {
         if let onlyAssetIDs, !onlyAssetIDs.contains(asset.id) {
             return false
         }
-        if asset.rating < minimumRating {
-            return false
-        }
-        switch flag {
-        case .any: break
-        case .picked where asset.flag != .picked: return false
-        case .rejected where asset.flag != .rejected: return false
-        case .unflagged where asset.flag != .none: return false
-        case .notRejected where asset.flag == .rejected: return false
-        default: break
-        }
-        if editedOnly, !asset.hasEdit {
-            return false
-        }
-        if rawOnly, !isRAW {
-            return false
-        }
-        if favoritesOnly, !asset.isFavorite {
-            return false
-        }
+        guard filters.matches(asset, isRAW: isRAW) else { return false }
         // These sources have no file name: the identifier stands in for it.
         return SearchText.matches(searchText, in: asset.keywords + [asset.id])
     }
@@ -114,5 +80,9 @@ public nonisolated enum QueryCapability: Sendable, Hashable {
     /// RAW + JPEG pairs exist as two photos here, so the JPEG twins can be hidden or shown.
     case pairedJPEGs
     case favorite
+    /// Photos taken between two dates.
+    case captureDates
+    /// Photos taken within a distance of a place.
+    case place
     case search
 }

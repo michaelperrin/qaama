@@ -19,8 +19,11 @@ public nonisolated struct PhotosAssetEntry: Codable, Hashable, Sendable, Identif
     /// Where the photo was taken, in degrees; both nil when the library holds no position for it.
     public var latitude: Double?
     public var longitude: Double?
+    /// True when the photo was edited, by any app.
+    public var hasAdjustments: Bool
 
-    public init(id: String, fileName: String?, captureDate: Date?, isRAW: Bool, location: GeoCoordinate? = nil) {
+    public init(id: String, fileName: String?, captureDate: Date?, isRAW: Bool, location: GeoCoordinate? = nil, hasAdjustments: Bool = false) {
+        self.hasAdjustments = hasAdjustments
         self.id = id
         self.fileName = fileName
         nameStem = Self.stem(of: fileName)
@@ -156,13 +159,16 @@ public final nonisolated class PhotosIndexStore: Sendable {
     // MARK: - Search
 
     /// The assets whose file name or keywords hold every word of `text`, as substrings and whatever the
-    /// case and accents: "1234 lapland" finds `DSCF1234.RAF` tagged "Lapland". Nil when `text` has no word.
+    /// case and accents ("1234 lapland" finds `DSCF1234.RAF` tagged "Lapland"), and that were taken
+    /// within `place` and were edited or not as `edits` says, when those are given. Nil when `text`
+    /// has no word and neither is given: nothing is asked.
     ///
     /// A scan of folded text rather than a full-text index (see `SearchText`): a pass over 74,000 short
-    /// names takes a few milliseconds.
-    public func search(_ text: String) async throws -> [String]? {
+    /// names takes a few milliseconds. For a place, SQLite keeps the positions of the box around the
+    /// disc and the distances are measured here.
+    public func search(_ text: String, within place: PlaceFilter? = nil, edits: EditsFilter? = nil) async throws -> [String]? {
         let words = SearchText.words(in: text)
-        guard !words.isEmpty else { return nil }
+        guard !words.isEmpty || place != nil || edits != nil else { return nil }
         var clauses: [String] = []
         var arguments = StatementArguments()
         for word in words {
@@ -170,8 +176,27 @@ public final nonisolated class PhotosIndexStore: Sendable {
             clauses.append("(foldedName LIKE ? ESCAPE '\\' OR id IN (SELECT assetID FROM photosAssetKeyword WHERE folded LIKE ? ESCAPE '\\'))")
             arguments += [pattern, pattern]
         }
-        let sql = "SELECT id FROM photosAsset WHERE " + clauses.joined(separator: " AND ")
-        return try await writer.read { [arguments] db in try String.fetchAll(db, sql: sql, arguments: arguments) }
+        if let edits {
+            clauses.append("hasAdjustments = \(edits == .edited ? 1 : 0)")
+        }
+        guard let place else {
+            let sql = "SELECT id FROM photosAsset WHERE " + clauses.joined(separator: " AND ")
+            return try await writer.read { [arguments] db in try String.fetchAll(db, sql: sql, arguments: arguments) }
+        }
+        let box = place.boxCondition(latitude: "latitude", longitude: "longitude")
+        clauses.append(box.sql)
+        arguments += StatementArguments(box.arguments)
+        let sql = "SELECT id, latitude, longitude FROM photosAsset WHERE " + clauses.joined(separator: " AND ")
+        return try await writer.read { [arguments] db in
+            let rows = try Row.fetchCursor(db, sql: sql, arguments: arguments)
+            var ids: [String] = []
+            while let row = try rows.next() {
+                if place.contains(GeoCoordinate(latitude: row[1], longitude: row[2])) {
+                    ids.append(row[0])
+                }
+            }
+            return ids
+        }
     }
 
     // MARK: - Places

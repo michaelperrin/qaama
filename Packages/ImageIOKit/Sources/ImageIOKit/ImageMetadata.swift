@@ -1,7 +1,7 @@
 import Foundation
 
 /// A place on Earth in degrees (WGS 84), positive towards north and east.
-public nonisolated struct GeoCoordinate: Hashable, Sendable {
+public nonisolated struct GeoCoordinate: Hashable, Codable, Sendable {
     public var latitude: Double
     public var longitude: Double
 

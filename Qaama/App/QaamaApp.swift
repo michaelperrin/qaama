@@ -7,6 +7,8 @@ import SwiftUI
 @main
 struct QaamaApp: App {
     @State private var catalog = Self.makeCatalog()
+    /// What the Filter panel of each library shows, the same in every window.
+    @State private var filterPanels = LibraryFilterPanels()
 
     /// The catalog gets the rendering engine through a closure, so LibraryKit stays independent of it.
     private static func makeCatalog() -> LibraryCatalog {
@@ -20,7 +22,7 @@ struct QaamaApp: App {
         }
         // The DETR segmentation model ships in the bundle (Apache 2.0, see Resources/Models/README.md).
         ModelMasks.useSceneModel(at: Bundle.main.url(forResource: "DETRResnet50SemanticSegmentationF16", withExtension: "mlmodelc"))
-        let catalog = LibraryCatalog(store: store)
+        let catalog = LibraryCatalog(store: store, filterPresets: FilterPresetStore(fileURL: FilterPresetStore.defaultURL()))
         catalog.previewRenderer = { input, recipeData in
             let recipe = try EditRecipe(jsonData: recipeData)
             return try await EditRenderer.jpeg(imageURL: input.imageURL, image: input.image, recipe: recipe)
@@ -32,6 +34,7 @@ struct QaamaApp: App {
         WindowGroup("Qaama") {
             MainWindowView(catalog: catalog)
                 .frame(minWidth: 900, minHeight: 550)
+                .environment(filterPanels)
         }
         .windowStyle(.automatic)
         .commands { EditorCommands() }

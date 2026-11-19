@@ -102,27 +102,27 @@ struct LocationEditModelTests {
         model.show([source.assets[0]], in: source)
         model.isEditing = true
 
-        model.query = "etretat"
-        await model.searchSettled()
+        model.places.query = "etretat"
+        await model.places.settled()
         #expect(search.asked.count == 1 && search.asked.first?.text == "etretat" && search.asked.first?.near == paris)
-        #expect(model.suggestions.map(\.title) == ["Étretat", "Étretat Cliffs"])
-        #expect(model.highlightedID == model.suggestions.first?.id, "Return picks the best match")
-        model.moveHighlight(by: 1)
-        model.moveHighlight(by: 1)
-        #expect(model.highlightedID == model.suggestions.last?.id, "stays on the last result")
-        model.moveHighlight(by: -1)
+        #expect(model.places.suggestions.map(\.title) == ["Étretat", "Étretat Cliffs"])
+        #expect(model.places.highlightedID == model.places.suggestions.first?.id, "Return picks the best match")
+        model.places.moveHighlight(by: 1)
+        model.places.moveHighlight(by: 1)
+        #expect(model.places.highlightedID == model.places.suggestions.last?.id, "stays on the last result")
+        model.places.moveHighlight(by: -1)
 
         await model.assign(GeoCoordinate(latitude: 48.86, longitude: 2.3), undoManager: nil)
         #expect(model.focus == paris, "a pin moved on the map leaves the framing alone")
         await model.pickHighlighted(undoManager: nil)
         #expect(source.location(for: source.assets[0]) == etretat)
         #expect(model.focus == etretat, "a place found by name is brought into view")
-        #expect(model.query.isEmpty && model.suggestions.isEmpty, "the search is done with")
+        #expect(model.places.query.isEmpty && model.places.suggestions.isEmpty, "the search is done with")
 
         // Blank text asks nothing.
-        model.query = "   "
-        await model.searchSettled()
-        #expect(search.asked.count == 1 && model.suggestions.isEmpty && !model.isSearching)
+        model.places.query = "   "
+        await model.places.settled()
+        #expect(search.asked.count == 1 && model.places.suggestions.isEmpty && !model.places.isSearching)
     }
 
     @Test func aFailedSearchSaysWhy() async {
@@ -131,9 +131,9 @@ struct LocationEditModelTests {
         let source = SampleLibrarySource(count: 1)
         let model = makeModel(search)
         model.show([source.assets[0]], in: source)
-        model.query = "nowhere"
-        await model.searchSettled()
-        #expect(model.suggestions.isEmpty && model.errorMessage != nil && !model.isSearching)
+        model.places.query = "nowhere"
+        await model.places.settled()
+        #expect(model.places.suggestions.isEmpty && model.errorMessage != nil && !model.places.isSearching)
     }
 
     @Test func anotherSelectionLeavesTheEditing() {

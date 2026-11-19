@@ -25,7 +25,7 @@ struct LibraryQueryTests {
         #expect(query.isUnfiltered)
         #expect(query.matches(asset("a")) && !query.matches(asset("b")))
 
-        query.minimumRating = 3
+        query.filters.rating = .atLeast(3)
         query.searchText = "sea"
         #expect(!query.isUnfiltered)
         let cleared = query.clearingFilters
@@ -34,14 +34,16 @@ struct LibraryQueryTests {
 
     @Test func filtersInMemory() {
         var query = LibraryQuery()
-        query.minimumRating = 3
+        query.filters.rating = .atLeast(3)
         #expect(query.matches(asset("a", rating: 3)) && !query.matches(asset("b", rating: 2)))
         query = LibraryQuery()
-        query.flag = .notRejected
+        query.filters.flag = .notRejected
         #expect(query.matches(asset("a")) && !query.matches(asset("b", flag: .rejected)))
         query = LibraryQuery()
-        query.editedOnly = true
+        query.filters.edits = .edited
         #expect(!query.matches(asset("a")) && query.matches(asset("b", edited: true)))
+        query.filters.edits = .notEdited
+        #expect(query.matches(asset("a")) && !query.matches(asset("b", edited: true)))
         query = LibraryQuery()
         query.searchText = "LAPL"
         #expect(query.matches(asset("a", keywords: ["Lapland"])) && !query.matches(asset("b", keywords: ["sea"])))
@@ -69,12 +71,14 @@ struct LibraryQueryTests {
         #expect(try await store.items(inFolder: folder.id, query: query).map(\.fileName) == ["a-sea.jpg", "b-sky.jpg"])
         query = LibraryQuery(); query.sort = .rating
         #expect(try await store.items(inFolder: folder.id, query: query).first?.fileName == "b-sky.jpg")
-        query = LibraryQuery(); query.minimumRating = 2
+        query = LibraryQuery(); query.filters.rating = .atLeast(2)
         #expect(try await store.items(inFolder: folder.id, query: query).map(\.fileName) == ["b-sky.jpg"])
-        query = LibraryQuery(); query.flag = .notRejected
+        query = LibraryQuery(); query.filters.flag = .notRejected
         #expect(try await store.items(inFolder: folder.id, query: query).map(\.fileName) == ["b-sky.jpg"])
-        query = LibraryQuery(); query.editedOnly = true; query.rawOnly = true
+        query = LibraryQuery(); query.filters.edits = .edited; query.filters.rawOnly = true
         #expect(try await store.items(inFolder: folder.id, query: query).count == 1)
+        query = LibraryQuery(); query.filters.edits = .notEdited
+        #expect(try await store.items(inFolder: folder.id, query: query).map(\.fileName) == ["a-sea.jpg"])
         query = LibraryQuery(); query.searchText = "sea"
         #expect(try await store.items(inFolder: folder.id, query: query).map(\.fileName) == ["a-sea.jpg"])
         query = LibraryQuery(); query.searchText = "sk"
@@ -82,7 +86,7 @@ struct LibraryQueryTests {
         // Any part of the name, and a search combined with a filter.
         query = LibraryQuery(); query.searchText = "-s jpg"
         #expect(try await store.items(inFolder: folder.id, query: query).count == 2)
-        query.minimumRating = 2
+        query.filters.rating = .atLeast(2)
         #expect(try await store.items(inFolder: folder.id, query: query).map(\.fileName) == ["b-sky.jpg"])
     }
 }

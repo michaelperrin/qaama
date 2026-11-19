@@ -23,7 +23,36 @@ can feed a website one day. Dates are when the feature landed.
   second, rows built only when shown) (2026-10-29).
 - Sorting by capture date, modification date, rating or file name, ascending or descending
   (2026-10-30).
-- Filters: minimum rating, flag, edited only, RAW only, favorites only (2026-10-30).
+- Filters: rating, flag, edited only, RAW only, favorites only (2026-10-30).
+- Filter panel, from the toolbar's Filter button (2026-11-19):
+  - One row per filter with a checkbox: Favorites, Edits, RAW, Rating, Flag, Date, Location.
+    A checked row shows what it asks; unchecking it keeps the value for the next time.
+  - Edits: the edited photos or the ones not edited yet (2026-11-19). In folders an edit is
+    Qaama's; in the Apple Photos library and its albums it is any app's, as the badge on
+    thumbnails tells.
+  - Rating compared either way: at least, at most or exactly a number of stars, or unrated photos.
+  - Date: the photos taken between two days, both included, or in the last days, weeks, months
+    or years counted back from today ("In the Last 30 Days"), which moves on with the days
+    (relative dates 2026-11-19).
+  - Location: the photos taken within a radius of a place, from 50 m to 1,000 km (or feet and miles, where
+    roads are measured in them). The place is searched by name or clicked on the panel's map,
+    which draws the disc; the radius is set with a slider or typed.
+  - A switch turns every filter off without losing them, and an arrow unchecks them all. The
+    panel of each library comes back as it was left; the toolbar button is filled while filters
+    apply.
+  - Works in folders, in the Apple Photos library and its albums (flag aside, which Photos
+    doesn't know), and narrows the map of every library.
+- Saved filters (2026-11-19): Save as Preset…, at the bottom of the Filter panel, keeps the
+  filters that apply under a name. Each preset is an entry of the sidebar's Saved Filters
+  section: a click shows the library it was saved in (the Photos library, an album, a folder or
+  one of its subfolders) filtered that way, under the preset's name, and leaves that library's
+  own entry as it was. A right click renames or deletes the preset. Saving, renaming and
+  deleting are each undoable, and the presets are remembered across launches.
+  - In a preset, once its filters are changed, the panel's button becomes Update Preset, which
+    replaces what the preset filters by (undoable); the arrow next to it holds Save as New
+    Preset….
+  - A preset saved with dates "in the last…" always shows the latest photos: a smart album of
+    the last month, of this year's five-star photos, and so on.
 - Browsing by month, in the Apple Photos library, its albums and folders alike, whenever photos
   are sorted by capture date (2026-11-10):
   - Month headers in the grid: each month starts under its name and its number of photos.

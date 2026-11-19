@@ -1,9 +1,9 @@
 import LibraryKit
 import SwiftUI
 
-/// Lists the map of every photo, then the Apple Photos library with its album hierarchy, and the
-/// folders the user added with their subdirectories. Both sections are outlines over `SidebarItem`,
-/// so every row selects the same way.
+/// Lists the map of every photo, then the Apple Photos library with its album hierarchy, the
+/// folders the user added with their subdirectories, and the filter presets the user saved. The
+/// first two sections are outlines over `SidebarItem`, so every row selects the same way.
 ///
 /// Albums are managed from here: the context menus create albums and folders and delete albums, and
 /// photos dragged from the grid onto an album are added to it.
@@ -12,6 +12,8 @@ struct SidebarView: View {
     @Binding var selection: LibrarySelection?
     /// Whether the window shows this sidebar, for the toggle in its header.
     @Binding var visibility: NavigationSplitViewVisibility
+    /// The filter preset the window asks a name for: set here to rename one.
+    @Binding var presetDialog: FilterPresetDialog?
     let addFolder: () -> Void
 
     /// The album question being asked: a name for a new album or folder, or a deletion to confirm.
@@ -46,6 +48,20 @@ struct SidebarView: View {
                 if catalog.folders.isEmpty {
                     Text("No folders yet")
                         .foregroundStyle(.secondary)
+                }
+            }
+            // Only once there is one: the section is made from the Filter panel.
+            if !catalog.filterPresets.presets.isEmpty {
+                Section("Saved Filters") {
+                    ForEach(catalog.filterPresets.presets) { preset in
+                        Label(preset.name, systemImage: "line.3.horizontal.decrease.circle")
+                            .help("“\(catalog.title(of: LibrarySelection(preset.library)))”, filtered")
+                            .tag(LibrarySelection.filterPreset(preset.id))
+                            .contextMenu {
+                                Button("Rename Preset…") { presetDialog = .rename(preset) }
+                                Button("Delete Preset", role: .destructive) { delete(preset) }
+                            }
+                    }
                 }
             }
         }
@@ -185,6 +201,14 @@ struct SidebarView: View {
         }
     }
 
+    /// Without asking: Edit › Undo brings the preset back. Its library takes its place on screen.
+    private func delete(_ preset: FilterPreset) {
+        if selection == .filterPreset(preset.id) {
+            selection = LibrarySelection(preset.library)
+        }
+        catalog.filterPresets.delete(preset.id, undoManager: undoManager)
+    }
+
     private func remove(_ folder: FolderLibrarySource) {
         switch selection {
         case .folder(folder.id), .subfolder(folder.id, _): selection = .photos
@@ -251,6 +275,7 @@ private struct SidebarItem: Identifiable {
 
 #Preview {
     @Previewable @State var selection: LibrarySelection? = .photos
-    SidebarView(catalog: LibraryCatalog(store: try! CatalogStore.inMemory()), selection: $selection, visibility: .constant(.all)) {}
+    SidebarView(catalog: LibraryCatalog(store: try! CatalogStore.inMemory()), selection: $selection, visibility: .constant(.all),
+                presetDialog: .constant(nil)) {}
         .frame(width: 220, height: 400)
 }

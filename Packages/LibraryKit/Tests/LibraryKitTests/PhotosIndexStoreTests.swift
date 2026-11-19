@@ -179,4 +179,42 @@ struct PhotosIndexStoreTests {
         #expect(try await store.changeToken() == nil)
         #expect(try await store.count() == 0)
     }
+
+    @Test func findsTheAssetsTakenWithinAPlace() async throws {
+        let store = try makeStore()
+        let paris = GeoCoordinate(latitude: 48.8566, longitude: 2.3522)
+        func entry(_ id: String, _ fileName: String, at location: GeoCoordinate?) -> PhotosAssetEntry {
+            PhotosAssetEntry(id: id, fileName: fileName, captureDate: nil, isRAW: false, location: location)
+        }
+        try await store.save([entry("paris", "DSCF0001.RAF", at: paris),
+                              entry("versailles", "DSCF0002.RAF", at: GeoCoordinate(latitude: 48.8049, longitude: 2.1204)),
+                              // In the box around a 25 km disc, but 30 km from its center.
+                              entry("corner", "IMG_0003.HEIC", at: GeoCoordinate(latitude: paris.latitude + 0.2, longitude: paris.longitude + 0.3)),
+                              entry("lyon", "DSCF0004.RAF", at: GeoCoordinate(latitude: 45.7640, longitude: 4.8357)),
+                              entry("nowhere", "DSCF0005.RAF", at: nil)],
+                             keywords: ["versailles": ["Château"]])
+
+        let near = PlaceFilter(center: paris, radius: 25000)
+        #expect(try await Set(#require(store.search("", within: near))) == ["paris", "versailles"])
+        #expect(try await Set(#require(store.search("", within: PlaceFilter(center: paris, radius: 35000)))) == ["paris", "versailles", "corner"])
+        // With words, both must hold.
+        #expect(try await store.search("chateau", within: near) == ["versailles"])
+        #expect(try await store.search("dscf", within: PlaceFilter(center: paris, radius: 500_000)).map(Set.init) == ["paris", "versailles", "lyon"])
+        #expect(try await store.search("  ") == nil, "nothing asked")
+    }
+
+    @Test func findsTheEditedAssetsAndTheOthers() async throws {
+        let store = try makeStore()
+        func entry(_ id: String, _ fileName: String, edited: Bool) -> PhotosAssetEntry {
+            PhotosAssetEntry(id: id, fileName: fileName, captureDate: nil, isRAW: false, hasAdjustments: edited)
+        }
+        try await store.save([entry("a", "DSCF0001.RAF", edited: true), entry("b", "DSCF0002.RAF", edited: false), entry("c", "IMG_0003.HEIC", edited: true)])
+        #expect(try await store.search("", edits: .edited).map(Set.init) == ["a", "c"])
+        #expect(try await store.search("", edits: .notEdited) == ["b"])
+        #expect(try await store.search("dscf", edits: .edited) == ["a"])
+
+        // An edit made since, read again by a pass.
+        try await store.save([entry("b", "DSCF0002.RAF", edited: true)])
+        #expect(try await store.search("", edits: .notEdited) == [])
+    }
 }

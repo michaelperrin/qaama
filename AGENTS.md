@@ -54,6 +54,17 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   sidebar shows); identifiers are the members' own. Anything a source must tell for that goes
   into `LibrarySource` (`listingDates()`), never into a cast to a concrete source. One grid of
   every photo of every library was tried and dropped: see `docs/PLAN.md` before bringing it back.
+- Filters: `LibraryQuery.filters` (`LibraryFilters`) says what applies and is all a source reads;
+  what the Filter panel shows (checkboxes, values kept while unchecked, its switch) is
+  `LibraryFilterSettings`, kept per library by `LibraryFilterPanels`, which writes the query (and
+  writes it again when the day changes, for dates like "the last 30 days": `LibraryFilters` only
+  holds absolute dates). A new
+  filter goes into both, with its `QueryCapability`, the catalog's SQL and the PhotoKit predicate
+  (or the Photos index when PhotoKit can't query it, as for places and edits).
+- A filter preset (`FilterPreset`, kept by `FilterPresetStore` in a JSON file of Application
+  Support: user data, unlike the catalog) is panel settings plus the library they were saved in.
+  It shows through a source of its own (`LibraryCatalog.library(for:)`), as the map does, so its
+  filters never touch the source the library's own sidebar entry shows.
 - Edits are recipes, never pixels: sidecar `<file>.qaama` next to folder images,
   `PHAdjustmentData` plus a rendered JPEG for Photos. Reset means removing the recipe.
 - A LUT is named in the recipe, never copied into it: the `.cube` files live in the app's

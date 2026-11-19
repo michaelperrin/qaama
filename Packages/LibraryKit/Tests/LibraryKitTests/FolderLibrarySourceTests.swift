@@ -208,7 +208,7 @@ struct FolderLibrarySourceTests {
         let paris = try #require(source.assets.first { source.fileURL(for: $0)?.lastPathComponent == "paris.jpg" })
         try await source.setRating(5, for: paris)
 
-        source.query.minimumRating = 3
+        source.query.filters.rating = .atLeast(3)
         await wait { source.assets.count == 1 }
         #expect(await source.locatedAssets().map(\.id) == [paris.id])
         #expect(source.placesVersion > version)

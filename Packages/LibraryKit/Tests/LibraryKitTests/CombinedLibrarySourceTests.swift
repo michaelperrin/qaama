@@ -72,9 +72,9 @@ struct CombinedLibrarySourceTests {
         await open(in: library)
 
         // Favorites are every fifth photo: the first of each member here.
-        library.query.favoritesOnly = true
+        library.query.filters.favoritesOnly = true
         await library.waitUntilWoven()
-        #expect(a.query.favoritesOnly && b.query.favoritesOnly)
+        #expect(a.query.filters.favoritesOnly && b.query.filters.favoritesOnly)
         #expect(library.assets.map(\.id) == ["a-0", "b-0"])
 
         library.query = library.query.clearingFilters
@@ -124,7 +124,7 @@ struct CombinedLibrarySourceTests {
         let (library, a, _) = await makeLibrary()
         #expect(library.capabilities == [.rating, .flag, .keywords, .captureDate, .location, .originalLocation, .deletion, .duplication])
         // Orders other than by date don't weave.
-        #expect(library.queryCapabilities == [.rating, .flag, .edited, .favorite, .search])
+        #expect(library.queryCapabilities == [.rating, .flag, .edited, .favorite, .captureDates, .place, .search])
 
         a.capabilities = [.rating, .keywords]
         #expect(library.capabilities == [.rating, .keywords])
@@ -195,9 +195,9 @@ struct CombinedLibrarySourceTests {
         #expect(library.asset(id: "b-0") == nil)
         #expect(library.placesVersion != version)
         // The newcomer got the library's query.
-        library.query.favoritesOnly = true
+        library.query.filters.favoritesOnly = true
         await library.waitUntilWoven()
-        #expect(c.query.favoritesOnly)
+        #expect(c.query.filters.favoritesOnly)
         #expect(library.assets.map(\.id) == ["a-0", "c-0"])
     }
 
@@ -243,7 +243,7 @@ struct CombinedLibrarySourceTests {
         #expect(!view.isScanning)
 
         // The folder is filtered in its own entry: the group opened from the map isn't.
-        scanning.query.minimumRating = 3
+        scanning.query.filters.rating = .atLeast(3)
         let file = try #require(library.assets.first { library.fileURL(for: $0)?.lastPathComponent == "one.png" })
         try await library.setRating(4, for: file)
         for _ in 0 ..< 400 where scanning.assets.count != 1 || library.asset(id: file.id)?.rating != 4 {

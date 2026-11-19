@@ -247,28 +247,39 @@ public final nonisolated class CatalogStore: Sendable {
         if !query.includesPairedJPEGs {
             clauses.append("NOT (item.pairedItemID IS NOT NULL AND item.isRAW = 0)")
         }
-        if query.minimumRating > 0 {
-            clauses.append("item.rating >= ?")
-            arguments += [query.minimumRating]
+        // The date the user corrected counts before the header's.
+        let captureDate = "COALESCE(item.captureDateOverride, item.captureDate)"
+        let filters = query.filters
+        if let rating = filters.rating {
+            clauses.append("item.rating \(rating.comparisonOperator) ?")
+            arguments += [rating.stars]
         }
-        switch query.flag {
-        case .any: break
+        switch filters.flag {
+        case nil: break
         case .picked: clauses.append("item.flag = \(ItemFlag.picked.rawValue)")
         case .rejected: clauses.append("item.flag = \(ItemFlag.rejected.rawValue)")
         case .unflagged: clauses.append("item.flag = \(ItemFlag.none.rawValue)")
         case .notRejected: clauses.append("item.flag <> \(ItemFlag.rejected.rawValue)")
         }
-        if query.editedOnly {
-            clauses.append("item.hasEdit = 1")
+        if let edits = filters.edits {
+            clauses.append("item.hasEdit = \(edits == .edited ? 1 : 0)")
         }
-        if query.rawOnly {
+        if filters.rawOnly {
             clauses.append("item.isRAW = 1")
+        }
+        if let dates = filters.captureDates {
+            clauses.append("\(captureDate) >= ? AND \(captureDate) < ?")
+            arguments += [dates.lowerBound, dates.upperBound]
+        }
+        if let place = filters.place {
+            // The box around the disc; `refined` then measures the distances.
+            let box = place.boxCondition(latitude: Self.effectiveLocation(of: "latitude"), longitude: Self.effectiveLocation(of: "longitude"))
+            clauses.append(box.sql)
+            arguments += StatementArguments(box.arguments)
         }
         sql += " WHERE " + clauses.joined(separator: " AND ")
 
         let direction = query.ascending ? "ASC" : "DESC"
-        // The date the user corrected counts before the header's.
-        let captureDate = "COALESCE(item.captureDateOverride, item.captureDate)"
         switch query.sort {
         case .captureDate: sql += " ORDER BY \(captureDate) \(direction) NULLS LAST, item.contentModified \(direction)"
         case .modificationDate: sql += " ORDER BY COALESCE(item.sidecarModified, item.contentModified) \(direction)"
@@ -278,13 +289,26 @@ public final nonisolated class CatalogStore: Sendable {
         return (sql, arguments)
     }
 
+    /// One coordinate of where the photo was taken as `CatalogItem.effectiveLocation` tells it: the
+    /// user's correction, else the header's, and none for a photo the user said has no location.
+    private static func effectiveLocation(of coordinate: String) -> String {
+        "CASE WHEN item.locationRemoved THEN NULL ELSE COALESCE(item.\(coordinate)Override, item.\(coordinate)) END"
+    }
+
+    /// What the statement of a query can't decide by itself: SQLite only boxes a place filter in,
+    /// the distances are measured here.
+    private static func refined(_ items: [CatalogItem], for query: LibraryQuery) -> [CatalogItem] {
+        guard let place = query.filters.place else { return items }
+        return items.filter { item in item.effectiveLocation.map(place.contains) ?? false }
+    }
+
     // MARK: - Observation
 
     /// Items of a folder sorted and filtered by a query.
     public func items(inFolder folderID: UUID, query: LibraryQuery) async throws -> [CatalogItem] {
         let statement = Self.statement(folderID: folderID, query: query)
         return try await writer.read { db in
-            try CatalogItem.fetchAll(db, sql: statement.sql, arguments: statement.arguments)
+            try Self.refined(CatalogItem.fetchAll(db, sql: statement.sql, arguments: statement.arguments), for: query)
         }
     }
 
@@ -293,7 +317,7 @@ public final nonisolated class CatalogStore: Sendable {
     public func observeItems(inFolder folderID: UUID, query: LibraryQuery = .default) -> AsyncThrowingStream<[CatalogItem], Error> {
         let statement = Self.statement(folderID: folderID, query: query)
         let observation = ValueObservation.tracking { db in
-            try CatalogItem.fetchAll(db, sql: statement.sql, arguments: statement.arguments)
+            try Self.refined(CatalogItem.fetchAll(db, sql: statement.sql, arguments: statement.arguments), for: query)
         }
         let writer = writer
         return AsyncThrowingStream { continuation in
