@@ -291,8 +291,11 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
 
     /// Starts copying photos to a destination called `destinationName`, and returns the import to
     /// follow. A RAW shown with its JPEG brings both files: into the same subfolder of a folder, as
-    /// one photo of a library. Nil while another import from this device is going on.
-    public func startImport(of assets: [LibraryAsset], into destination: ImportDestination, named destinationName: String) -> CameraImport? {
+    /// one photo of a library. `secondCopy` is a folder every file is copied to as well, filed by
+    /// day: another disk, for a backup. Nil while another import from this device is going on.
+    public func startImport(of assets: [LibraryAsset], into destination: ImportDestination, named destinationName: String,
+                            secondCopy: URL? = nil) -> CameraImport?
+    {
         guard currentImport?.isFinished != false else { return nil }
         let job = CameraImport(deviceName: displayName, destinationName: destinationName, total: assets.count)
         currentImport = job
@@ -304,9 +307,9 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
                 guard let self, !Task.isCancelled, case .listed = state else { break }
                 switch destination {
                 case let .folder(folder, layout):
-                    await importPhoto(asset, into: folder, layout: layout, staging: staging, job: job)
+                    await importPhoto(asset, into: folder, layout: layout, secondCopy: secondCopy, staging: staging, job: job)
                 case let .library(makePhoto):
-                    await importPhoto(asset, with: makePhoto, staging: staging, job: job)
+                    await importPhoto(asset, with: makePhoto, secondCopy: secondCopy, staging: staging, job: job)
                 }
             }
             try? FileManager.default.removeItem(at: staging)
@@ -315,71 +318,111 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
         return job
     }
 
-    private func importPhoto(_ asset: LibraryAsset, into folder: URL, layout: ImportLayout, staging: URL, job: CameraImport) async {
+    private func importPhoto(_ asset: LibraryAsset, into folder: URL, layout: ImportLayout, secondCopy: URL?, staging: URL, job: CameraImport) async {
         let directory = layout.subfolder(for: asset.creationDate).map { folder.appendingPathComponent($0, isDirectory: true) } ?? folder
+        let copyDirectory = secondCopy.map { CameraImportFiles.secondCopyDirectory(in: $0, for: asset.creationDate) }
         var copied: [URL] = []
         var skipped = 0
         var errors: [String] = []
-        // The files that are at the destination now, copied or found there.
+        // The files that are at the destination now, copied or found there; and those of them
+        // whose second copy, if asked for, is there too.
         var arrived: [CameraFile] = []
+        var safe: [CameraFile.ID] = []
         for file in [asset.id, asset.pairedAssetID].compactMap(\.self).compactMap({ files[$0] }) {
             // File system work, however short, stays off the main actor.
-            let placement = await Task.detached { CameraImportFiles.placement(name: file.name, byteSize: file.byteSize, in: directory) }.value
-            guard case let .copy(destination) = placement else {
+            let (placement, copyPlacement) = await Task.detached {
+                (CameraImportFiles.placement(name: file.name, byteSize: file.byteSize, in: directory),
+                 copyDirectory.map { CameraImportFiles.placement(name: file.name, byteSize: file.byteSize, in: $0) })
+            }.value
+            // Read from the device unless it is everywhere it should be already.
+            if placement == .alreadyThere, copyPlacement == nil || copyPlacement == .alreadyThere {
                 skipped += 1
                 arrived.append(file)
+                safe.append(file.id)
                 continue
             }
-            let result: Result<URL, any Error>? = await queue.run(.copy) {
+            let result: Result<CameraImportFiles.Placed, any Error>? = await queue.run(.copy) {
                 do {
                     try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
                     let downloaded = try await connection.download(file.id, into: staging)
-                    try await Task.detached { try CameraImportFiles.install(downloaded, expectedSize: file.byteSize, at: destination) }.value
-                    return .success(destination)
+                    return try await .success(Task.detached {
+                        try CameraImportFiles.place(downloaded, expectedSize: file.byteSize, at: placement, secondCopy: copyPlacement)
+                    }.value)
                 } catch {
                     return .failure(error)
                 }
             }
             switch result {
-            case let .success(url):
-                copied.append(url)
+            case let .success(placed):
+                if let installed = placed.installed {
+                    copied.append(installed)
+                } else {
+                    skipped += 1
+                }
                 arrived.append(file)
+                if let failure = placed.secondCopyError {
+                    errors.append(failure)
+                } else {
+                    safe.append(file.id)
+                }
             case let .failure(error): errors.append(error.localizedDescription)
             // Cancelled before its turn: the photo isn't counted as gone through.
             case nil: return
             }
         }
-        job.record(copied: copied, skipped: skipped, errors: errors, files: arrived)
+        job.record(copied: copied, skipped: skipped, errors: errors, files: arrived, removable: safe)
     }
 
-    /// Copies the files of one photo into a folder of their own, checks them, and hands them to
-    /// the library. Nothing is handed over unless every file came whole.
-    private func importPhoto(_ asset: LibraryAsset, with makePhoto: @Sendable (ImportedPhoto) async throws -> String, staging: URL, job: CameraImport) async {
+    /// Copies the files of one photo into a folder of their own, checks them, makes their second
+    /// copies where wanted, and hands them to the library. Nothing is handed over unless every
+    /// file came whole.
+    private func importPhoto(_ asset: LibraryAsset, with makePhoto: @Sendable (ImportedPhoto) async throws -> String, secondCopy: URL?,
+                             staging: URL, job: CameraImport) async
+    {
         let directory = staging.appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
+        let copyDirectory = secondCopy.map { CameraImportFiles.secondCopyDirectory(in: $0, for: asset.creationDate) }
         var photo = ImportedPhoto(files: [])
+        var errors: [String] = []
+        var safe: [CameraFile.ID] = []
         let photoFiles = [asset.id, asset.pairedAssetID].compactMap(\.self).compactMap { files[$0] }
         for file in photoFiles {
-            let result: Result<URL, any Error>? = await queue.run(.copy) {
+            let result: Result<(url: URL, secondCopyError: String?), any Error>? = await queue.run(.copy) {
                 do {
                     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                     let downloaded = try await connection.download(file.id, into: directory)
-                    try await Task.detached { try CameraImportFiles.check(downloaded, expectedSize: file.byteSize) }.value
-                    return .success(downloaded)
+                    let failure = try await Task.detached { () -> String? in
+                        try CameraImportFiles.check(downloaded, expectedSize: file.byteSize)
+                        guard let copyDirectory, case let .copy(copy) = CameraImportFiles.placement(name: file.name, byteSize: file.byteSize, in: copyDirectory) else { return nil }
+                        do {
+                            try FileManager.default.createDirectory(at: copyDirectory, withIntermediateDirectories: true)
+                            try FileManager.default.copyItem(at: downloaded, to: copy)
+                            return nil
+                        } catch {
+                            return CameraImportError.secondCopyFailed(file.name, error.localizedDescription).localizedDescription
+                        }
+                    }.value
+                    return .success((downloaded, failure))
                 } catch {
                     return .failure(error)
                 }
             }
             switch result {
-            case let .success(url): photo.files.append(ImportedPhoto.File(url: url, name: file.name, isRAW: file.isRAW))
+            case let .success(downloaded):
+                photo.files.append(ImportedPhoto.File(url: downloaded.url, name: file.name, isRAW: file.isRAW))
+                if let failure = downloaded.secondCopyError {
+                    errors.append(failure)
+                } else {
+                    safe.append(file.id)
+                }
             case let .failure(error): return job.record(errors: [error.localizedDescription])
             case nil: return
             }
         }
         do {
-            try await job.record(photoID: makePhoto(photo), files: photoFiles)
+            try await job.record(photoID: makePhoto(photo), errors: errors, files: photoFiles, removable: safe)
         } catch {
-            job.record(errors: [error.localizedDescription])
+            job.record(errors: errors + [error.localizedDescription])
         }
     }
 

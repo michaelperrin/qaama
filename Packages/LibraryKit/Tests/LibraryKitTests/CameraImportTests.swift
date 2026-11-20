@@ -52,7 +52,17 @@ struct CameraImportTests {
     @Test func photosAreFiledByDayOrNotAtAll() {
         let day = Self.calendar.date(from: DateComponents(year: 2026, month: 3, day: 7, hour: 10))
         #expect(ImportLayout.byDay.subfolder(for: day, calendar: Self.calendar) == "2026/2026-03-07")
+        #expect(ImportLayout.yearMonthDay.subfolder(for: day, calendar: Self.calendar) == "2026/03/07")
+        #expect(ImportLayout.yearMonth.subfolder(for: day, calendar: Self.calendar) == "2026/03")
+        #expect(ImportLayout.year.subfolder(for: day, calendar: Self.calendar) == "2026")
+        #expect(ImportLayout.day.subfolder(for: day, calendar: Self.calendar) == "2026-03-07")
         #expect(ImportLayout.flat.subfolder(for: day, calendar: Self.calendar) == nil)
+        for layout in ImportLayout.allCases {
+            #expect(layout.subfolder(for: nil, calendar: Self.calendar) == nil)
+        }
+        // By month, the days of a month share a folder.
+        let other = Self.calendar.date(from: DateComponents(year: 2026, month: 3, day: 21, hour: 10))
+        #expect(ImportLayout.yearMonth.folders(for: [day, other, other], calendar: Self.calendar) == [ImportFolderPreview(subfolder: "2026/03", count: 3)])
         // A photo without a date goes to the folder itself.
         #expect(ImportLayout.byDay.subfolder(for: nil, calendar: Self.calendar) == nil)
     }
@@ -452,6 +462,88 @@ struct CameraImportTests {
         #expect(fixture.files() == ["IMG_0001.JPG", "IMG_0002.CR2", "IMG_0002.JPG"])
         // Asked again: nothing left to delete.
         #expect(try await fixture.source.deleteImported(by: job) == 0)
+    }
+
+    // MARK: - Second copy
+
+    /// Every file under a folder, by relative path.
+    private func files(under folder: URL) -> [String] {
+        let prefix = folder.resolvingSymlinksInPath().path + "/"
+        let enumerator = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey])
+        return (enumerator?.compactMap { $0 as? URL } ?? [])
+            .filter { (try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true }
+            .map { $0.resolvingSymlinksInPath().path.replacingOccurrences(of: prefix, with: "") }
+            .sorted()
+    }
+
+    @Test func aSecondCopyOfEveryFileIsFiledByDayOnAnotherDisk() async throws {
+        let fixture = try await makeFixture([
+            CameraFile(id: "DCIM/100/IMG_0001.JPG", byteSize: 300, creationDate: date(2021, 11, 10)),
+            CameraFile(id: "DCIM/100/IMG_0002.CR2", byteSize: 900, creationDate: date(2021, 11, 11), isRAW: true),
+            CameraFile(id: "DCIM/100/IMG_0002.JPG", byteSize: 200, creationDate: date(2021, 11, 11)),
+        ])
+        defer { try? FileManager.default.removeItem(at: fixture.base) }
+        let backup = fixture.base.appendingPathComponent("Backup")
+        // Imported before, without a second copy: the photo is read again for the copy alone.
+        try fixture.connection.contents["DCIM/100/IMG_0001.JPG"]?.write(to: fixture.folder.appendingPathComponent("IMG_0001.JPG"))
+
+        let job = try #require(fixture.source.startImport(of: Array(fixture.source.assets), into: .folder(fixture.folder, layout: .flat), named: "Photos", secondCopy: backup))
+        await job.wait()
+        #expect(job.failures.isEmpty)
+        #expect(fixture.files() == ["IMG_0001.JPG", "IMG_0002.CR2", "IMG_0002.JPG"])
+        // The second copies are filed by day whatever the destination does.
+        #expect(files(under: backup) == ["2021/2021-11-10/IMG_0001.JPG", "2021/2021-11-11/IMG_0002.CR2", "2021/2021-11-11/IMG_0002.JPG"])
+        #expect(job.alreadyThere == 1)
+        #expect(job.importedCount == 1)
+        #expect(Set(job.importedFileIDs) == ["DCIM/100/IMG_0001.JPG", "DCIM/100/IMG_0002.CR2", "DCIM/100/IMG_0002.JPG"])
+        let copy = try Data(contentsOf: backup.appendingPathComponent("2021/2021-11-11/IMG_0002.CR2"))
+        #expect(copy == fixture.connection.contents["DCIM/100/IMG_0002.CR2"])
+
+        // Again: everything is in both places, nothing is read from the device.
+        let requests = fixture.connection.requests.count
+        let again = try #require(fixture.source.startImport(of: Array(fixture.source.assets), into: .folder(fixture.folder, layout: .flat), named: "Photos", secondCopy: backup))
+        await again.wait()
+        #expect(again.alreadyThere == 2)
+        #expect(fixture.connection.requests.count == requests)
+    }
+
+    @Test func aSecondCopyThatFailsIsToldAndItsFileStaysOnTheDevice() async throws {
+        let fixture = try await makeFixture([
+            CameraFile(id: "DCIM/100/IMG_0001.JPG", byteSize: 300, creationDate: date(2021, 11, 10)),
+            CameraFile(id: "DCIM/100/IMG_0002.JPG", byteSize: 200, creationDate: nil),
+        ])
+        defer { try? FileManager.default.removeItem(at: fixture.base) }
+        // The disk of the second copies is gone: a file stands where the year's folder should be.
+        let backup = fixture.base.appendingPathComponent("Backup")
+        try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
+        try Data([1]).write(to: backup.appendingPathComponent("2021"))
+
+        let job = try #require(fixture.source.startImport(of: Array(fixture.source.assets), into: .folder(fixture.folder, layout: .flat), named: "Photos", secondCopy: backup))
+        await job.wait()
+        // Both photos are imported; one second copy couldn't be made.
+        #expect(fixture.files() == ["IMG_0001.JPG", "IMG_0002.JPG"])
+        #expect(job.importedCount == 2)
+        #expect(job.failures.count == 1)
+        #expect(job.failures.first?.contains("second copy") == true)
+        #expect(job.importedFiles.count == 2)
+        // Only the photo that is in both places may be deleted from the device.
+        #expect(job.importedFileIDs == ["DCIM/100/IMG_0002.JPG"])
+        #expect(try await fixture.source.deleteImported(by: job) == 1)
+        #expect(fixture.source.assets.map(\.id) == ["DCIM/100/IMG_0001.JPG"])
+    }
+
+    @Test func photosForALibraryGetTheirSecondCopyToo() async throws {
+        let fixture = try await makeFixture([
+            CameraFile(id: "DCIM/100/IMG_0001.JPG", byteSize: 300, creationDate: date(2021, 11, 10)),
+        ])
+        defer { try? FileManager.default.removeItem(at: fixture.base) }
+        let backup = fixture.base.appendingPathComponent("Backup")
+        let job = try #require(fixture.source.startImport(of: Array(fixture.source.assets), into: .library { _ in "photo-1" }, named: "Photos", secondCopy: backup))
+        await job.wait()
+        #expect(job.createdPhotoIDs == ["photo-1"])
+        #expect(job.failures.isEmpty)
+        #expect(files(under: backup) == ["2021/2021-11-10/IMG_0001.JPG"])
+        #expect(job.importedFileIDs == ["DCIM/100/IMG_0001.JPG"])
     }
 
     @Test func aFileIsToldByItsNameItsSizeAndItsDate() {

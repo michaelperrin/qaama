@@ -2,20 +2,35 @@ import Foundation
 import Observation
 import OSLog
 
-/// How imported photos are filed in the folder they go to.
+/// How imported photos are filed in the folder they go to, by the day they were taken.
 public nonisolated enum ImportLayout: String, CaseIterable, Sendable {
-    /// A folder per day of shooting inside one per year: "2026/2026-11-19".
+    /// A folder per day inside one per year: "2026/2026-11-19". The days of a year sort by name.
     case byDay
+    /// Nested folders for the year, the month and the day: "2026/11/19".
+    case yearMonthDay
+    /// A folder per month inside one per year: "2026/11".
+    case yearMonth
+    /// A folder per year: "2026".
+    case year
+    /// A folder per day, all side by side: "2026-11-19".
+    case day
     /// All in the folder itself.
     case flat
 
     /// The subdirectory a photo taken on `date` goes to, relative to the destination; nil for the
     /// destination itself. Photos without a date go to the destination itself too.
     public func subfolder(for date: Date?, calendar: Calendar = .current) -> String? {
-        guard self == .byDay, let date else { return nil }
+        guard self != .flat, let date else { return nil }
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         guard let year = parts.year, let month = parts.month, let day = parts.day else { return nil }
-        return String(format: "%04d/%04d-%02d-%02d", year, year, month, day)
+        return switch self {
+        case .byDay: String(format: "%04d/%04d-%02d-%02d", year, year, month, day)
+        case .yearMonthDay: String(format: "%04d/%02d/%02d", year, month, day)
+        case .yearMonth: String(format: "%04d/%02d", year, month)
+        case .year: String(format: "%04d", year)
+        case .day: String(format: "%04d-%02d-%02d", year, month, day)
+        case .flat: nil
+        }
     }
 
     /// Where photos taken on these dates will go, to show before importing: each subfolder with
@@ -78,11 +93,14 @@ public nonisolated enum CameraImportError: Error, LocalizedError, Sendable {
     case notDownloaded(String)
     /// The copy doesn't have the size the device announced: it isn't kept.
     case incomplete(String)
+    /// The photo was imported, but its second copy couldn't be made, for this reason.
+    case secondCopyFailed(String, String)
 
     public var errorDescription: String? {
         switch self {
         case let .notDownloaded(name): "“\(name)” couldn't be read from the device."
         case let .incomplete(name): "The copy of “\(name)” was incomplete and wasn't kept."
+        case let .secondCopyFailed(name, reason): "The second copy of “\(name)” couldn't be made: \(reason)"
         }
     }
 }
@@ -115,7 +133,8 @@ public final class CameraImport: Identifiable {
     /// The files of the device that are at the destination now, copied by this import or found
     /// there: what the history remembers as imported.
     public private(set) var importedFiles: [ImportedFileSignature] = []
-    /// The same files as the device names them: what deleting the imported photos from it takes.
+    /// The files the device may lose, as it names them: those that are at the destination and,
+    /// when a second copy was asked for, in it too. What deleting the imported photos takes.
     public private(set) var importedFileIDs: [CameraFile.ID] = []
     public private(set) var isFinished = false
     public private(set) var isCancelled = false
@@ -160,10 +179,14 @@ public final class CameraImport: Identifiable {
 
     /// What became of one photo: the files copied or the photo made, whether some files were there
     /// already, what failed.
-    func record(copied: [URL] = [], photoID: String? = nil, skipped: Int = 0, errors: [String] = [], files: [CameraFile] = []) {
+    /// `files` are those at the destination now; `removable`, those of them that are safe to
+    /// delete from the device (all of them, unless told).
+    func record(copied: [URL] = [], photoID: String? = nil, skipped: Int = 0, errors: [String] = [], files: [CameraFile] = [],
+                removable: [CameraFile.ID]? = nil)
+    {
         done += 1
         importedFiles.append(contentsOf: files.map(ImportedFileSignature.init))
-        importedFileIDs.append(contentsOf: files.map(\.id))
+        importedFileIDs.append(contentsOf: removable ?? files.map(\.id))
         imported.append(contentsOf: copied)
         createdPhotoIDs.append(contentsOf: [photoID].compactMap(\.self))
         failures.append(contentsOf: errors)
@@ -216,6 +239,49 @@ nonisolated enum CameraImportFiles {
         guard size > 0, expectedSize <= 0 || size == expectedSize else {
             throw CameraImportError.incomplete(downloaded.lastPathComponent)
         }
+    }
+
+    /// What placing a downloaded file did.
+    struct Placed: Sendable {
+        /// Where the file was moved to; nil when it was at the destination already.
+        var installed: URL?
+        /// Why the second copy couldn't be made, when one was asked for and wasn't.
+        var secondCopyError: String?
+    }
+
+    /// Checks a file the device just copied, makes its second copy where one is wanted, then moves
+    /// it to its place, or drops it when the destination had it already (it was then only read for
+    /// the second copy). A second copy that fails doesn't stop the import: it is told.
+    static func place(_ downloaded: URL, expectedSize: Int64, at destination: Placement, secondCopy: Placement?) throws -> Placed {
+        let manager = FileManager.default
+        var placed = Placed()
+        do {
+            try check(downloaded, expectedSize: expectedSize)
+        } catch {
+            try? manager.removeItem(at: downloaded)
+            throw error
+        }
+        if case let .copy(copy)? = secondCopy {
+            do {
+                try manager.createDirectory(at: copy.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try manager.copyItem(at: downloaded, to: copy)
+            } catch {
+                placed.secondCopyError = CameraImportError.secondCopyFailed(downloaded.lastPathComponent, error.localizedDescription).localizedDescription
+            }
+        }
+        if case let .copy(url) = destination {
+            try install(downloaded, expectedSize: expectedSize, at: url)
+            placed.installed = url
+        } else {
+            try? manager.removeItem(at: downloaded)
+        }
+        return placed
+    }
+
+    /// Where the second copy of a photo taken on `date` goes: always filed by day, whatever the
+    /// destination does, since it is what one looks into when something went wrong.
+    static func secondCopyDirectory(in folder: URL, for date: Date?) -> URL {
+        ImportLayout.byDay.subfolder(for: date).map { folder.appendingPathComponent($0, isDirectory: true) } ?? folder
     }
 
     /// Checks a file the device just copied, and moves it to its place. The temporary copy is

@@ -1,5 +1,6 @@
 import LibraryKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Where the user chose to import photos.
 enum CameraImportTarget {
@@ -12,6 +13,8 @@ enum CameraImportTarget {
 /// What the user chose for an import: where the photos go and what happens after.
 struct CameraImportChoice {
     var target: CameraImportTarget
+    /// A folder every file is copied to as well, for a backup; nil for none.
+    var secondCopy: URL?
     /// Delete from the device the photos that were copied, once the import is over.
     var deletesImported: Bool
     /// Eject the device once everything is copied.
@@ -46,6 +49,11 @@ struct CameraImportSheet: View {
     @State private var isNamingAlbum = false
     /// Asked each time, never remembered: what it does can't be undone.
     @State private var deletesImported = false
+    /// The folder of the second copies, as a bookmark the sandbox lets the app come back to;
+    /// empty for none.
+    @AppStorage("importSecondCopyBookmark") private var secondCopyBookmark = Data()
+    @State private var isChoosingSecondCopy = false
+    @State private var secondCopyError: String?
     /// The album made here, which the list of albums may not hold yet.
     @State private var createdAlbum: (id: String, title: String)?
 
@@ -66,11 +74,16 @@ struct CameraImportSheet: View {
                     }
                     if let folder {
                         Picker("Organize", selection: $layout) {
-                            Text("By day (\(Self.example))").tag(ImportLayout.byDay)
-                            Text("No subfolders").tag(ImportLayout.flat)
+                            // Each way by what it makes of today.
+                            ForEach(ImportLayout.allCases, id: \.self) { layout in
+                                if layout == .flat {
+                                    Divider()
+                                }
+                                Text(layout.title).tag(layout)
+                            }
                         }
                         .help(folder.folderURL.path(percentEncoded: false))
-                        if layout == .byDay {
+                        if layout != .flat {
                             LabeledContent("Folders") { folderPreview }
                         }
                     } else {
@@ -95,6 +108,23 @@ struct CameraImportSheet: View {
                             }
                         }
                     }
+                    LabeledContent("Second copy") {
+                        HStack(spacing: 6) {
+                            Text(secondCopy?.lastPathComponent ?? "None")
+                                .foregroundStyle(secondCopy == nil ? .secondary : .primary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            if secondCopy != nil {
+                                Button("No Second Copy", systemImage: "xmark.circle.fill") { secondCopyBookmark = Data() }
+                                    .labelStyle(.iconOnly)
+                                    .buttonStyle(.borderless)
+                                    .help("Import without a second copy")
+                            }
+                            Button("Choose…") { isChoosingSecondCopy = true }
+                        }
+                    }
+                    .help(secondCopy.map { "Every file is copied to \($0.path(percentEncoded: false)) as well, in a folder per day" }
+                        ?? "A folder, on another disk for instance, every file is copied to as well")
                     Toggle("Delete from “\(deviceName)” what was imported", isOn: $deletesImported)
                         .disabled(!canDelete)
                         .help(canDelete ? "Once the import is over, the photos that were copied are deleted from the device, for good. Those that couldn't be copied stay."
@@ -102,6 +132,10 @@ struct CameraImportSheet: View {
                     Toggle("Eject “\(deviceName)” when done", isOn: $ejects)
                 } header: {
                     Text(photoCount == 1 ? "Import 1 photo from “\(deviceName)”" : "Import \(photoCount.formatted()) photos from “\(deviceName)”")
+                } footer: {
+                    if let secondCopyError {
+                        Text(secondCopyError).foregroundStyle(.red)
+                    }
                 }
             }
             .formStyle(.grouped)
@@ -114,7 +148,8 @@ struct CameraImportSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Import") {
                     let photos = CameraImportTarget.photos(albumID: albumTitle == nil ? nil : albumID, title: albumTitle)
-                    onImport(CameraImportChoice(target: folder.map { .folder($0, layout) } ?? photos, deletesImported: deletesImported && canDelete, ejects: ejects))
+                    onImport(CameraImportChoice(target: folder.map { .folder($0, layout) } ?? photos, secondCopy: secondCopy,
+                                                deletesImported: deletesImported && canDelete, ejects: ejects))
                 }
                 .keyboardShortcut(.defaultAction)
             }
@@ -127,6 +162,22 @@ struct CameraImportSheet: View {
                 albumID = picked.id
                 albumSearch = nil
             }, onCancel: { albumSearch = nil })
+        }
+        .fileImporter(isPresented: $isChoosingSecondCopy, allowedContentTypes: [.folder]) { result in
+            do {
+                let url = try result.get()
+                // The bookmark is made while the picker's access holds.
+                let isAccessing = url.startAccessingSecurityScopedResource()
+                defer {
+                    if isAccessing {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+                secondCopyBookmark = try SecurityBookmark.make(for: url)
+                secondCopyError = nil
+            } catch {
+                secondCopyError = "The folder can't be used for second copies: \(error.localizedDescription)"
+            }
         }
         .sheet(isPresented: $isNamingAlbum) {
             NewAlbumSheet(folders: PhotosAlbumFolderChoice.all(in: albums.tree), editor: albumEditor, undoManager: undoManager, onCreated: { id, title in
@@ -176,15 +227,31 @@ struct CameraImportSheet: View {
         folders.first { $0.id.uuidString == chosenDestination }
     }
 
+    /// The folder of the second copies, while its bookmark still leads somewhere (a disk that is
+    /// unplugged doesn't).
+    private var secondCopy: URL? {
+        secondCopyBookmark.isEmpty ? nil : (try? SecurityBookmark.resolve(secondCopyBookmark))?.url
+    }
+
     /// The title of the album chosen last, while it still exists; nil without an album.
     private var albumTitle: String? {
         guard !albumID.isEmpty else { return nil }
         return albums.album(id: albumID)?.title ?? (createdAlbum?.id == albumID ? createdAlbum?.title : nil)
     }
+}
 
-    /// Today's subfolder, to show what "by day" makes.
-    private static var example: String {
-        ImportLayout.byDay.subfolder(for: .now) ?? ""
+private extension ImportLayout {
+    /// What the Organize menu calls this way of filing, with what it makes of today.
+    var title: String {
+        let example = subfolder(for: .now) ?? ""
+        return switch self {
+        case .byDay: "Year, then day (\(example))"
+        case .yearMonthDay: "Year, month, day (\(example))"
+        case .yearMonth: "Year, month (\(example))"
+        case .year: "Year (\(example))"
+        case .day: "Day (\(example))"
+        case .flat: "No subfolders"
+        }
     }
 }
 

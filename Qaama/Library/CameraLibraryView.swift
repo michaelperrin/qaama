@@ -38,10 +38,12 @@ struct CameraLibraryView: View {
                 } else if source.hidesImported, source.assets.isEmpty, source.photoCount > 0 {
                     // The grid would say the device holds no photo.
                     ContentUnavailableView("Everything Is Imported", systemImage: "checkmark.circle",
-                                           description: Text("Uncheck Hide Already Imported to see the photos of “\(source.displayName)”."))
+                                           description: Text("Turn off Hide Already Imported, in the toolbar or the View menu, to see the photos of “\(source.displayName)”."))
                         .navigationTitle(source.displayName)
                         .navigationSubtitle(subtitle)
-                        .toolbar { hideImportedItem }
+                        .toolbar {
+                            ToolbarItem { hideImportedToggle }
+                        }
                 } else {
                     grid
                 }
@@ -76,6 +78,8 @@ struct CameraLibraryView: View {
         }
         .task { await source.load() }
         .onChange(of: hidesImported, initial: true) { source.hidesImported = hidesImported }
+        // View › Hide Already Imported, while a device is on screen.
+        .focusedSceneValue(\.hasImportedPhotosFilter, true)
         .sheet(isPresented: $isChoosingDestination) {
             CameraImportSheet(deviceName: source.displayName, photoDates: photosToImport.map(\.creationDate), folders: catalog.folders,
                               albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor, undoManager: undoManager,
@@ -140,10 +144,21 @@ struct CameraLibraryView: View {
             destination = .library(catalog.photos.importer(intoAlbum: albumID))
             name = title ?? "Photos"
         }
-        guard let job = source.startImport(of: photosToImport, into: destination, named: name) else { return }
+        // The sandbox lets the folder of the second copies be written to between these two calls.
+        let secondCopy = choice.secondCopy
+        let isAccessingSecondCopy = secondCopy?.startAccessingSecurityScopedResource() ?? false
+        guard let job = source.startImport(of: photosToImport, into: destination, named: name, secondCopy: secondCopy) else {
+            if isAccessingSecondCopy {
+                secondCopy?.stopAccessingSecurityScopedResource()
+            }
+            return
+        }
         let (source, photos, history, undoManager) = (source, catalog.photos, catalog.cameras.history, undoManager)
         Task {
             await job.wait()
+            if isAccessingSecondCopy {
+                secondCopy?.stopAccessingSecurityScopedResource()
+            }
             // Both undos are registered in the same turn: one step of the Edit menu takes the
             // photos back and makes them new again on the device.
             switch choice.target {
@@ -192,13 +207,15 @@ struct CameraLibraryView: View {
             .navigationTitle(source.displayName)
             .navigationSubtitle(subtitle)
             .toolbar {
-                ToolbarItem {
+                // What is shown and how, together; the thumbnail size apart.
+                ToolbarItemGroup {
                     ThumbnailFitToggle()
+                    hideImportedToggle
                 }
+                ToolbarSpacer(.fixed)
                 ToolbarItem {
                     ThumbnailSizeSlider()
                 }
-                hideImportedItem
                 ToolbarItem(placement: .primaryAction) {
                     Button(importTitle) { isChoosingDestination = true }
                         .disabled(isImporting || (selection.isEmpty && source.newPhotoCount == 0))
@@ -230,17 +247,16 @@ struct CameraLibraryView: View {
     }
 
     /// The toolbar's checkbox that leaves the photos imported already out of the grid.
-    @ToolbarContentBuilder
-    private var hideImportedItem: some ToolbarContent {
-        // Apart from the thumbnail size, which it would otherwise share a capsule with.
-        ToolbarSpacer(.fixed)
-        ToolbarItem {
-            Toggle("Hide Already Imported", isOn: $hidesImported)
-                .toggleStyle(.checkbox)
-                // The toolbar draws its capsule on the view's bounds: without this the label touches its edge.
-                .padding(.horizontal, 8)
-                .help("Show only the photos that weren't imported yet")
+    /// A toggle button with the system's Filter symbol, lit while it filters: a checkbox in a
+    /// toolbar reads as a checkbox inside a button (Michaël, 2026-11-19). The same command is in
+    /// the View menu, which names it.
+    private var hideImportedToggle: some View {
+        Toggle(isOn: $hidesImported) {
+            Label("Hide Already Imported", systemImage: "line.3.horizontal.decrease")
+                .labelStyle(.iconOnly)
         }
+        .toggleStyle(.button)
+        .help(hidesImported ? "Show the photos imported already too" : "Hide the photos imported already")
     }
 
     private func view(_ id: LibraryAsset.ID) {

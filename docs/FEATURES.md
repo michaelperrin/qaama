@@ -30,7 +30,8 @@ can feed a website one day. Dates are when the feature landed.
 - Import: the selected photos of a device, or all of them, go to the Apple Photos library,
   with an album found by typing part of its name or made on the spot, in a folder of albums
   or not, or are copied into one of the folders of the
-  sidebar, in a folder per day (2026/2026-11-19) or as they are. Each copy is checked against
+  sidebar, filed by date in one of five ways (2026/2026-11-19, 2026/11/19, 2026/11, 2026, 2026-11-19) or
+  as they are. Each copy is checked against
   the size the device announced before it takes its place; photos already there are left alone;
   a RAW comes with its JPEG. A bar shows how far the import is, which goes on while the window
   shows something else and can be stopped. Undo moves what was imported to the Trash, or deletes
@@ -46,8 +47,11 @@ can feed a website one day. Dates are when the feature landed.
   under its date and time, or a name given from its context menu, kept across launches. An entry
   shows the photos that import brought, alone, in the library they went to, to rate them, file
   them in albums or edit them (2026-11-19).
-- Hide Already Imported, a checkbox of a device's toolbar: only the photos left to import show
-  (2026-11-19).
+- Hide Already Imported, a filter button of a device's toolbar and a command of the View menu:
+  only the photos left to import show (2026-11-19).
+- Second copy: an import can copy every file to another folder as well, on another disk for
+  instance, filed by day, as a backup. A second copy that fails is told, and its photo is then
+  never deleted from the device (2026-11-19).
 - An import can delete from the device what it copied, once it is over: only the photos that
   made it, for good; asked each time (2026-11-19).
 - Photos can be deleted from a card or a camera, from the context menu or Image › Delete, after

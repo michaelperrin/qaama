@@ -2210,6 +2210,22 @@ Interface
           - Suppression sur l'appareil après import (case de la feuille, jamais retenue) :
             seules les photos arrivées à destination sont supprimées
             (`deleteImported(by:)`), une fois l'import fini.
+          - Seconde copie de sauvegarde (19/11/2026) : la feuille propose un dossier, retenu
+            par un signet de sécurité ; chaque fichier y est copié en plus, toujours rangé
+            par jour, depuis la copie déjà lue de l'appareil (pas de seconde lecture). Une
+            photo déjà à destination mais absente de la seconde copie est relue pour elle
+            seule. Une seconde copie qui échoue n'arrête pas l'import : elle est signalée, et
+            son fichier n'est jamais supprimé de l'appareil (`importedFileIDs` ne retient que
+            ce qui est aux deux endroits). Pas vérifié : le signet et l'écriture sur un
+            autre disque depuis le bac à sable, à essayer dans l'appli.
+          - Retours de Michaël sur ce lot (19/11/2026) : la case à cocher dans la barre
+            d'outils se lisait comme une case dans un bouton. Remplacée par un bouton à
+            bascule au symbole de filtre du système (`line.3.horizontal.decrease`), allumé
+            quand il filtre, avec la même commande dans le menu View (« Hide Already
+            Imported ») : une barre d'outils porte des boutons, et chacune de ses commandes
+            existe aussi dans la barre des menus. Et « Organize » propose cinq rangements par
+            date au lieu d'un (`ImportLayout` : année/jour, année/mois/jour, année/mois,
+            année, jour), l'aperçu des dossiers suivant le choix.
           - Aperçu des dossiers de destination dans la feuille (jour et nombre de photos) ;
             pas de case pour décocher une journée.
           - Suppression sur la carte : menu contextuel et Image › Delete, après confirmation,
