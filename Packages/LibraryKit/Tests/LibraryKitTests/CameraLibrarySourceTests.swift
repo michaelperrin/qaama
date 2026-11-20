@@ -16,7 +16,7 @@ struct CameraLibrarySourceTests {
 
     // MARK: - Listing
 
-    @Test func aListingShowsRAWAndJPEGPairsAsOnePhotoAndLeavesVideosOut() {
+    @Test func aListingShowsRAWAndJPEGPairsAsOnePhotoAndMarksVideos() {
         let listing = CameraListing(files: [
             CameraFile(id: "DCIM/100/IMG_0001.JPG", creationDate: date(1)),
             CameraFile(id: "DCIM/100/IMG_0002.CR2", creationDate: date(2), isRAW: true),
@@ -27,12 +27,14 @@ struct CameraLibrarySourceTests {
             CameraFile(id: "DCIM/100/IMG_0005.RAF", creationDate: nil, isRAW: true),
         ])
         // Newest first, the photo without a date last.
-        #expect(listing.assets.map(\.id) == ["DCIM/101/IMG_0002.JPG", "DCIM/100/IMG_0002.CR2", "DCIM/100/IMG_0001.JPG", "DCIM/100/IMG_0005.RAF"])
+        // The video is listed with the photos, by date, and marked.
+        #expect(listing.assets.map(\.id) == ["DCIM/101/IMG_0002.JPG", "DCIM/100/MVI_0003.MOV", "DCIM/100/IMG_0002.CR2", "DCIM/100/IMG_0001.JPG", "DCIM/100/IMG_0005.RAF"])
         #expect(listing.movieCount == 1)
-        let raw = listing.assets[1]
+        #expect(listing.assets.filter(\.isVideo).map(\.id) == ["DCIM/100/MVI_0003.MOV"])
+        let raw = listing.assets[2]
         #expect(raw.isRAW)
         #expect(raw.pairedAssetID == "DCIM/100/IMG_0002.JPG")
-        #expect(listing.assets[3].pairedAssetID == nil)
+        #expect(listing.assets[4].pairedAssetID == nil)
     }
 
     @Test func photosOfTheSameSecondKeepOneOrder() {
@@ -68,14 +70,16 @@ struct CameraLibrarySourceTests {
 
         connection.send(.added([CameraFile(id: "DCIM/100/IMG_0004.JPG", creationDate: date(41))]))
         connection.send(.listed)
-        #expect(source.assets.map(\.id) == ["DCIM/100/IMG_0004.JPG", "DCIM/100/IMG_0002.JPG", "DCIM/100/IMG_0001.JPG"])
+        #expect(source.assets.filter { !$0.isVideo }.map(\.id) == ["DCIM/100/IMG_0004.JPG", "DCIM/100/IMG_0002.JPG", "DCIM/100/IMG_0001.JPG"])
+        #expect(source.assets.count == 4)
+        #expect(source.photoCount == 3)
         #expect(source.asset(id: "DCIM/100/IMG_0001.JPG")?.aspectRatio == 1.5)
         #expect(source.movieCount == 1)
         #expect(source.state == .listed)
         #expect(source.listingProgress == nil)
         #expect(source.foundPhotos.isEmpty)
         #expect(source.lastLoadDuration != nil)
-        #expect(source.timeline?.count == 3)
+        #expect(source.timeline?.count == 4)
         #expect(source.timeline?.sections.count == 2)
 
         // A photo taken while the camera is plugged in shows at once.

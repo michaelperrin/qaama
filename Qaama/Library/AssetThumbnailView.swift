@@ -64,6 +64,15 @@ struct AssetThumbnailView: View {
                 case .rejected: Image(systemName: "xmark.circle.fill").foregroundStyle(.red).help("Rejected")
                 case .none: EmptyView()
                 }
+                if asset.isVideo {
+                    // A device's video among its photos: told apart at a glance.
+                    Label("Video", systemImage: "video.fill")
+                        .labelStyle(.titleAndIcon)
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(.black.opacity(0.55), in: .capsule)
+                        .help("Video")
+                }
                 Spacer()
                 if let resources = resources ?? (asset.isRAW ? AssetResourceInfo(asset) : nil), resources.isRAW {
                     Text(resources.hasJPEGTwin ? "RAW+JPG" : "RAW")

@@ -72,6 +72,8 @@ public nonisolated struct ImportedPhoto: Sendable {
         /// The name the file has on the device.
         public var name: String
         public var isRAW: Bool
+        /// A video: a library files it as one, not as a photo.
+        public var isMovie = false
     }
 
     /// The photo's file, and the JPEG shot with it when it is a RAW that has one.
@@ -136,6 +138,8 @@ public final class CameraImport: Identifiable {
     /// The files the device may lose, as it names them: those that are at the destination and,
     /// when a second copy was asked for, in it too. What deleting the imported photos takes.
     public private(set) var importedFileIDs: [CameraFile.ID] = []
+    /// How many of the photos gone through so far were videos that got imported.
+    public private(set) var importedVideos = 0
     public private(set) var isFinished = false
     public private(set) var isCancelled = false
 
@@ -156,6 +160,11 @@ public final class CameraImport: Identifiable {
 
     public var progress: IndexingProgress {
         IndexingProgress(done: done, total: total)
+    }
+
+    /// The item just gone through was a video, and it was imported.
+    func countVideo() {
+        importedVideos += 1
     }
 
     /// Stops after the file being copied; what was copied stays.

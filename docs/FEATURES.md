@@ -49,6 +49,10 @@ can feed a website one day. Dates are when the feature landed.
   them in albums or edit them (2026-11-19).
 - Hide Already Imported, an eye button of a device's toolbar and a command of the View menu:
   only the photos left to import show, and the title says so (2026-11-19).
+- Videos of a device are listed among its photos, under a Video badge, and can be selected,
+  imported and deleted like them. An import of the new photos can bring the new videos too,
+  filed like the photos in a folder (second copy included) or as videos in the Photos library,
+  and never twice. Once imported, Qaama doesn't list them (2026-11-20).
 - Select All, next to Import in a device's toolbar: what is selected is what is imported
   (2026-11-20).
 - Second copy: an import can copy every file to another folder as well, on another disk for

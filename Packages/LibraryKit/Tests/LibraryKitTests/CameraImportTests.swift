@@ -546,6 +546,75 @@ struct CameraImportTests {
         #expect(job.importedFileIDs == ["DCIM/100/IMG_0001.JPG"])
     }
 
+    @Test func theVideosCanComeWithThePhotosOnce() async throws {
+        let files = [
+            CameraFile(id: "DCIM/100/IMG_0001.JPG", byteSize: 300, creationDate: date(2021, 11, 10)),
+            CameraFile(id: "DCIM/100/MVI_0002.MOV", byteSize: 900, creationDate: date(2021, 11, 11), isMovie: true),
+            CameraFile(id: "DCIM/100/MVI_0003.MOV", byteSize: 800, creationDate: date(2021, 11, 12), isMovie: true),
+        ]
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("CameraImportTests-\(UUID().uuidString)")
+        let folder = base.appendingPathComponent("Photos")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let history = ImportHistory()
+        let connection = FakeCameraConnection()
+        let source = CameraLibrarySource(connection: connection, history: history)
+        await source.load()
+        for file in files {
+            connection.contents[file.id] = Data(repeating: 2, count: Int(file.byteSize))
+        }
+        connection.send(.added(files))
+        connection.send(.listed)
+        // The videos are listed with the photo, marked.
+        #expect(source.assets.count == 3)
+        #expect(source.photoCount == 1)
+        #expect(source.movieCount == 2)
+        #expect(source.newMovieCount == 2)
+        let photos = source.assets.filter { !$0.isVideo }
+
+        // Without asking for them, the videos stay on the device.
+        let photosOnly = try #require(source.startImport(of: photos, into: .folder(folder, layout: .byDay), named: "Photos"))
+        await photosOnly.wait()
+        #expect(photosOnly.total == 1)
+        #expect(photosOnly.importedVideos == 0)
+
+        let job = try #require(source.startImport(of: [], into: .folder(folder, layout: .byDay), named: "Photos", includingVideos: true))
+        await job.wait()
+        #expect(job.total == 2)
+        #expect(job.importedVideos == 2)
+        #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("2021/2021-11-11/MVI_0002.MOV").path))
+        #expect(FileManager.default.fileExists(atPath: folder.appendingPathComponent("2021/2021-11-12/MVI_0003.MOV").path))
+        // Remembered as imported: the next import has no video to bring.
+        history.record(ImportRecord(deviceName: "EOS_DIGITAL", destination: .folder(id: UUID())), files: job.importedFiles, undoManager: nil)
+        // What `CameraDevices` does for the devices on screen when the history changes.
+        source.refreshImported()
+        #expect(source.newMovieCount == 0)
+        let again = try #require(source.startImport(of: [], into: .folder(folder, layout: .byDay), named: "Photos", includingVideos: true))
+        await again.wait()
+        #expect(again.total == 0)
+
+        // A library is handed a video as a video.
+        actor Library {
+            var kinds: [Bool] = []
+            func take(_ photo: ImportedPhoto) -> String {
+                kinds.append(contentsOf: photo.files.map(\.isMovie))
+                return "item-\(kinds.count)"
+            }
+        }
+        let library = Library()
+        let fresh = CameraLibrarySource(connection: connection)
+        await fresh.load()
+        connection.send(.added(files))
+        connection.send(.listed)
+        // One video picked by hand with the photo, the other brought by the option: none twice.
+        let picked = fresh.assets.filter { $0.id != "DCIM/100/MVI_0003.MOV" }
+        let toLibrary = try #require(fresh.startImport(of: picked, into: .library { await library.take($0) }, named: "Photos", includingVideos: true))
+        await toLibrary.wait()
+        #expect(toLibrary.total == 3)
+        #expect(await library.kinds.sorted { !$0 && $1 } == [false, true, true])
+        #expect(toLibrary.importedVideos == 2)
+    }
+
     @Test func aFileIsToldByItsNameItsSizeAndItsDate() {
         let file = CameraFile(id: "DCIM/100/IMG_0001.JPG", byteSize: 300, creationDate: date(2021, 11, 10))
         let signature = ImportedFileSignature(file)

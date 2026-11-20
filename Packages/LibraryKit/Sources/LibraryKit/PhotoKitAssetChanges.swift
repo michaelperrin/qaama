@@ -104,7 +104,7 @@ nonisolated enum PhotoKitAssetChanges {
     static func create(from photo: ImportedPhoto, intoAlbum albumID: String?) async throws -> String {
         let jpeg = photo.files.first { !$0.isRAW }
         let resources: [(type: PHAssetResourceType, file: ImportedPhoto.File)] = photo.files.map { file in
-            (file.isRAW && jpeg != nil ? .alternatePhoto : .photo, file)
+            (file.isMovie ? .video : file.isRAW && jpeg != nil ? .alternatePhoto : .photo, file)
         }
         guard !resources.isEmpty else { throw LibrarySourceError.assetUnavailable }
         // A change request for an album that refuses additions is nil, and would do nothing in silence.

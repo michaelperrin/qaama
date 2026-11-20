@@ -2226,6 +2226,18 @@ Interface
             existe aussi dans la barre des menus. Et « Organize » propose cinq rangements par
             date au lieu d'un (`ImportLayout` : année/jour, année/mois/jour, année/mois,
             année, jour), l'aperçu des dossiers suivant le choix.
+          - Vidéos (20/11/2026) : décision prise par défaut, à confirmer par Michaël : une
+            case « Import the N videos too » de la feuille, cochée par défaut et retenue,
+            quand on importe les nouvelles photos (pas avec une sélection, les vidéos n'étant
+            pas dans la grille). Elles sont copiées comme les photos (rangement, seconde
+            copie, historique : jamais deux fois) ; vers Photos, créées comme vidéos
+            (ressource `.video`, non vérifié dans une vraie photothèque). Qaama ne les montre
+            pas, et leurs fichiers THM restent sur la carte. Puis, sur demande de Michaël le
+            même jour (« une vignette de la vidéo (sélectionnable ou non) et un élément visuel
+            clair ») : les vidéos sont listées dans la grille de l'appareil, à leur date, sous
+            une pastille « Video » (`LibraryAsset.isVideo`), sélectionnables, importables et
+            supprimables comme les photos. Pas vérifié : que l'appareil fournit une vignette
+            pour une vidéo (carte retirée) ; Michaël essaiera avec une vidéo sur une carte.
           - Aperçu des dossiers de destination dans la feuille (jour et nombre de photos) ;
             pas de case pour décocher une journée.
           - Suppression sur la carte : menu contextuel et Image › Delete, après confirmation,

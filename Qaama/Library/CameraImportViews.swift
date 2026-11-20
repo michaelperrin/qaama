@@ -13,6 +13,8 @@ enum CameraImportTarget {
 /// What the user chose for an import: where the photos go and what happens after.
 struct CameraImportChoice {
     var target: CameraImportTarget
+    /// Bring the device's videos that weren't imported yet as well.
+    var includesVideos: Bool
     /// A folder every file is copied to as well, for a backup; nil for none.
     var secondCopy: URL?
     /// Delete from the device the photos that were copied, once the import is over.
@@ -34,6 +36,9 @@ struct CameraImportSheet: View {
     let albumEditor: PhotosAlbumEditor
     /// The window's: a sheet has none of its own to undo with later.
     let undoManager: UndoManager?
+    /// How many videos would come with the photos: those of the device that weren't imported yet,
+    /// when every new photo is imported; 0 when photos were picked by hand.
+    let videoCount: Int
     /// False for a device that can't delete, or a card whose lock is on.
     let canDelete: Bool
     let onImport: (CameraImportChoice) -> Void
@@ -52,6 +57,7 @@ struct CameraImportSheet: View {
     /// The folder of the second copies, as a bookmark the sandbox lets the app come back to;
     /// empty for none.
     @AppStorage("importSecondCopyBookmark") private var secondCopyBookmark = Data()
+    @AppStorage("importIncludesVideos") private var includesVideos = true
     @State private var isChoosingSecondCopy = false
     @State private var secondCopyError: String?
     /// The album made here, which the list of albums may not hold yet.
@@ -108,6 +114,10 @@ struct CameraImportSheet: View {
                             }
                         }
                     }
+                    if videoCount > 0 {
+                        Toggle(videoCount == 1 ? "Import the video too" : "Import the \(videoCount.formatted()) videos too", isOn: $includesVideos)
+                            .help("Videos are copied with the photos; once imported, Qaama doesn't list them")
+                    }
                     LabeledContent("Second copy") {
                         HStack(spacing: 6) {
                             Text(secondCopy?.lastPathComponent ?? "None")
@@ -148,7 +158,8 @@ struct CameraImportSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Import") {
                     let photos = CameraImportTarget.photos(albumID: albumTitle == nil ? nil : albumID, title: albumTitle)
-                    onImport(CameraImportChoice(target: folder.map { .folder($0, layout) } ?? photos, secondCopy: secondCopy,
+                    onImport(CameraImportChoice(target: folder.map { .folder($0, layout) } ?? photos, includesVideos: includesVideos && videoCount > 0,
+                                                secondCopy: secondCopy,
                                                 deletesImported: deletesImported && canDelete, ejects: ejects))
                 }
                 .keyboardShortcut(.defaultAction)
@@ -368,18 +379,23 @@ struct CameraImportBar: View {
     }
 
     private var summary: String {
-        Self.summary(imported: job.importedCount, alreadyThere: job.alreadyThere, failed: job.failures.count,
+        Self.summary(imported: job.importedCount, videos: job.importedVideos, alreadyThere: job.alreadyThere, failed: job.failures.count,
                      left: job.isCancelled ? job.total - job.done : 0, destination: job.destinationName)
     }
 
     /// "Imported 238 photos into “Photos”. 2 were already there. 1 file couldn't be copied."
-    static func summary(imported: Int, alreadyThere: Int, failed: Int, left: Int, destination: String) -> String {
-        var sentences = [imported == 1 ? "Imported 1 photo into “\(destination)”." : "Imported \(imported.formatted()) photos into “\(destination)”."]
+    static func summary(imported: Int, videos: Int = 0, alreadyThere: Int, failed: Int, left: Int, destination: String) -> String {
+        // Videos count among the items, and are told apart in a sentence of their own.
+        let noun = videos > 0 ? (imported == 1 ? "item" : "items") : (imported == 1 ? "photo" : "photos")
+        var sentences = ["Imported \(imported.formatted()) \(noun) into “\(destination)”."]
         if alreadyThere > 0 {
             sentences.append(alreadyThere == 1 ? "1 was already there." : "\(alreadyThere.formatted()) were already there.")
         }
         if failed > 0 {
             sentences.append(failed == 1 ? "1 file couldn't be copied." : "\(failed.formatted()) files couldn't be copied.")
+        }
+        if videos > 0 {
+            sentences.append(videos == 1 ? "1 of them is a video." : "\(videos.formatted()) of them are videos.")
         }
         if left > 0 {
             sentences.append(left == 1 ? "Stopped with 1 photo left." : "Stopped with \(left.formatted()) photos left.")
@@ -390,5 +406,5 @@ struct CameraImportBar: View {
 
 #Preview("Import sheet, no folder") {
     CameraImportSheet(deviceName: "EOS_DIGITAL", photoDates: Array(repeating: Date.now, count: 24), folders: [], albums: PhotosAlbumList(),
-                      albumEditor: PhotosAlbumEditor(library: PhotoKitAlbumLibrary()), undoManager: nil, canDelete: true, onImport: { _ in }, onCancel: {})
+                      albumEditor: PhotosAlbumEditor(library: PhotoKitAlbumLibrary()), undoManager: nil, videoCount: 3, canDelete: true, onImport: { _ in }, onCancel: {})
 }

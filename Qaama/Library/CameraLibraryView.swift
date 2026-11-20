@@ -83,6 +83,7 @@ struct CameraLibraryView: View {
         .sheet(isPresented: $isChoosingDestination) {
             CameraImportSheet(deviceName: source.displayName, photoDates: photosToImport.map(\.creationDate), folders: catalog.folders,
                               albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor, undoManager: undoManager,
+                              videoCount: selection.isEmpty ? source.newMovieCount : 0,
                               canDelete: source.capabilities.contains(.deletion), onImport: { choice in
                                   isChoosingDestination = false
                                   startImport(choice)
@@ -115,7 +116,8 @@ struct CameraLibraryView: View {
     /// The selected photos in the grid's order, imported before or not; when none is selected,
     /// the photos that weren't imported yet.
     private var photosToImport: [LibraryAsset] {
-        selection.isEmpty ? source.assets.filter { !$0.isImported } : source.assets(withIDs: selection)
+        // The videos that are new come through the sheet's own checkbox.
+        selection.isEmpty ? source.assets.filter { !$0.isImported && !$0.isVideo } : source.assets(withIDs: selection)
     }
 
     /// Nothing to hide while no photo of the device was imported. Still offered while it is on,
@@ -157,7 +159,9 @@ struct CameraLibraryView: View {
         // The sandbox lets the folder of the second copies be written to between these two calls.
         let secondCopy = choice.secondCopy
         let isAccessingSecondCopy = secondCopy?.startAccessingSecurityScopedResource() ?? false
-        guard let job = source.startImport(of: photosToImport, into: destination, named: name, secondCopy: secondCopy) else {
+        guard let job = source.startImport(of: photosToImport, into: destination, named: name, secondCopy: secondCopy,
+                                           includingVideos: choice.includesVideos)
+        else {
             if isAccessingSecondCopy {
                 secondCopy?.stopAccessingSecurityScopedResource()
             }
@@ -239,7 +243,7 @@ struct CameraLibraryView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button { isChoosingDestination = true } label: { Text(importTitle).padding(.horizontal, 6) }
-                        .disabled(isImporting || (selection.isEmpty && source.newPhotoCount == 0))
+                        .disabled(isImporting || (selection.isEmpty && source.newPhotoCount == 0 && source.newMovieCount == 0))
                         .help(selection.isEmpty
                             ? (source.newPhotoCount == 0 ? "Every photo was imported already: select photos to import them again"
                                 : "Import the photos that weren't imported yet into Photos or a folder")
@@ -307,7 +311,7 @@ struct CameraLibraryView: View {
             // The filter is a button without a name: the title says when it is on.
             photos += source.hidesImported ? " · showing the \(source.newPhotoCount.formatted()) new" : " · \(source.newPhotoCount.formatted()) new"
         }
-        return source.movieCount > 0 ? "\(photos) · \(source.movieCount.formatted()) videos not shown" : photos
+        return source.movieCount > 0 ? "\(photos) · \(source.movieCount == 1 ? "1 video" : "\(source.movieCount.formatted()) videos")" : photos
     }
 }
 

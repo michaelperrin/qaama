@@ -46,6 +46,8 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
     public private(set) var currentImport: CameraImport?
     /// How many videos the device holds: they aren't listed, the grid shows photos only.
     public private(set) var movieCount = 0
+    /// How many of its videos weren't imported yet: what an import that takes the videos brings.
+    public private(set) var newMovieCount = 0
     /// How many photos the device holds that weren't imported yet.
     public private(set) var newPhotoCount = 0
     /// How many photos the device holds, listed or not (`hidesImported`).
@@ -158,7 +160,7 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
             state = .listed
             let duration = ContinuousClock.now - listingStart
             lastLoadDuration = duration
-            logger.notice("Listed \(self.displayName, privacy: .public): \(self.assets.count) photos, \(self.movieCount) videos left out, in \(duration.formatted(.units(allowed: [.seconds, .milliseconds])), privacy: .public)")
+            logger.notice("Listed \(self.displayName, privacy: .public): \(self.assets.count) photos, \(self.movieCount) videos, in \(duration.formatted(.units(allowed: [.seconds, .milliseconds])), privacy: .public)")
         case let .failed(message):
             logger.error("Couldn't read \(self.displayName, privacy: .public): \(message, privacy: .public)")
             endListing()
@@ -180,12 +182,20 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
             listing.markImported { id in files[id].map { history.contains(ImportedFileSignature($0)) } ?? false }
         }
         movieCount = listing.movieCount
-        photoCount = listing.assets.count
-        newPhotoCount = listing.assets.count { !$0.isImported }
+        newMovieCount = newMovies().count
+        photoCount = listing.assets.count { !$0.isVideo }
+        newPhotoCount = listing.assets.count { !$0.isVideo && !$0.isImported }
         let shown = hidesImported ? listing.assets.filter { !$0.isImported } : listing.assets
         byID = Dictionary(uniqueKeysWithValues: shown.map { ($0.id, $0) })
         assets = AssetCollection(shown)
         timeline = DateTimeline(dates: shown.map(\.creationDate))
+    }
+
+    /// The videos that weren't imported yet, oldest first. They are never listed: the grid shows
+    /// photos only.
+    private func newMovies() -> [CameraFile] {
+        files.values.filter { file in file.isMovie && history?.contains(ImportedFileSignature(file)) != true }
+            .sorted { ($0.creationDate ?? .distantPast, $0.id) < ($1.creationDate ?? .distantPast, $1.id) }
     }
 
     /// The history of imports changed: the photos are marked again.
@@ -293,10 +303,16 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
     /// follow. A RAW shown with its JPEG brings both files: into the same subfolder of a folder, as
     /// one photo of a library. `secondCopy` is a folder every file is copied to as well, filed by
     /// day: another disk, for a backup. Nil while another import from this device is going on.
+    /// `includingVideos` brings the device's videos that weren't imported yet as well, after the
+    /// photos: filed like them in a folder, as videos in a library.
     public func startImport(of assets: [LibraryAsset], into destination: ImportDestination, named destinationName: String,
-                            secondCopy: URL? = nil) -> CameraImport?
+                            secondCopy: URL? = nil, includingVideos: Bool = false) -> CameraImport?
     {
         guard currentImport?.isFinished != false else { return nil }
+        let videos = includingVideos ? newMovies().map { LibraryAsset(id: $0.id, pixelWidth: 0, pixelHeight: 0, creationDate: $0.creationDate, isFavorite: false) } : []
+        // The videos asked for by hand count as videos too, and none comes twice.
+        let assets = assets + videos.filter { video in !assets.contains { $0.id == video.id } }
+        let videoIDs = Set(assets.filter { files[$0.id]?.isMovie == true }.map(\.id))
         let job = CameraImport(deviceName: displayName, destinationName: destinationName, total: assets.count)
         currentImport = job
         let staging = FileManager.default.temporaryDirectory.appendingPathComponent("Import-\(job.id.uuidString)", isDirectory: true)
@@ -305,6 +321,12 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
             let start = clock.now
             for asset in assets {
                 guard let self, !Task.isCancelled, case .listed = state else { break }
+                let importedBefore = job.importedCount
+                defer {
+                    if videoIDs.contains(asset.id), job.importedCount > importedBefore {
+                        job.countVideo()
+                    }
+                }
                 switch destination {
                 case let .folder(folder, layout):
                     await importPhoto(asset, into: folder, layout: layout, secondCopy: secondCopy, staging: staging, job: job)
@@ -409,7 +431,7 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
             }
             switch result {
             case let .success(downloaded):
-                photo.files.append(ImportedPhoto.File(url: downloaded.url, name: file.name, isRAW: file.isRAW))
+                photo.files.append(ImportedPhoto.File(url: downloaded.url, name: file.name, isRAW: file.isRAW, isMovie: file.isMovie))
                 if let failure = downloaded.secondCopyError {
                     errors.append(failure)
                 } else {
@@ -513,7 +535,7 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
 /// The photos a device's files make, newest first.
 ///
 /// A RAW and the JPEG shot with it (same folder, same name but for the extension) show as one photo,
-/// the RAW, as everywhere else in the app. Videos are counted and left out.
+/// the RAW, as everywhere else in the app. Videos are listed too, marked as such, and counted.
 nonisolated struct CameraListing {
     private(set) var assets: [LibraryAsset] = []
     private(set) var movieCount = 0
@@ -527,6 +549,7 @@ nonisolated struct CameraListing {
     }
 
     init(files: some Sequence<CameraFile>) {
+        let files = Array(files)
         var photos: [CameraFile] = []
         for file in files {
             if file.isMovie {
@@ -547,8 +570,13 @@ nonisolated struct CameraListing {
             }
         }
         let hidden = Set(twins.values)
-        assets = photos.filter { !hidden.contains($0.id) }
-            .map { LibraryAsset($0, twin: twins[$0.id]) }
+        // The videos are listed among the photos, by date, each marked as one.
+        assets = (photos.filter { !hidden.contains($0.id) }.map { LibraryAsset($0, twin: twins[$0.id]) }
+            + files.filter(\.isMovie).map { file in
+                var video = LibraryAsset(file)
+                video.isVideo = true
+                return video
+            })
             // Newest first; the identifier settles the photos of one second, and those without a date.
             .sorted { lhs, rhs in
                 let (left, right) = (lhs.creationDate ?? .distantPast, rhs.creationDate ?? .distantPast)
