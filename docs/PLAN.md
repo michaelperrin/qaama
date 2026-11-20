@@ -689,6 +689,54 @@ Bibliothèque
       instant (les `@State` sont lus à jour) ; chaque répétition repartait de la même photo.
       Reproduit et corrigé dans une sonde : le gestionnaire passe par `AssetGridActions.move`,
       repointé à chaque mise à jour de la grille.
+      Rectangle de sélection le 20/11/2026, demandé par Michaël (« pouvoir sélectionner les
+      photos à l'aide d'un rectangle de sélection si le clic démarre sur une zone blanche »),
+      pour toutes les mosaïques, celle d'un appareil comprise (même `AssetGridView`) :
+      `GridMarquee`, un `DragGesture` posé en fond du contenu de la grille, donc atteint
+      seulement là où aucune photo n'est dessinée (entre les vignettes, à côté d'une photo
+      entière dans son carré, sous la dernière rangée : le contenu fait au moins la hauteur
+      visible). Tout est dans le repère du contenu (espace nommé), où les cellules remontent
+      leur cadre une fois posées, ce qui ne bouge pas au défilement ; les cellules sorties de
+      l'écran pendant un tracé restent comptées. Sans touche il remplace la sélection, ⇧
+      ajoute, ⌘ inverse ; un simple clic à côté des photos désélectionne, comme dans le
+      Finder. Au-delà du haut ou du bas de la zone visible, défilement automatique
+      (`scrollTo(y:)`, un quart du dépassement par pas de 16 ms, 60 pt au plus) et le
+      rectangle suit. Seul le rectangle est observé, par la vue qui le dessine : la grille
+      n'est mise à jour qu'au changement de sélection. Non vérifié à l'écran par moi (les
+      gestes SwiftUI ne se pilotent pas dans la sonde) : à confirmer par Michaël (départ du
+      tracé à côté des photos et pas sur elles, glisser d'une photo vers un album intact,
+      défilement automatique sous la barre d'outils, bord flou de la barre intact).
+      Validé par Michaël le même jour. Retour : en vignettes carrées, « ce n'est pas facile
+      de trouver un endroit où commencer la sélection » (12 pt entre deux vignettes). Là où
+      une photo ne se glisse nulle part (appareil, dossier, carte : pas d'albums), le tracé
+      part aussi d'une photo, au-delà de 3 pt pour qu'un clic reste un clic ; dans Photos,
+      glisser une photo la range dans un album, le tracé ne part donc que d'entre les photos.
+      Retour suivant de Michaël : dans la photothèque, « la majorité des zones blanches entre
+      les photos sélectionne déjà la photo ». Seule différence avec les dossiers : la vignette
+      y est glissable (`.draggable`), supposée prendre les clics dans tout le carré. Puis
+      « certaines lignes sont plus faciles, d'autres quasiment impossibles ». Sonde hors écran
+      (60 vignettes carrées de 160 pt, test de `menu(for:)` point par point le long de lignes
+      et de colonnes) : sans forme de contact, une cellule réclame bien plus que sa photo, et
+      de façon inégale selon les rangées (une ligne entière, marges comprises ; deux rangées
+      fusionnées sur une colonne), avec ou sans `.draggable`. Correction : `.contentShape` en
+      dernier modificateur de `AssetGridCell`, le rectangle de la photo au centre du carré
+      (`ThumbnailFit.displaySize` avec `asset.aspectRatio`) ; la même sonde trouve alors
+      exactement 160 pt par photo et des espaces libres de 12 à 17 pt dans toutes les rangées.
+      Mesuré pour le menu contextuel ; pour les gestes, à confirmer par Michaël.
+      Pas suffisant : « quand je drag & drop entre la colonne 1 et 2 (quel que soit l'endroit
+      sur l'axe Y), ça ne démarre jamais la sélection », avec 20 pt libres entre les colonnes.
+      La sonde ne trouve aucune vue AppKit à cet endroit (seul `PlatformGroupContainer`) : le
+      clic se perd dans l'arbitrage des gestes SwiftUI, que la sonde ne pilote pas, et le
+      menu contextuel ne dit pas ce que voient les gestes. Changement d'approche : le geste
+      n'est plus en fond, derrière les cellules (atteint seulement là où aucune ne prend le
+      clic), mais en `simultaneousGesture` sur tout le contenu, et `GridMarquee` décide
+      lui-même d'après les cadres des photos (la photo dessinée, plus le carré) si l'appui
+      est sur une photo : il l'ignore alors là où la photo se glisse vers un album, et trace
+      le rectangle ailleurs (ce qui remplace le second geste posé sur les cellules des
+      appareils et dossiers). Validé par Michaël le même jour (« ça marche très bien »).
+      Leçon : un geste posé en fond, derrière les cellules d'une grille paresseuse, ne reçoit
+      pas tous les appuis là où rien n'est dessiné ; mieux vaut un geste simultané sur tout
+      le contenu qui décide lui-même d'après les cadres.
 - [x] Zoom de la mosaïque et mode d'affichage, cadré avec Michaël le 7/11/2026 : taille des
       vignettes réglable par un curseur dans la barre d'outils et par le menu View (⌘+ / ⌘−),
       et choix entre le carré rogné actuel et la photo entière dans un carré, sans rognage ;

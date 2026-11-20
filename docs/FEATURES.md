@@ -153,6 +153,11 @@ can feed a website one day. Dates are when the feature landed.
   through rows and months (up and down keep the column, into the month above or below), ⇧ with
   them extends or shrinks it, and the grid scrolls to keep the photo in view; back from the
   editor, the arrows go on from the photo just edited (2026-11-18).
+- Rectangle selection in every grid, a device's included: a drag that starts beside the photos
+  selects every thumbnail it touches (⇧ adds to the selection, ⌘ toggles), scrolling when it
+  goes past the top or the bottom; a click beside the photos selects none. In the grids of a
+  device and of a folder, where photos aren't dragged to albums, it can start on a photo too
+  (2026-11-20).
 - Rating and flag from the context menus of the grid's thumbnails (acting on the selection when
   the photo is part of it) and of the photo open in the editor: a row of five stars filled up to
   the rating, as the Finder shows its tags, then Remove Rating; below a separator, Pick and Reject,

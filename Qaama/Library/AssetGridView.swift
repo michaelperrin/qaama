@@ -5,7 +5,8 @@ import SwiftUI
 
 /// Thumbnail grid shared by every library source, with multiple selection: click selects, ⌘-click
 /// toggles, ⇧-click extends from the last click, double-click opens the editor. The arrow keys move
-/// the selection, ⇧ with them extends it.
+/// the selection, ⇧ with them extends it. A drag that starts where there is no photo draws a
+/// rectangle that selects the thumbnails it touches (`GridMarquee`).
 ///
 /// Each cell is an `AssetGridCell` with inputs that only change when the photo or the selection does,
 /// and its actions on one object that stays the same (`actions`): the grid is rebuilt on every change
@@ -62,6 +63,10 @@ struct AssetGridView: View {
     /// Where the grid is scrolled and how wide it is, for keeping the top row in place while zooming.
     /// A plain object: it changes on every scroll frame and must not rebuild the grid.
     @State private var viewport = GridViewport()
+    @State private var marquee = GridMarquee()
+    /// The height of the visible area, which the content fills at least: the rectangle of selection
+    /// can then start below the last row.
+    @State private var visibleHeight: CGFloat = 0
     @State private var scrollPosition = ScrollPosition()
     /// The thumbnail size when a pinch began; nil between pinches.
     @State private var pinchBaseSide: Double?
@@ -127,6 +132,13 @@ struct AssetGridView: View {
             }
             .padding(GridViewport.padding)
             .scrollTargetLayout()
+            .frame(minHeight: visibleHeight, alignment: .top)
+            // The whole content, below the last row too; alongside the cells' gestures, the
+            // rectangle tells for itself whether a press is on a photo (see `GridMarquee`).
+            .contentShape(.rect)
+            .simultaneousGesture(marqueeGesture)
+            .overlay(alignment: .topLeading) { GridMarqueeRectangle(marquee: marquee) }
+            .coordinateSpace(.named(GridMarquee.space))
         }
         .scrollPosition($scrollPosition)
         .focusable()
@@ -146,6 +158,11 @@ struct AssetGridView: View {
             }
         }
         .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { _, geometry in
+            marquee.update(geometry)
+            let height = max(geometry.visibleRect.height - geometry.contentInsets.top - geometry.contentInsets.bottom, 0)
+            if height != visibleHeight {
+                visibleHeight = height
+            }
             let held = viewport.update(geometry)
             // The first report is when the grid can scroll; the later ones find a listing that came late.
             // A place the grid was asked to open at comes before the one it holds while its width changes.
@@ -220,6 +237,25 @@ struct AssetGridView: View {
                 ContentUnavailableView("No Photos", systemImage: "photo.on.rectangle",
                                        description: Text("This library doesn't contain any images."))
             }
+        }
+    }
+
+    /// The rectangle of selection, from a press where no photo is drawn.
+    private var marqueeGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(GridMarquee.space))
+            .onChanged { value in marqueeChanged(start: value.startLocation, location: value.location) }
+            .onEnded { _ in marqueeEnded() }
+    }
+
+    private func marqueeChanged(start: CGPoint, location: CGPoint) {
+        isFocused = true
+        marquee.dragChanged(start: start, location: location, selection: selection)
+    }
+
+    private func marqueeEnded() {
+        // A click beside the photos selects none, as in the Finder; with ⌘ or ⇧ it keeps the selection.
+        if marquee.dragEnded(), NSEvent.modifierFlags.isDisjoint(with: [.command, .shift]) {
+            selection.removeAll()
         }
     }
 
@@ -306,7 +342,25 @@ struct AssetGridView: View {
         actions.appear = { index in source.prefetchThumbnails(around: index, pixelSize: pixels, fit: fit) }
         let viewport = viewport
         actions.layout = { index, frame in viewport.cellDidLayout(index, frame: frame) }
-        actions.disappear = { index in viewport.cellDidDisappear(index) }
+        let marquee = marquee
+        // Where photos can't be dragged to an album, a drag from a photo draws the rectangle.
+        marquee.startsOnPhotos = albums == nil
+        actions.contentLayout = { index, frame in marquee.cellDidLayout(index, frame: frame) }
+        actions.disappear = { index in
+            viewport.cellDidDisappear(index)
+            marquee.cellDidDisappear(index)
+        }
+        marquee.assetID = { [source] index in source.assets.indices.contains(index) ? source.assets[index].id : nil }
+        marquee.scroll = { y in scrollPosition.scrollTo(y: y) }
+        marquee.select = { ids, rows in
+            if ids != selection {
+                selection = ids
+            }
+            if let rows {
+                anchorIndex = rows.lowerBound
+                cursorIndex = rows.upperBound
+            }
+        }
         actions.copyAdjustments = { asset in run { try await BatchEditing.copyAdjustments(of: asset, from: source) } }
         actions.pasteAdjustments = { asset in
             run { try await BatchEditing.pasteAdjustments(to: targets(for: asset), in: source, undoManager: undoManager) }
@@ -772,6 +826,8 @@ final class AssetGridActions {
     var disappear: (Int) -> Void = { _ in }
     /// The cell's frame in the scroll view's coordinate space, whenever it changes.
     var layout: (Int, CGRect) -> Void = { _, _ in }
+    /// The cell's frame in the grid's content, which scrolling doesn't change (`GridMarquee.space`).
+    var contentLayout: (Int, CGRect) -> Void = { _, _ in }
     var copyAdjustments: (LibraryAsset) -> Void = { _ in }
     var pasteAdjustments: (LibraryAsset) -> Void = { _ in }
     var adjustDate: (LibraryAsset) -> Void = { _ in }
@@ -920,6 +976,18 @@ struct AssetGridCell: View, Equatable {
             .onDisappear { actions.disappear(index) }
             // Where the cell is on screen, for the grid to know which photo is under the pointer.
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .scrollView) } action: { actions.layout(index, $0) }
+            // Where the photo is in the grid's content, for the rectangle of selection.
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(GridMarquee.space)) } action: { square in
+                actions.contentLayout(index, CenteredRectangle.rect(of: photoSize, in: square))
+            }
+            // Only the photo answers the pointer, not the square around it: measured with a probe, a
+            // cell otherwise took presses well beyond its photo, unevenly from row to row.
+            .contentShape(CenteredRectangle(size: photoSize))
+    }
+
+    /// The photo drawn inside the square of the cell.
+    private var photoSize: CGSize {
+        fit.displaySize(inSquare: side, aspectRatio: asset.aspectRatio)
     }
 
     @ViewBuilder
@@ -995,6 +1063,20 @@ struct AssetGridCell: View, Equatable {
     nonisolated static func == (lhs: AssetGridCell, rhs: AssetGridCell) -> Bool {
         lhs.asset == rhs.asset && lhs.index == rhs.index && lhs.side == rhs.side && lhs.fit == rhs.fit
             && lhs.isSelected == rhs.isSelected && lhs.menu == rhs.menu && lhs.identities == rhs.identities
+    }
+}
+
+/// A rectangle of a given size at the center of the frame it is drawn in: the photo inside the
+/// square of its cell.
+nonisolated struct CenteredRectangle: Shape {
+    let size: CGSize
+
+    func path(in rect: CGRect) -> Path {
+        Path(Self.rect(of: size, in: rect))
+    }
+
+    static func rect(of size: CGSize, in rect: CGRect) -> CGRect {
+        CGRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height)
     }
 }
 
