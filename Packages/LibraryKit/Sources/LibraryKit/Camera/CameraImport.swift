@@ -3,7 +3,7 @@ import Observation
 import OSLog
 
 /// How imported photos are filed in the folder they go to, by the day they were taken.
-public nonisolated enum ImportLayout: String, CaseIterable, Sendable {
+public nonisolated enum ImportLayout: String, CaseIterable, Codable, Sendable {
     /// A folder per day inside one per year: "2026/2026-11-19". The days of a year sort by name.
     case byDay
     /// Nested folders for the year, the month and the day: "2026/11/19".

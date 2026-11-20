@@ -21,6 +21,8 @@ public final class LibraryCatalog {
     public let filterPresets: FilterPresetStore
     /// The cards and cameras plugged in, to import photos from.
     public let cameras: CameraDevices
+    /// The import settings saved under a name.
+    public let importPresets: ImportPresetStore
 
     /// Renders full-size edits for sources that cache previews. Set once by the app.
     public var previewRenderer: PreviewRenderer? {
@@ -68,8 +70,9 @@ public final class LibraryCatalog {
     /// `filterPresets` are kept in memory unless a store with a file is handed in (the app's), and
     /// no card or camera is ever listed unless `cameras` come with a browser (the app's too).
     public init(store: CatalogStore, previewCache: PreviewCache = PreviewCache(), filterPresets: FilterPresetStore = FilterPresetStore(),
-                cameras: CameraDevices = CameraDevices())
+                cameras: CameraDevices = CameraDevices(), importPresets: ImportPresetStore = ImportPresetStore())
     {
+        self.importPresets = importPresets
         self.store = store
         self.previewCache = previewCache
         self.filterPresets = filterPresets

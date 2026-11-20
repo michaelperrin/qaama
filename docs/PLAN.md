@@ -2259,6 +2259,15 @@ Interface
           - Pas vérifié dans l'appli : la saisie dans le champ à jetons (complétion, Retour,
             virgule), les mots-clés réellement écrits dans Photos, la fenêtre de réglages
             ouverte par le menu, la bascule à l'insertion d'une carte.
+          - Préréglages d'import (20/11/2026), repris par Michaël après les avoir d'abord
+            laissés de côté (« bien utile dans pas mal de cas ») : `ImportPreset` et
+            `ImportPresetStore` (fichier JSON d'Application Support), menu « Preset » en haut
+            de la feuille sur le modèle de l'export (nom du préréglage reconnu ou « Custom »,
+            « Save Preset… », « Delete Preset »). Un préréglage garde destination et album,
+            rangement, mots-clés, vidéos, seconde copie, éjection ; pas la suppression sur
+            l'appareil, redemandée à chaque import. Feuille refondue le même jour sur ses
+            retours : Organize et ses dossiers dans une seule zone, chemins à chevrons, badges
+            clairs avec le nombre de photos dans un cercle plein.
           - Aperçu des dossiers de destination dans la feuille (jour et nombre de photos) ;
             pas de case pour décocher une journée.
           - Suppression sur la carte : menu contextuel et Image › Delete, après confirmation,

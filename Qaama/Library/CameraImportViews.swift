@@ -38,6 +38,8 @@ struct CameraImportSheet: View {
     let albumEditor: PhotosAlbumEditor
     /// The window's: a sheet has none of its own to undo with later.
     let undoManager: UndoManager?
+    /// The import settings saved under a name.
+    let presets: ImportPresetStore
     /// The keywords in use in the libraries, offered while typing.
     let knownKeywords: [String]
     /// How many videos would come with the photos: those of the device that weren't imported yet,
@@ -56,6 +58,11 @@ struct CameraImportSheet: View {
     /// The search for the album to add the photos to.
     @State private var albumSearch: AlbumSearchRequest?
     @State private var isNamingAlbum = false
+    @State private var isNamingPreset = false
+    @State private var presetName = ""
+    /// The preset last chosen or saved, by name: the one Update writes to once the sheet was
+    /// changed after choosing it. Kept, as the settings themselves are.
+    @AppStorage("importLastPreset") private var lastPresetName = ""
     /// Asked each time, never remembered: what it does can't be undone.
     @State private var deletesImported = false
     /// The folder of the second copies, as a bookmark the sandbox lets the app come back to;
@@ -155,7 +162,12 @@ struct CameraImportSheet: View {
                             : "“\(deviceName)” is locked, or can't delete photos")
                     Toggle("Eject “\(deviceName)” when done", isOn: $ejects)
                 } header: {
-                    Text(photoCount == 1 ? "Import 1 photo from “\(deviceName)”" : "Import \(photoCount.formatted()) photos from “\(deviceName)”")
+                    // The presets set the rows below: above them, next to the title, not among them.
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(photoCount == 1 ? "Import 1 photo from “\(deviceName)”" : "Import \(photoCount.formatted()) photos from “\(deviceName)”")
+                        Spacer(minLength: 12)
+                        presetMenu
+                    }
                 } footer: {
                     if let secondCopyError {
                         Text(secondCopyError).foregroundStyle(.red)
@@ -204,6 +216,13 @@ struct CameraImportSheet: View {
                 secondCopyError = "The folder can't be used for second copies: \(error.localizedDescription)"
             }
         }
+        .alert("Save Import Preset", isPresented: $isNamingPreset) {
+            TextField("Name", text: $presetName)
+            Button("Save") { lastPresetName = presets.save(settings, named: presetName).name }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The destination, how photos are filed, the keywords, the videos, the second copy and ejecting are saved.")
+        }
         .sheet(isPresented: $isNamingAlbum) {
             NewAlbumSheet(folders: PhotosAlbumFolderChoice.all(in: albums.tree), editor: albumEditor, undoManager: undoManager, onCreated: { id, title in
                 createdAlbum = (id, title)
@@ -211,6 +230,67 @@ struct CameraImportSheet: View {
                 isNamingAlbum = false
             }, onCancel: { isNamingAlbum = false })
         }
+    }
+
+    /// The saved presets; the label shows the one the sheet is set as, or Custom. As the export's.
+    private var presetMenu: some View {
+        let current = presets.preset(matching: settings)
+        // The preset the sheet was set from, then changed by hand.
+        let edited = current == nil ? presets.presets.first { $0.name == lastPresetName } : nil
+        return Menu {
+            ForEach(presets.presets) { preset in
+                Button {
+                    apply(preset.settings)
+                    lastPresetName = preset.name
+                } label: {
+                    if preset == current {
+                        Label(preset.name, systemImage: "checkmark")
+                    } else {
+                        Text(preset.name)
+                    }
+                }
+            }
+            if !presets.presets.isEmpty {
+                Divider()
+            }
+            if let edited {
+                Button("Update “\(edited.name)”") { presets.save(settings, named: edited.name) }
+            }
+            Button("Save Preset…") {
+                presetName = current?.name ?? ""
+                isNamingPreset = true
+            }
+            Button("Delete Preset") {
+                if let current {
+                    presets.delete(current)
+                    lastPresetName = ""
+                }
+            }
+            .disabled(current == nil)
+        } label: {
+            // "Holidays, edited" once the sheet no longer is what the preset holds.
+            Label(current?.name ?? edited.map { "\($0.name), edited" } ?? "Presets", systemImage: "slider.horizontal.3")
+        }
+        .controlSize(.small)
+        .fixedSize()
+        .help("Import presets: the settings of this sheet, saved under a name")
+    }
+
+    /// What the sheet is set to, as a preset keeps it.
+    private var settings: ImportSettings {
+        ImportSettings(destination: chosenDestination, albumID: folder == nil && albumTitle != nil ? albumID : nil, layout: layout,
+                       keywords: keywords, includesVideos: includesVideos, secondCopyBookmark: secondCopyBookmark.isEmpty ? nil : secondCopyBookmark,
+                       ejects: ejects)
+    }
+
+    private func apply(_ settings: ImportSettings) {
+        destination = settings.destination
+        albumID = settings.albumID ?? ""
+        layout = settings.layout
+        keywords = settings.keywords
+        includesVideos = settings.includesVideos
+        secondCopyBookmark = settings.secondCopyBookmark ?? Data()
+        ejects = settings.ejects
     }
 
     private var photoCount: Int {
@@ -439,5 +519,5 @@ struct CameraImportBar: View {
 
 #Preview("Import sheet, no folder") {
     CameraImportSheet(deviceName: "EOS_DIGITAL", photoDates: Array(repeating: Date.now, count: 24), folders: [], albums: PhotosAlbumList(),
-                      albumEditor: PhotosAlbumEditor(library: PhotoKitAlbumLibrary()), undoManager: nil, knownKeywords: ["Venice", "night"], videoCount: 3, canDelete: true, onImport: { _ in }, onCancel: {})
+                      albumEditor: PhotosAlbumEditor(library: PhotoKitAlbumLibrary()), undoManager: nil, presets: ImportPresetStore(), knownKeywords: ["Venice", "night"], videoCount: 3, canDelete: true, onImport: { _ in }, onCancel: {})
 }

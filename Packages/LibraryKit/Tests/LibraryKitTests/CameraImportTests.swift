@@ -648,7 +648,7 @@ struct CameraImportTests {
                 try Sidecar(keywords: keywords).write(forImageAt: root.appendingPathComponent(name))
             }
         }
-        let catalog = LibraryCatalog(store: try CatalogStore.inMemory(), previewCache: PreviewCache(directory: base.appendingPathComponent("Previews")))
+        let catalog = try LibraryCatalog(store: CatalogStore.inMemory(), previewCache: PreviewCache(directory: base.appendingPathComponent("Previews")))
         #expect(await catalog.knownKeywords().isEmpty)
         let folder = try await catalog.addFolder(root)
         await folder.load()
@@ -660,6 +660,34 @@ struct CameraImportTests {
         }
         // Each once, as they were typed, sorted as names are.
         #expect(known == ["night", "Night", "Venice", "venice 2"] || known == ["Night", "night", "Venice", "venice 2"])
+    }
+
+    @Test func importSettingsAreSavedUnderANameAndKeptAcrossLaunches() throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("CameraImportTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: base) }
+        let file = base.appendingPathComponent("Presets.json")
+        let store = ImportPresetStore(fileURL: file)
+        #expect(store.presets.isEmpty)
+        let holidays = ImportSettings(destination: ImportSettings.photosDestination, albumID: "album-1", keywords: ["holidays"])
+        let work = ImportSettings(destination: UUID().uuidString, layout: .yearMonth, includesVideos: false, secondCopyBookmark: Data([1, 2]), ejects: true)
+        store.save(work, named: "  Work  ")
+        store.save(holidays, named: "Holidays")
+        #expect(store.presets.map(\.name) == ["Holidays", "Work"])
+        #expect(store.preset(matching: work)?.name == "Work")
+        // Settings changed by hand are no preset.
+        var changed = work
+        changed.ejects = false
+        #expect(store.preset(matching: changed) == nil)
+        // Saving under the same name replaces; an empty name gets one.
+        store.save(changed, named: "Work")
+        #expect(store.presets.count == 2)
+        #expect(store.preset(matching: changed)?.name == "Work")
+        #expect(store.save(holidays, named: " ").name == "Untitled Preset")
+
+        let relaunched = ImportPresetStore(fileURL: file)
+        #expect(relaunched.presets == store.presets)
+        try relaunched.delete(#require(relaunched.presets.first { $0.name == "Untitled Preset" }))
+        #expect(ImportPresetStore(fileURL: file).presets.map(\.name) == ["Holidays", "Work"])
     }
 
     @Test func aFileIsToldByItsNameItsSizeAndItsDate() {

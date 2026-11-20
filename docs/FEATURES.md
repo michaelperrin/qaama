@@ -55,6 +55,10 @@ can feed a website one day. Dates are when the feature landed.
   and never twice. Once imported, Qaama doesn't list them (2026-11-20).
 - Keywords at import: a field of the import sheet gives keywords to every photo imported, as
   tokens, picked among the keywords already in use while typing, or new ones (2026-11-20).
+- Import presets: the settings of the import sheet (destination and album, filing, keywords,
+  videos, second copy, ejecting) saved under a name and brought back from a menu next to the
+  sheet's title, kept across launches. A preset changed after it was chosen shows as edited
+  and can be updated in one item (2026-11-20).
 - Select All, next to Import in a device's toolbar: what is selected is what is imported
   (2026-11-20).
 - Second copy: an import can copy every file to another folder as well, on another disk for

@@ -90,7 +90,7 @@ struct CameraLibraryView: View {
         .sheet(isPresented: $isChoosingDestination) {
             CameraImportSheet(deviceName: source.displayName, photoDates: photosToImport.map(\.creationDate), folders: catalog.folders,
                               albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor, undoManager: undoManager,
-                              knownKeywords: knownKeywords, videoCount: selection.isEmpty ? source.newMovieCount : 0,
+                              presets: catalog.importPresets, knownKeywords: knownKeywords, videoCount: selection.isEmpty ? source.newMovieCount : 0,
                               canDelete: source.capabilities.contains(.deletion), onImport: { choice in
                                   isChoosingDestination = false
                                   startImport(choice)
