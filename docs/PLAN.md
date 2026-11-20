@@ -2374,6 +2374,14 @@ Interface
             General avec « Show a card or a camera when it is plugged in », actif par défaut.
             La fenêtre passe alors sur l'appareil dès qu'il est annoncé, jamais pour un
             téléphone (branché pour d'autres raisons).
+          - Apparence (20/11/2026) : réglage « Appearance » (System, Light, Dark) en tête du
+            volet General, `AppAppearance` dans `SettingsView.swift`. Appliqué par
+            `NSApp.appearance` (nil pour le système) et non `preferredColorScheme`, qui ne
+            touche que les fenêtres de sa scène (ni menus, ni alertes, ni panneaux d'ouverture,
+            ni la fenêtre de réglages) et ne revient pas à l'apparence du système une fois
+            posé. Appliqué depuis les deux scènes (`onChange(initial:)`), pour qu'un
+            changement prenne même sans fenêtre principale ouverte. Pas encore vérifié dans
+            l'appli.
           - Pas vérifié dans l'appli : la saisie dans le champ à jetons (complétion, Retour,
             virgule), les mots-clés réellement écrits dans Photos, la fenêtre de réglages
             ouverte par le menu, la bascule à l'insertion d'une carte.

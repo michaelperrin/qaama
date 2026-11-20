@@ -9,6 +9,8 @@ struct QaamaApp: App {
     @State private var catalog = Self.makeCatalog()
     /// What the Filter panel of each library shows, the same in every window.
     @State private var filterPanels = LibraryFilterPanels()
+    /// Applied from both scenes, so a change in Settings reaches the app even with no window open.
+    @AppStorage(AppSettings.appearanceKey) private var appearance = AppAppearance.system
 
     /// The catalog gets the rendering engine through a closure, so LibraryKit stays independent of it.
     private static func makeCatalog() -> LibraryCatalog {
@@ -37,11 +39,13 @@ struct QaamaApp: App {
             MainWindowView(catalog: catalog)
                 .frame(minWidth: 900, minHeight: 550)
                 .environment(filterPanels)
+                .onChange(of: appearance, initial: true) { appearance.apply() }
         }
         .windowStyle(.automatic)
         .commands { EditorCommands() }
         Settings {
             SettingsView()
+                .onChange(of: appearance, initial: true) { appearance.apply() }
         }
     }
 }
