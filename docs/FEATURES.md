@@ -47,8 +47,10 @@ can feed a website one day. Dates are when the feature landed.
   under its date and time, or a name given from its context menu, kept across launches. An entry
   shows the photos that import brought, alone, in the library they went to, to rate them, file
   them in albums or edit them (2026-11-19).
-- Hide Already Imported, a filter button of a device's toolbar and a command of the View menu:
-  only the photos left to import show (2026-11-19).
+- Hide Already Imported, an eye button of a device's toolbar and a command of the View menu:
+  only the photos left to import show, and the title says so (2026-11-19).
+- Select All, next to Import in a device's toolbar: what is selected is what is imported
+  (2026-11-20).
 - Second copy: an import can copy every file to another folder as well, on another disk for
   instance, filed by day, as a backup. A second copy that fails is told, and its photo is then
   never deleted from the device (2026-11-19).

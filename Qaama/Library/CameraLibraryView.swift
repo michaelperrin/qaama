@@ -79,7 +79,7 @@ struct CameraLibraryView: View {
         .task { await source.load() }
         .onChange(of: hidesImported, initial: true) { source.hidesImported = hidesImported }
         // View › Hide Already Imported, while a device is on screen.
-        .focusedSceneValue(\.hasImportedPhotosFilter, true)
+        .focusedSceneValue(\.hasImportedPhotosFilter, canHideImported ? true : nil)
         .sheet(isPresented: $isChoosingDestination) {
             CameraImportSheet(deviceName: source.displayName, photoDates: photosToImport.map(\.creationDate), folders: catalog.folders,
                               albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor, undoManager: undoManager,
@@ -116,6 +116,16 @@ struct CameraLibraryView: View {
     /// the photos that weren't imported yet.
     private var photosToImport: [LibraryAsset] {
         selection.isEmpty ? source.assets.filter { !$0.isImported } : source.assets(withIDs: selection)
+    }
+
+    /// Nothing to hide while no photo of the device was imported. Still offered while it is on,
+    /// so it can always be turned off.
+    private var canHideImported: Bool {
+        hidesImported || source.newPhotoCount < source.photoCount
+    }
+
+    private var isEverythingSelected: Bool {
+        !source.assets.isEmpty && selection.count == source.assets.count
     }
 
     /// What the Import button says it will bring.
@@ -216,8 +226,19 @@ struct CameraLibraryView: View {
                 ToolbarItem {
                     ThumbnailSizeSlider()
                 }
+                // Next to Import, which it changes the meaning of: what is selected is what is imported.
                 ToolbarItem(placement: .primaryAction) {
-                    Button(importTitle) { isChoosingDestination = true }
+                    Button {
+                        selection = isEverythingSelected ? [] : Set(source.assets.map(\.id))
+                    } label: {
+                        // The toolbar draws a text button's capsule close to its title: room on both sides.
+                        Text(isEverythingSelected ? "Deselect All" : "Select All").padding(.horizontal, 6)
+                    }
+                    .disabled(source.assets.isEmpty)
+                    .help(isEverythingSelected ? "Select nothing" : "Select every photo shown (⌘A)")
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { isChoosingDestination = true } label: { Text(importTitle).padding(.horizontal, 6) }
                         .disabled(isImporting || (selection.isEmpty && source.newPhotoCount == 0))
                         .help(selection.isEmpty
                             ? (source.newPhotoCount == 0 ? "Every photo was imported already: select photos to import them again"
@@ -247,16 +268,19 @@ struct CameraLibraryView: View {
     }
 
     /// The toolbar's checkbox that leaves the photos imported already out of the grid.
-    /// A toggle button with the system's Filter symbol, lit while it filters: a checkbox in a
+    /// A toggle button with an eye, struck out and lit while photos are hidden (the system's Filter
+    /// symbol, tried first, said nothing of what was filtered): a checkbox in a
     /// toolbar reads as a checkbox inside a button (Michaël, 2026-11-19). The same command is in
     /// the View menu, which names it.
     private var hideImportedToggle: some View {
         Toggle(isOn: $hidesImported) {
-            Label("Hide Already Imported", systemImage: "line.3.horizontal.decrease")
+            Label("Hide Already Imported", systemImage: hidesImported ? "eye.slash" : "eye")
                 .labelStyle(.iconOnly)
         }
         .toggleStyle(.button)
-        .help(hidesImported ? "Show the photos imported already too" : "Hide the photos imported already")
+        .disabled(!canHideImported)
+        .help(canHideImported ? (hidesImported ? "Show the photos imported already too" : "Hide the photos imported already")
+            : "No photo of “\(source.displayName)” was imported yet")
     }
 
     private func view(_ id: LibraryAsset.ID) {
@@ -280,7 +304,8 @@ struct CameraLibraryView: View {
         var photos = count == 1 ? "1 photo" : "\(count.formatted()) photos"
         // Only once some were imported: before that, they are all new.
         if source.newPhotoCount < count {
-            photos += " · \(source.newPhotoCount.formatted()) new"
+            // The filter is a button without a name: the title says when it is on.
+            photos += source.hidesImported ? " · showing the \(source.newPhotoCount.formatted()) new" : " · \(source.newPhotoCount.formatted()) new"
         }
         return source.movieCount > 0 ? "\(photos) · \(source.movieCount.formatted()) videos not shown" : photos
     }
