@@ -55,6 +55,13 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   sidebar shows); identifiers are the members' own. Anything a source must tell for that goes
   into `LibrarySource` (`listingDates()`), never into a cast to a concrete source. One grid of
   every photo of every library was tried and dropped: see `docs/PLAN.md` before bringing it back.
+- A card or a camera plugged in (`CameraLibrarySource`, "Devices" in the sidebar) is a
+  `LibrarySource` without any capability, so the grid browses it as it does a library; nothing is
+  stored about its photos. What talks to the device is behind `CameraConnection` and
+  `CameraBrowser` (ImageCaptureCore is one implementation, `ImageCaptureBrowser`), so everything
+  above is tested with a fake one. A device answers one request at a time and reads the whole file
+  for a thumbnail: every request goes through `CameraRequestQueue`, and the grid shows
+  `quickThumbnail` (the one embedded in the file's header) first.
 - Filters: `LibraryQuery.filters` (`LibraryFilters`) says what applies and is all a source reads;
   what the Filter panel shows (checkboxes, values kept while unchecked, its switch) is
   `LibraryFilterSettings`, kept per library by `LibraryFilterPanels`, which writes the query (and
@@ -132,6 +139,11 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   Ask the source once per grid update instead (as `hasFileURLs` does). And check the row still
   exists before reading it: even a cell that only reads `assets` can be asked again before the
   months above it are, when a listing spread over several months shrinks.
+- A cell of the grid is identified by its row and its section (`GridRowID`), never by its row
+  alone: when a section is inserted above (a newer month), its rows are rows another section held,
+  and the lazy grid then keeps the old cells on screen without ever installing the new ones (seen
+  with a probe: the rows are built, neither `==` nor `body` of their cells is called). Scroll to a
+  row through `DateTimeline.rowID(_:)`.
 - Every row of a `ForEach` in a lazy container is exactly one view. A row made of an `if` without
   `else` is zero or one view: the container can't tell where a row is without building every row
   above it, and does so at each update (measured with 74,000 photos: 3.6 s to toggle the sidebar,
@@ -149,8 +161,9 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   asynchronous work, capture the previous state before writing, register on a target that lives
   as long as the window (the library source), and have the undo register its own inverse. Changes
   whose inverse is only known once made (a new album's identifier, where the Trash put a file) go
-  through `UndoableSteps`. One exception, imposed by PhotoKit: a photo deleted from the Photos
-  library can't be taken back out of Recently Deleted, so that deletion registers no undo.
+  through `UndoableSteps`. Two exceptions: a photo deleted from the Photos library can't be taken
+  back out of Recently Deleted (PhotoKit), and a photo deleted from a card or a camera is gone
+  (no Trash there); neither registers an undo, and the second always asks first.
 - Small, single-purpose types with a doc comment that says what they are for and any
   non-obvious constraint. Comments explain why, not what.
 - No duplication across sources: shared behavior goes into the protocol, a helper enum or an

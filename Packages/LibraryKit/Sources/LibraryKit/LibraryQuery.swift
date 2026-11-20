@@ -26,8 +26,18 @@ public nonisolated struct LibraryQuery: Hashable, Sendable {
     /// not a filter. The sources that put their photos on a map (`LibrarySource.hasPlaces`) honor it.
     /// The catalog's SQL doesn't: `FolderLibrarySource` applies it to what the catalog delivers.
     public var onlyAssetIDs: Set<LibraryAsset.ID>?
+    /// Restricts the listing to these photos for as long as the source is used: the photos of an
+    /// import, shown through a source of their own. A scope too, but not the map's: nothing in
+    /// the interface lifts it, and a group picked on the map is cut out of it.
+    public var fixedAssetIDs: Set<LibraryAsset.ID>?
 
     public init() {}
+
+    /// The photos both scopes leave, or nil when neither restricts the listing.
+    public var scopedAssetIDs: Set<LibraryAsset.ID>? {
+        guard let fixedAssetIDs else { return onlyAssetIDs }
+        return onlyAssetIDs.map { $0.intersection(fixedAssetIDs) } ?? fixedAssetIDs
+    }
 
     public static let `default` = LibraryQuery()
 
@@ -44,12 +54,13 @@ public nonisolated struct LibraryQuery: Hashable, Sendable {
         cleared.folderPath = folderPath
         cleared.includesPairedJPEGs = includesPairedJPEGs
         cleared.onlyAssetIDs = onlyAssetIDs
+        cleared.fixedAssetIDs = fixedAssetIDs
         return cleared
     }
 
     /// In-memory evaluation, for sources that hold their assets in an array (and for tests).
     public func matches(_ asset: LibraryAsset, isRAW: Bool = false) -> Bool {
-        if let onlyAssetIDs, !onlyAssetIDs.contains(asset.id) {
+        if let scopedAssetIDs, !scopedAssetIDs.contains(asset.id) {
             return false
         }
         guard filters.matches(asset, isRAW: isRAW) else { return false }

@@ -26,7 +26,7 @@ nonisolated enum PhotosFetchPredicate {
             predicates.append(NSPredicate(format: "creationDate >= %@ AND creationDate < %@", dates.lowerBound as NSDate, dates.upperBound as NSDate))
         }
         // The lists are combined here, so PhotoKit gets one of them at most, and the shortest.
-        var allowed = query.onlyAssetIDs
+        var allowed = query.scopedAssetIDs
         if let index {
             if let indexMatches {
                 allowed = allowed?.intersection(indexMatches) ?? Set(indexMatches)

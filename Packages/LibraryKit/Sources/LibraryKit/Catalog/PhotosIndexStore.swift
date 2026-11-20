@@ -100,6 +100,13 @@ public final nonisolated class PhotosIndexStore: Sendable {
         }
     }
 
+    /// Every keyword of the Photos library the index knows, each once.
+    public func allKeywords() async throws -> Set<String> {
+        try await writer.read { db in
+            try Set(String.fetchAll(db, sql: "SELECT DISTINCT keyword FROM photosAssetKeyword"))
+        }
+    }
+
     public func keywords(of id: String) async throws -> [String] {
         try await writer.read { db in
             try String.fetchAll(db, sql: "SELECT keyword FROM photosAssetKeyword WHERE assetID = ? ORDER BY keyword", arguments: [id])

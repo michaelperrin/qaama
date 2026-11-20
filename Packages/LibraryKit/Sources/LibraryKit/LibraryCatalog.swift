@@ -19,6 +19,10 @@ public final class LibraryCatalog {
     public private(set) var isLoaded = false
     /// The filters the user saved, each with the library it filters (`library(for:)`).
     public let filterPresets: FilterPresetStore
+    /// The cards and cameras plugged in, to import photos from.
+    public let cameras: CameraDevices
+    /// The import settings saved under a name.
+    public let importPresets: ImportPresetStore
 
     /// Renders full-size edits for sources that cache previews. Set once by the app.
     public var previewRenderer: PreviewRenderer? {
@@ -48,6 +52,7 @@ public final class LibraryCatalog {
     }
 
     private let store: CatalogStore
+    private let photosIndexStore: PhotosIndexStore
     /// One index for the Photos library, shared by the library source and every album source.
     private let photosIndex: PhotosIndex
     private let previewCache: PreviewCache
@@ -58,14 +63,22 @@ public final class LibraryCatalog {
     /// The views made for the presets shown so far, kept for the session. Asked from views' bodies,
     /// hence not observed.
     @ObservationIgnored private var presetLibraries: [FilterPreset.ID: PresetLibrary] = [:]
+    /// The views made for the imports shown so far, kept for the session.
+    @ObservationIgnored private var importLibraries: [ImportRecord.ID: PresetLibrary] = [:]
     private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "LibraryCatalog")
 
-    /// `filterPresets` are kept in memory unless a store with a file is handed in (the app's).
-    public init(store: CatalogStore, previewCache: PreviewCache = PreviewCache(), filterPresets: FilterPresetStore = FilterPresetStore()) {
+    /// `filterPresets` are kept in memory unless a store with a file is handed in (the app's), and
+    /// no card or camera is ever listed unless `cameras` come with a browser (the app's too).
+    public init(store: CatalogStore, previewCache: PreviewCache = PreviewCache(), filterPresets: FilterPresetStore = FilterPresetStore(),
+                cameras: CameraDevices = CameraDevices(), importPresets: ImportPresetStore = ImportPresetStore())
+    {
+        self.importPresets = importPresets
         self.store = store
         self.previewCache = previewCache
         self.filterPresets = filterPresets
-        photosIndex = PhotosIndex(store: PhotosIndexStore(catalog: store), library: PhotoKitIndexLibrary())
+        self.cameras = cameras
+        photosIndexStore = PhotosIndexStore(catalog: store)
+        photosIndex = PhotosIndex(store: photosIndexStore, library: PhotoKitIndexLibrary())
         photos = PhotosLibrarySource(index: photosIndex)
         photosForMap = PhotosLibrarySource(index: photosIndex)
         everywhere = CombinedLibrarySource(displayName: "Map", members: [photosForMap])
@@ -81,6 +94,8 @@ public final class LibraryCatalog {
     /// Restores the folders saved in the catalog. Unresolvable bookmarks are dropped.
     public func load() async {
         guard !isLoaded else { return }
+        cameras.start()
+        await cameras.history?.load()
         await filterPresets.load()
         do {
             var restored: [FolderLibrarySource] = []
@@ -176,6 +191,55 @@ public final class LibraryCatalog {
         }
         presetLibraries[preset.id] = library
         return library
+    }
+
+    // MARK: - Keywords
+
+    /// The keywords in use in the folders and in the Photos library, sorted as the Finder sorts
+    /// names: what a keyword field offers to pick from. A flat list for now.
+    public func knownKeywords() async -> [String] {
+        let fromFolders = await (try? store.allKeywords()) ?? []
+        let fromPhotos = await (try? photosIndexStore.allKeywords()) ?? []
+        return fromFolders.union(fromPhotos).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    // MARK: - Imports
+
+    /// What an import shows through: a view of its own of the library the photos went to, cut
+    /// down to those photos, so the library's own entry of the sidebar stays as it is. Nil when
+    /// the folder it went to was removed. Call `refreshImport(_:)` for the photos to be found.
+    public func library(forImport record: ImportRecord) -> PresetLibrary? {
+        if let known = importLibraries[record.id] {
+            return known
+        }
+        let library: PresetLibrary
+        switch record.destination {
+        case .photos:
+            let source = PhotosLibrarySource(index: photosIndex)
+            source.query.fixedAssetIDs = Set(record.photoIDs)
+            library = .photos(source)
+        case let .folder(id):
+            guard let folder = folders.first(where: { $0.id == id }) else { return nil }
+            let view = folder.makeView()
+            view.previewRenderer = previewRenderer
+            // Nothing until the files are found in the catalog: never the whole folder.
+            view.query.fixedAssetIDs = []
+            library = .folder(view, scannedBy: folder, path: nil)
+        }
+        importLibraries[record.id] = library
+        return library
+    }
+
+    /// Finds the photos of an import in the catalog, for a folder: the files an import copied
+    /// are only known there once the folder has been listed again, so this is called when the view
+    /// shows and each time the folder's listing changes.
+    public func refreshImport(_ record: ImportRecord) async {
+        guard case let .folder(id) = record.destination, case let .folder(view, _, _) = library(forImport: record) else { return }
+        let ids = await (try? store.itemIDs(inFolder: id, relativePaths: record.relativePaths)) ?? []
+        let found = Set(ids.map(\.uuidString))
+        if view.query.fixedAssetIDs != found {
+            view.query.fixedAssetIDs = found
+        }
     }
 
     private func makeSource(folder: CatalogFolder, url: URL) -> FolderLibrarySource {

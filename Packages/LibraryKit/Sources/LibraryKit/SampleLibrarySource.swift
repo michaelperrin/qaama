@@ -11,7 +11,7 @@ public final class SampleLibrarySource: LibrarySource {
     public private(set) var assets: AssetCollection = .empty
     public private(set) var timeline: DateTimeline?
     public private(set) var lastLoadDuration: Duration?
-    public var capabilities: Set<LibraryCapability> = [.rating, .flag, .keywords, .captureDate, .location, .originalLocation, .deletion, .duplication]
+    public var capabilities: Set<LibraryCapability> = [.rating, .flag, .keywords, .captureDate, .location, .originalLocation, .deletion, .duplication, .editing]
     public var queryCapabilities: Set<QueryCapability> {
         [.sortByRating, .sortByFileName, .rating, .flag, .edited, .favorite, .captureDates, .place, .search]
     }

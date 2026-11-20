@@ -29,7 +29,7 @@ public final class PhotosLibrarySource: LibrarySource {
     }
 
     public var capabilities: Set<LibraryCapability> {
-        [.rating, .keywords, .captureDate, .location, .deletion, .duplication]
+        [.rating, .keywords, .captureDate, .location, .deletion, .duplication, .editing]
     }
 
     /// Dates and favorite are native; rating filter and sort are too on macOS 27, confirmed by a probe at
@@ -554,6 +554,9 @@ public final class PhotosLibrarySource: LibrarySource {
         case duplicate([String])
         /// `originals` are the photos the copies were made from: what making them again takes.
         case deleteCopies([String], originals: [String])
+        /// Photos made by an import, to delete: the files they came from are gone, so nothing
+        /// makes them again.
+        case deleteImported([String])
     }
 
     /// The copies in flight and their undos.
@@ -605,7 +608,25 @@ public final class PhotosLibrarySource: LibrarySource {
             return copies.isEmpty ? nil : .deleteCopies(copies, originals: ids)
         case let .deleteCopies(copies, originals):
             return try await PhotoKitAssetChanges.delete(copies) ? .duplicate(originals) : nil
+        case let .deleteImported(ids):
+            _ = try await PhotoKitAssetChanges.delete(ids)
+            return nil
         }
+    }
+
+    // MARK: - Importing
+
+    /// What an import hands the files of each photo to, to make a photo of the library of them,
+    /// added to an album of the user's when one is named (`ImportDestination.library`).
+    public nonisolated func importer(intoAlbum albumID: String?, keywords: [String] = []) -> @Sendable (ImportedPhoto) async throws -> String {
+        { photo in try await PhotoKitAssetChanges.create(from: photo, intoAlbum: albumID, keywords: keywords) }
+    }
+
+    /// Registers the undo of an import that made these photos: undoing deletes them, which Photos
+    /// asks the user about, and can't be redone.
+    public func registerImport(of ids: [String], undoManager: UndoManager?) {
+        guard !ids.isEmpty else { return }
+        copySteps.register(.deleteImported(ids), named: ids.count == 1 ? "Import Photo" : "Import Photos", with: undoManager)
     }
 
     /// These photos, each RAW followed by the JPEG shot with it when that twin is a photo of its own

@@ -14,7 +14,13 @@ struct AssetThumbnailView: View {
 
     @Environment(\.displayScale) private var displayScale
     @State private var image: CGImage?
+    /// The photo `image` shows: a cell keeps its pixels while it waits for those of another photo.
+    @State private var imageAssetID: LibraryAsset.ID?
     @State private var resources: AssetResourceInfo?
+
+    /// How long a cell keeps the pixels of the photo its row held before, while it waits for those
+    /// of the photo it holds now.
+    private static let stalePixelsGrace = Duration.milliseconds(150)
 
     /// What the thumbnail depends on: a new edit changes the modification date, so the task reruns; so
     /// does a zoom past a pixel step, or a change of shape, which asks the source for other pixels.
@@ -44,7 +50,8 @@ struct AssetThumbnailView: View {
         }
         // Room for the selection ring, which is drawn around the photo.
         .padding(SelectionRing.width)
-        .opacity(asset.flag == .rejected ? 0.45 : 1)
+        // A photo still on a card that was imported already steps back like a rejected one.
+        .opacity(asset.flag == .rejected || asset.isImported ? 0.45 : 1)
         .overlay(alignment: .bottom) {
             HStack {
                 if asset.rating > 0 {
@@ -57,6 +64,15 @@ struct AssetThumbnailView: View {
                 case .rejected: Image(systemName: "xmark.circle.fill").foregroundStyle(.red).help("Rejected")
                 case .none: EmptyView()
                 }
+                if asset.isVideo {
+                    // A device's video among its photos: told apart at a glance.
+                    Label("Video", systemImage: "video.fill")
+                        .labelStyle(.titleAndIcon)
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(.black.opacity(0.55), in: .capsule)
+                        .help("Video")
+                }
                 Spacer()
                 if let resources = resources ?? (asset.isRAW ? AssetResourceInfo(asset) : nil), resources.isRAW {
                     Text(resources.hasJPEGTwin ? "RAW+JPG" : "RAW")
@@ -68,6 +84,10 @@ struct AssetThumbnailView: View {
                 if asset.hasEdit {
                     Image(systemName: "slider.horizontal.3")
                         .help("Edited")
+                }
+                if asset.isImported {
+                    Image(systemName: "checkmark.circle.fill")
+                        .help("Already imported")
                 }
                 if asset.isFavorite {
                     Image(systemName: "heart.fill")
@@ -83,11 +103,30 @@ struct AssetThumbnailView: View {
         .animation(.snappy(duration: 0.3), value: fit)
         .task(id: ThumbnailKey(id: asset.id, modificationDate: asset.modificationDate, pixels: requestPixels.width, fit: fit)) {
             source.prioritize(asset)
+            // The cell shows another photo: the listing changed under it. Its pixels may stay a
+            // moment, so that a fast source goes from one photo to the other without a blink, but
+            // not for long: while a slow source reads the right photo (a card: up to seconds), the
+            // cell would show the wrong one.
+            let clearing = imageAssetID != nil && imageAssetID != asset.id ? Task {
+                try? await Task.sleep(for: Self.stalePixelsGrace)
+                if !Task.isCancelled, imageAssetID != asset.id {
+                    image = nil
+                    imageAssetID = nil
+                }
+            } : nil
+            defer { clearing?.cancel() }
+            // Where the real thumbnail takes long (a card), a coarse one first, unless this photo
+            // already shows: a zoom must not go back to it.
+            if imageAssetID != asset.id, let quick = await source.quickThumbnail(for: asset), !Task.isCancelled {
+                image = quick
+                imageAssetID = asset.id
+            }
             // The previous pixels stay on screen until the new ones are in hand, or the request is superseded.
             let loaded = await source.thumbnail(for: asset, pixelSize: requestPixels, fit: fit)
             guard !Task.isCancelled else { return }
             if let loaded {
                 image = loaded
+                imageAssetID = asset.id
             }
             resources = await source.resourceInfo(for: asset)
         }

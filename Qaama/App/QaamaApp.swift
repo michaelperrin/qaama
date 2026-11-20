@@ -22,7 +22,9 @@ struct QaamaApp: App {
         }
         // The DETR segmentation model ships in the bundle (Apache 2.0, see Resources/Models/README.md).
         ModelMasks.useSceneModel(at: Bundle.main.url(forResource: "DETRResnet50SemanticSegmentationF16", withExtension: "mlmodelc"))
-        let catalog = LibraryCatalog(store: store, filterPresets: FilterPresetStore(fileURL: FilterPresetStore.defaultURL()))
+        let catalog = LibraryCatalog(store: store, filterPresets: FilterPresetStore(fileURL: FilterPresetStore.defaultURL()),
+                                     cameras: CameraDevices(browser: ImageCaptureBrowser(), history: ImportHistory(fileURL: ImportHistory.defaultURL())),
+                                     importPresets: ImportPresetStore(fileURL: ImportPresetStore.defaultURL()))
         catalog.previewRenderer = { input, recipeData in
             let recipe = try EditRecipe(jsonData: recipeData)
             return try await EditRenderer.jpeg(imageURL: input.imageURL, image: input.image, recipe: recipe)
@@ -38,5 +40,8 @@ struct QaamaApp: App {
         }
         .windowStyle(.automatic)
         .commands { EditorCommands() }
+        Settings {
+            SettingsView()
+        }
     }
 }

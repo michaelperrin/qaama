@@ -90,3 +90,31 @@ struct LibraryQueryTests {
         #expect(try await store.items(inFolder: folder.id, query: query).map(\.fileName) == ["b-sky.jpg"])
     }
 }
+
+struct LibraryQueryScopeTests {
+    private func asset(_ id: String) -> LibraryAsset {
+        LibraryAsset(id: id, pixelWidth: 10, pixelHeight: 10, creationDate: nil, isFavorite: false)
+    }
+
+    @Test func thePhotosOfAnImportAreAScopeOfTheirOwnThatAMapGroupIsCutOutOf() {
+        var query = LibraryQuery()
+        #expect(query.scopedAssetIDs == nil)
+        query.fixedAssetIDs = ["a", "b", "c"]
+        #expect(query.scopedAssetIDs == ["a", "b", "c"])
+        #expect(query.matches(asset("a")))
+        #expect(!query.matches(asset("z")))
+        // A group opened from the map, then left: the import's photos are still all there is.
+        query.onlyAssetIDs = ["b", "z"]
+        #expect(query.scopedAssetIDs == ["b"])
+        query.onlyAssetIDs = nil
+        #expect(query.scopedAssetIDs == ["a", "b", "c"])
+        // Clearing the filters keeps both scopes, and neither counts as a filter.
+        query.onlyAssetIDs = ["b"]
+        #expect(query.clearingFilters.scopedAssetIDs == ["b"])
+        #expect(query.isUnfiltered)
+        // An import whose files aren't found yet lists nothing, not everything.
+        query = LibraryQuery()
+        query.fixedAssetIDs = []
+        #expect(!query.matches(asset("a")))
+    }
+}

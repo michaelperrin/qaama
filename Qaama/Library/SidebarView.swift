@@ -1,9 +1,10 @@
 import LibraryKit
 import SwiftUI
 
-/// Lists the map of every photo, then the Apple Photos library with its album hierarchy, the
-/// folders the user added with their subdirectories, and the filter presets the user saved. The
-/// first two sections are outlines over `SidebarItem`, so every row selects the same way.
+/// Lists the map of every photo, the cards and cameras plugged in, then the Apple Photos library
+/// with its album hierarchy, the folders the user added with their subdirectories, and the filter
+/// presets the user saved. The Photos and folder sections are outlines over `SidebarItem`, so every
+/// row selects the same way.
 ///
 /// Albums are managed from here: the context menus create albums and folders and delete albums, and
 /// photos dragged from the grid onto an album are added to it.
@@ -19,6 +20,9 @@ struct SidebarView: View {
     /// The album question being asked: a name for a new album or folder, or a deletion to confirm.
     @State private var albumDialog: AlbumDialog?
     @State private var albumError: String?
+    /// The import being named, and what is typed for it.
+    @State private var renamedImport: ImportRecord?
+    @State private var importName = ""
     /// The album row photos are being dragged over.
     @State private var dropTargetID: String?
     @Environment(\.undoManager) private var undoManager
@@ -29,6 +33,36 @@ struct SidebarView: View {
             Label("Map", systemImage: "map")
                 .help("Every photo of the Photos library and of the folders, where it was taken")
                 .tag(LibrarySelection.map)
+            // Once photos were imported: the last batches, by date, to go on with (rate, file in albums).
+            if let imports = catalog.cameras.history?.imports, !imports.isEmpty {
+                Section("Last Imports") {
+                    ForEach(imports) { record in
+                        Label(record.title, systemImage: "square.and.arrow.down")
+                            .badge(record.count)
+                            .help(record.summary)
+                            .tag(LibrarySelection.importRecord(record.id))
+                            .contextMenu {
+                                Button("Rename…") {
+                                    importName = record.name ?? ""
+                                    renamedImport = record
+                                }
+                            }
+                    }
+                }
+            }
+            // Only while one is plugged in, and at the top: a card just inserted is what one came for.
+            if !catalog.cameras.sources.isEmpty {
+                Section("Devices") {
+                    ForEach(catalog.cameras.sources) { device in
+                        Label(device.displayName, systemImage: device.kind.symbol)
+                            .help("Photos on “\(device.displayName)”, to import")
+                            .tag(LibrarySelection.device(device.id))
+                            .contextMenu {
+                                Button("Eject") { Task { try? await device.eject() } }
+                            }
+                    }
+                }
+            }
             Section("Apple Photos") {
                 OutlineGroup(photosItems, children: \.children) { item in
                     row(item)
@@ -99,6 +133,17 @@ struct SidebarView: View {
                 selection = .photos
             }
         })
+        .alert("Rename Import", isPresented: Binding(get: { renamedImport != nil }, set: {
+            if !$0 {
+                renamedImport = nil
+            }
+        }), presenting: renamedImport) { record in
+            TextField(record.dateTitle, text: $importName)
+            Button("Rename") { catalog.cameras.history?.rename(record.id, to: importName, undoManager: undoManager) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Leave the name empty to list the import under its date.")
+        }
         .alert("Couldn't Update the Albums", isPresented: Binding(get: { albumError != nil }, set: {
             if !$0 {
                 albumError = nil
@@ -215,6 +260,16 @@ struct SidebarView: View {
         default: break
         }
         Task { try? await catalog.removeFolder(folder) }
+    }
+}
+
+private extension CameraDeviceKind {
+    var symbol: String {
+        switch self {
+        case .card: "sdcard"
+        case .phone: "iphone"
+        case .camera: "camera"
+        }
     }
 }
 

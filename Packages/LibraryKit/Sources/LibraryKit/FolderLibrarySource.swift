@@ -31,7 +31,7 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     public private(set) var loadError: String?
 
     public var capabilities: Set<LibraryCapability> {
-        [.rating, .flag, .keywords, .captureDate, .location, .originalLocation, .deletion, .duplication]
+        [.rating, .flag, .keywords, .captureDate, .location, .originalLocation, .deletion, .duplication, .editing]
     }
 
     public var queryCapabilities: Set<QueryCapability> {
@@ -215,14 +215,19 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
     private func apply(_ all: [CatalogItem]) {
         delivered = all
         itemsByID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
-        let located = all.compactMap { item in
-            item.effectiveLocation.map { LocatedAsset(id: item.id.uuidString, coordinate: $0, captureDate: item.effectiveCaptureDate) }
+        // The map shows the photos whatever group of it is open, but never those outside the
+        // photos this view is about (an import's).
+        let located = all.compactMap { item -> LocatedAsset? in
+            if let fixed = query.fixedAssetIDs, !fixed.contains(item.id.uuidString) {
+                return nil
+            }
+            return item.effectiveLocation.map { LocatedAsset(id: item.id.uuidString, coordinate: $0, captureDate: item.effectiveCaptureDate) }
         }
         if located != placed {
             placed = located
             placesVersion += 1
         }
-        let items = query.onlyAssetIDs.map { only in all.filter { only.contains($0.id.uuidString) } } ?? all
+        let items = query.scopedAssetIDs.map { only in all.filter { only.contains($0.id.uuidString) } } ?? all
         rowsByID = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.id, $0.offset) })
         let byModification = query.sort == .modificationDate
         listedDates = items.map { byModification ? $0.sidecarModified ?? $0.contentModified : $0.effectiveCaptureDate }
@@ -422,6 +427,14 @@ public final class FolderLibrarySource: LibrarySource, Identifiable {
         return true
     }
 
+    /// Tells the folder that image files were just added to it by an import: they are listed at
+    /// once, and the undo registered moves them to the Trash (the redo puts them back).
+    public func registerImport(of images: [URL], undoManager: UndoManager?) {
+        guard !images.isEmpty else { return }
+        rescan()
+        fileSteps.register(.trash(images), named: images.count == 1 ? "Import Photo" : "Import Photos", with: undoManager)
+    }
+
     public func deletionNotice(for assets: [LibraryAsset]) -> String? {
         assets.count == 1 ? "Its file will be moved to the Trash." : "Their files will be moved to the Trash."
     }
@@ -558,6 +571,7 @@ private nonisolated extension LibraryQuery {
     var catalogQuery: LibraryQuery {
         var query = self
         query.onlyAssetIDs = nil
+        query.fixedAssetIDs = nil
         return query
     }
 }

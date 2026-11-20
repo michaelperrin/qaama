@@ -41,6 +41,18 @@ extension FocusedValues {
     }
 }
 
+/// True in a window showing a card or a camera, for View › Hide Already Imported.
+struct FocusedImportedPhotosFilterKey: FocusedValueKey {
+    typealias Value = Bool
+}
+
+extension FocusedValues {
+    var hasImportedPhotosFilter: Bool? {
+        get { self[FocusedImportedPhotosFilterKey.self] }
+        set { self[FocusedImportedPhotosFilterKey.self] = newValue }
+    }
+}
+
 /// What File › Export… does in the key window: export the open photo, or the grid's selection.
 struct ExportAction {
     let run: () -> Void
@@ -198,6 +210,7 @@ struct EditorCommands: Commands {
     @FocusedValue(\.editor) private var editor
     @FocusedValue(\.hasInspector) private var hasInspector
     @FocusedValue(\.hasAssetGrid) private var hasAssetGrid
+    @FocusedValue(\.hasImportedPhotosFilter) private var hasImportedPhotosFilter
     @FocusedValue(\.adjustDateAction) private var adjustDateAction
     @FocusedValue(\.decisionsAction) private var decisions
     @FocusedValue(\.locationAction) private var locationAction
@@ -213,6 +226,8 @@ struct EditorCommands: Commands {
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
     @AppStorage(GridDisplay.thumbnailSideKey) private var thumbnailSide = GridDisplay.defaultSide
     @AppStorage(GridDisplay.thumbnailFitKey) private var thumbnailFit = ThumbnailFit.fill
+    /// The same preference as the toolbar button of a device's view.
+    @AppStorage("importHidesImported") private var hidesImported = false
     @AppStorage(LibraryMapStyle.key) private var mapStyle = LibraryMapStyle.standard
 
     var body: some Commands {
@@ -284,6 +299,9 @@ struct EditorCommands: Commands {
             }
             .pickerStyle(.inline)
             .disabled(hasAssetGrid != true)
+            // The toolbar's filter button of a card or a camera, by its name.
+            Toggle("Hide Already Imported", isOn: $hidesImported)
+                .disabled(hasImportedPhotosFilter != true)
             Divider()
             // The toolbar's Back button, as the Finder's Go › Back.
             Button("Back") { backAction?.go() }

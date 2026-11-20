@@ -17,6 +17,58 @@ can feed a website one day. Dates are when the feature landed.
   woven by date whatever library they come from, where they can be rated, tagged, re-dated and
   edited; each change goes to the library the photo belongs to, and is undoable. Search and the
   filters both kinds of library know (rating, RAW, JPEG twins) narrow the map (2026-11-13).
+- Devices, at the top of the sidebar while one is plugged in: an SD card in a reader, a camera
+  or an iPhone shows there, and its photos in the same grid as a library, by month, newest
+  first. While the device is read, the grid already shows as many empty thumbnails as it holds
+  photos, with a progress bar, and they fill with the photos as they are found; the photos then
+  take their places by date. A small thumbnail read from each file's header shows at once, then
+  the sharp one. A RAW and the JPEG shot with it show as one photo; videos are counted, not
+  shown (2026-11-19).
+- A double click, or the space bar, shows a photo of the device as large as the window, with its
+  name, its date and its place among the others; the arrow keys go from photo to photo, the
+  next one being read in advance, and Escape goes back to the grid (2026-11-19).
+- Import: the selected photos of a device, or all of them, go to the Apple Photos library,
+  with an album found by typing part of its name or made on the spot, in a folder of albums
+  or not, or are copied into one of the folders of the
+  sidebar, filed by date in one of five ways (2026/2026-11-19, 2026/11/19, 2026/11, 2026, 2026-11-19) or
+  as they are. Each copy is checked against
+  the size the device announced before it takes its place; photos already there are left alone;
+  a RAW comes with its JPEG. A bar shows how far the import is, which goes on while the window
+  shows something else and can be stopped. Undo moves what was imported to the Trash, or deletes
+  it from Photos, which asks first. The device
+  can be ejected when done, or from its context menu in the sidebar (2026-11-19).
+- New photos only: the photos of a device that were imported before show dimmed, with a check
+  mark, and the title says how many are new. With nothing selected, Import brings the new ones
+  only; selected photos are imported whatever they are. Undoing an import makes its photos new
+  again (2026-11-19).
+- The import sheet lists the day folders the photos will go to, with how many photos each
+  (2026-11-19).
+- Last Imports, a section of the sidebar once photos were imported: the last ten imports, each
+  under its date and time, or a name given from its context menu, kept across launches. An entry
+  shows the photos that import brought, alone, in the library they went to, to rate them, file
+  them in albums or edit them (2026-11-19).
+- Hide Already Imported, an eye button of a device's toolbar and a command of the View menu:
+  only the photos left to import show, and the title says so (2026-11-19).
+- Videos of a device are listed among its photos, under a Video badge, and can be selected,
+  imported and deleted like them. An import of the new photos can bring the new videos too,
+  filed like the photos in a folder (second copy included) or as videos in the Photos library,
+  and never twice. Once imported, Qaama doesn't list them (2026-11-20).
+- Keywords at import: a field of the import sheet gives keywords to every photo imported, as
+  tokens, picked among the keywords already in use while typing, or new ones (2026-11-20).
+- Import presets: the settings of the import sheet (destination and album, filing, keywords,
+  videos, second copy, ejecting) saved under a name and brought back from a menu next to the
+  sheet's title, kept across launches. A preset changed after it was chosen shows as edited
+  and can be updated in one item (2026-11-20).
+- Select All, next to Import in a device's toolbar: what is selected is what is imported
+  (2026-11-20).
+- Second copy: an import can copy every file to another folder as well, on another disk for
+  instance, filed by day, as a backup. A second copy that fails is told, and its photo is then
+  never deleted from the device (2026-11-19).
+- An import can delete from the device what it copied, once it is over: only the photos that
+  made it, for good; asked each time (2026-11-19).
+- Photos can be deleted from a card or a camera, from the context menu or Image › Delete, after
+  a confirmation: for good, a card has no Trash. A RAW goes with its JPEG; a locked card offers
+  no deletion (2026-11-19).
 
 ### Browsing
 - Thumbnail grid that stays fast on very large libraries (74,000 photos listed in well under a
@@ -381,6 +433,11 @@ can feed a website one day. Dates are when the feature landed.
 ### Presets
 - Export presets saving format, size, frame, watermark and file options together; chosen from a
   menu in the export window, which shows which preset the current settings match (2026-10-30).
+
+## Settings
+- A Settings window (Qaama › Settings…), with a first option: show a card or a camera in the
+  window as soon as it is plugged in, on by default; a phone is never opened by itself
+  (2026-11-20).
 
 ## Platform
 - Native macOS app (macOS 27), SwiftUI, Core Image on Metal, sandboxed (2026-10-29).

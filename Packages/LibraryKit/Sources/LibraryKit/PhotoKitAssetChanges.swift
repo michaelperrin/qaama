@@ -97,6 +97,46 @@ nonisolated enum PhotoKitAssetChanges {
         return copy
     }
 
+    /// Makes a photo from files copied from a card or a camera, and returns its identifier. A RAW
+    /// that comes with its JPEG becomes one photo, the JPEG being the one shown and the RAW its
+    /// alternate, as a camera's pair is in Photos. Photos reads the date and the place from the
+    /// files, and takes the files away (`shouldMoveFile`). `albumID` is an album to add the photo to.
+    static func create(from photo: ImportedPhoto, intoAlbum albumID: String?, keywords: [String] = []) async throws -> String {
+        let jpeg = photo.files.first { !$0.isRAW }
+        let resources: [(type: PHAssetResourceType, file: ImportedPhoto.File)] = photo.files.map { file in
+            (file.isMovie ? .video : file.isRAW && jpeg != nil ? .alternatePhoto : .photo, file)
+        }
+        guard !resources.isEmpty else { throw LibrarySourceError.assetUnavailable }
+        // A change request for an album that refuses additions is nil, and would do nothing in silence.
+        let album = albumID.flatMap { PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [$0], options: nil).firstObject }
+            .flatMap { $0.canPerform(.addContent) ? $0 : nil }
+        // The identifier is only known inside the change block, which PhotoKit runs on its own queue.
+        let created = OSAllocatedUnfairLock<String?>(initialState: nil)
+        do {
+            try await PHPhotoLibrary.shared().performChanges { @Sendable in
+                let request = PHAssetCreationRequest.forAsset()
+                for resource in resources {
+                    let options = PHAssetResourceCreationOptions()
+                    options.originalFilename = resource.file.name
+                    options.shouldMoveFile = true
+                    request.addResource(with: resource.type, fileURL: resource.file.url, options: options)
+                }
+                keywords.forEach { request.addKeyword($0) }
+                guard let placeholder = request.placeholderForCreatedAsset else { return }
+                if let album {
+                    PHAssetCollectionChangeRequest(for: album)?.addAssets([placeholder] as NSArray)
+                }
+                created.withLock { $0 = placeholder.localIdentifier }
+            }
+        } catch {
+            let names = photo.files.map(\.name).joined(separator: ", ")
+            logger.error("Importing \(names, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            throw LibrarySourceError.editingFailed("Photos refused “\(names)”: \(error.localizedDescription)")
+        }
+        guard let id = created.withLock({ $0 }) else { throw LibrarySourceError.editingFailed("no photo was created") }
+        return id
+    }
+
     /// The files a copy is made from: the original and the other half of a RAW + JPEG pair and, for
     /// an edited photo, its current version and the adjustment data behind it, so the copy carries
     /// the same edit, which Photos can revert and Qaama reopen as it does the original's. Should

@@ -141,3 +141,41 @@ struct DateTimelineTests {
         #expect(YearMonth(Self.date(2017, 5, 31), calendar: Self.calendar) == YearMonth(year: 2017, month: 5))
     }
 }
+
+struct GridRowsTests {
+    private func date(_ year: Int, _ month: Int, _ day: Int) -> Date {
+        Calendar.current.date(from: DateComponents(year: year, month: month, day: day, hour: 12))!
+    }
+
+    @Test func aRowIsIdentifiedByItsSectionToo() throws {
+        let before = DateTimeline(dates: [date(2020, 9, 3), date(2020, 9, 2), date(2020, 9, 1)])
+        // A newer month is found: its rows are rows the older month held.
+        let after = DateTimeline(dates: [date(2020, 10, 2), date(2020, 10, 1), date(2020, 9, 3), date(2020, 9, 2), date(2020, 9, 1)])
+        let september = try #require(after.section(for: YearMonth(year: 2020, month: 9)))
+
+        // Row 0 passed from September to October: another cell.
+        #expect(before.rowID(0) != after.rowID(0))
+        #expect(after.rowID(0)?.row == 0)
+        #expect(after.rowID(0)?.section.month == YearMonth(year: 2020, month: 10))
+        // Past the end there is no cell.
+        #expect(after.rowID(5) == nil)
+        #expect(before.rowID(3) == nil)
+
+        // The rows of a section, as the grid lays them out, are the ones it scrolls to.
+        let rows = GridSectionRows(september)
+        #expect(rows.count == 3)
+        #expect(rows.map(\.row) == [2, 3, 4])
+        #expect(Array(rows) == (2 ... 4).map { after.rowID($0) })
+        #expect(rows[3] == after.rowID(3))
+    }
+
+    @Test func aPhotoAddedInTheSameMonthLeavesTheOtherCellsAlone() {
+        let before = DateTimeline(dates: [date(2020, 9, 2), date(2020, 9, 1), date(2020, 8, 1)])
+        let after = DateTimeline(dates: [date(2020, 9, 3), date(2020, 9, 2), date(2020, 9, 1), date(2020, 8, 1)])
+        // Rows 0 and 1 are still rows of September: the same cells, which take their new photo.
+        #expect(before.rowID(0) == after.rowID(0))
+        #expect(before.rowID(1) == after.rowID(1))
+        // Row 2 was August's and is September's now.
+        #expect(before.rowID(2) != after.rowID(2))
+    }
+}

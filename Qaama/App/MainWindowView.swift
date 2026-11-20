@@ -13,6 +13,10 @@ enum LibrarySelection: Hashable {
     case subfolder(FolderLibrarySource.ID, String)
     /// A library filtered as a preset says.
     case filterPreset(FilterPreset.ID)
+    /// A card or a camera plugged in, to import from.
+    case device(CameraLibrarySource.ID)
+    /// The photos one of the last imports brought, in the library they went to.
+    case importRecord(ImportRecord.ID)
 
     /// The sidebar's entry of the library a preset filters.
     init(_ library: FilterPreset.Library) {
@@ -34,6 +38,8 @@ extension LibraryCatalog {
         case let .folder(id): folders.first { $0.id == id }?.displayName ?? "Folder"
         case let .subfolder(_, path): path.split(separator: "/").last.map(String.init) ?? "Folder"
         case let .filterPreset(id): filterPresets.preset(id: id)?.name ?? "Filter Preset"
+        case let .device(id): cameras.source(id: id)?.displayName ?? "Device"
+        case let .importRecord(id): cameras.history?.record(id: id)?.title ?? "Import"
         }
     }
 }
@@ -55,6 +61,7 @@ struct MainWindowView: View {
     /// The filter preset being named: one saved from the Filter panel, or one renamed in the sidebar.
     @State private var presetDialog: FilterPresetDialog?
     @Environment(\.undoManager) private var undoManager
+    @AppStorage(AppSettings.opensDevicesKey) private var opensDevices = true
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -86,6 +93,12 @@ struct MainWindowView: View {
             arrival.moved(to: location)
         }
         .task { await catalog.load() }
+        // A card or a camera just plugged in is what one came for; a phone is plugged in for
+        // other reasons, and stays in the sidebar.
+        .onChange(of: catalog.cameras.sources.map(\.id)) { before, now in
+            guard opensDevices, let added = catalog.cameras.sources.first(where: { !before.contains($0.id) && now.contains($0.id) && $0.kind != .phone }) else { return }
+            selection = .device(added.id)
+        }
         .fileImporter(isPresented: $isPickingFolder, allowedContentTypes: [.folder]) { result in
             Task { await addFolder(result) }
         }
@@ -142,7 +155,7 @@ struct MainWindowView: View {
         case let .folder(id): .folder(id: id, path: nil)
         case let .subfolder(id, path): .folder(id: id, path: path)
         case let .filterPreset(id): catalog.filterPresets.preset(id: id)?.library
-        case .map, nil: nil
+        case .map, .device, .importRecord, nil: nil
         }
     }
 
@@ -171,6 +184,23 @@ struct MainWindowView: View {
                     .id(preset.id)
             } else {
                 ContentUnavailableView("Filter Preset Removed", systemImage: "line.3.horizontal.decrease.circle")
+            }
+        case let .device(id):
+            if let device = catalog.cameras.source(id: id) {
+                CameraLibraryView(source: device, catalog: catalog)
+                    .id(device.id)
+            } else {
+                ContentUnavailableView("Device Disconnected", systemImage: "sdcard",
+                                       description: Text("Plug it in again to see its photos."))
+            }
+        case let .importRecord(id):
+            if let record = catalog.cameras.history?.record(id: id) {
+                ImportRecordView(record: record, catalog: catalog, maps: maps)
+                    .id(record.id)
+            } else {
+                // Undone, or pushed out of the list by newer imports.
+                ContentUnavailableView("Import No Longer Listed", systemImage: "square.and.arrow.down",
+                                       description: Text("Its photos are still in the library they were imported into."))
             }
         case nil:
             ContentUnavailableView("Select a Library", systemImage: "sidebar.left",

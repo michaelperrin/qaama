@@ -123,3 +123,30 @@ public nonisolated extension PhotosAlbumSearch.Match {
         }
     }
 }
+
+/// A folder of albums a new album can be made in, with the folders it is in itself.
+public nonisolated struct PhotosAlbumFolderChoice: Hashable, Sendable, Identifiable {
+    public let id: String
+    public let title: String
+    /// The titles of the folders above it, from the top level down.
+    public let ancestors: [String]
+
+    /// How deep it is: 0 at the top level.
+    public var depth: Int {
+        ancestors.count
+    }
+
+    /// Every folder of a hierarchy in the order the sidebar shows them, each right before the
+    /// folders it holds.
+    public static func all(in tree: [PhotosAlbumNode]) -> [Self] {
+        var choices: [Self] = []
+        func collect(_ nodes: [PhotosAlbumNode], under ancestors: [String]) {
+            for case let .folder(id, title, children) in nodes {
+                choices.append(Self(id: id, title: title, ancestors: ancestors))
+                collect(children, under: ancestors + [title])
+            }
+        }
+        collect(tree, under: [])
+        return choices
+    }
+}
