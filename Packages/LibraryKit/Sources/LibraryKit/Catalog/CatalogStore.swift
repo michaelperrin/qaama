@@ -118,6 +118,18 @@ public final nonisolated class CatalogStore: Sendable {
         }
     }
 
+    /// Every keyword given to a photo of a folder, each once, in no particular order: what a
+    /// keyword field offers to pick from.
+    public func allKeywords() async throws -> Set<String> {
+        try await writer.read { db in
+            var keywords: Set<String> = []
+            for json in try String.fetchAll(db, sql: "SELECT DISTINCT keywords FROM item WHERE keywords != '[]'") {
+                keywords.formUnion((try? JSONDecoder().decode([String].self, from: Data(json.utf8))) ?? [])
+            }
+            return keywords
+        }
+    }
+
     public func item(fileIdentifier: Data) async throws -> CatalogItem? {
         try await writer.read { db in
             try CatalogItem.filter(CatalogItem.Col.fileIdentifier == fileIdentifier).fetchOne(db)

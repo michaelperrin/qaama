@@ -615,6 +615,53 @@ struct CameraImportTests {
         #expect(toLibrary.importedVideos == 2)
     }
 
+    @Test func keywordsGivenAtImportGoWithEachPhotoOfAFolder() async throws {
+        let fixture = try await makeFixture([
+            CameraFile(id: "DCIM/100/IMG_0001.JPG", byteSize: 300, creationDate: date(2021, 11, 10)),
+            CameraFile(id: "DCIM/100/IMG_0002.CR2", byteSize: 900, creationDate: date(2021, 11, 11), isRAW: true),
+            CameraFile(id: "DCIM/100/IMG_0002.JPG", byteSize: 200, creationDate: date(2021, 11, 11)),
+            CameraFile(id: "DCIM/100/MVI_0003.MOV", byteSize: 500, creationDate: date(2021, 11, 12), isMovie: true),
+        ])
+        defer { try? FileManager.default.removeItem(at: fixture.base) }
+        let job = try #require(fixture.source.startImport(of: Array(fixture.source.assets), into: .folder(fixture.folder, layout: .flat), named: "Photos",
+                                                          keywords: ["Venice", "night"]))
+        await job.wait()
+        #expect(job.failures.isEmpty)
+        // One sidecar per photo: on the RAW for a pair, none for the video.
+        #expect(try Sidecar.read(forImageAt: fixture.folder.appendingPathComponent("IMG_0001.JPG"))?.keywords == ["Venice", "night"])
+        #expect(try Sidecar.read(forImageAt: fixture.folder.appendingPathComponent("IMG_0002.CR2"))?.keywords == ["Venice", "night"])
+        #expect(try Sidecar.read(forImageAt: fixture.folder.appendingPathComponent("IMG_0002.JPG")) == nil)
+        #expect(try Sidecar.read(forImageAt: fixture.folder.appendingPathComponent("MVI_0003.MOV")) == nil)
+        // The sidecars are not among the image files the import brought.
+        #expect(job.imported.count == 4)
+    }
+
+    @Test func theKeywordsInUseAreKnownToTheCatalog() async throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("CameraImportTests-\(UUID().uuidString)")
+        let root = base.appendingPathComponent("Photos")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let image = CameraTestImages.jpeg(width: 40, height: 30, embeddingThumbnail: false)
+        for (name, keywords) in [("a.jpg", ["Venice", "night"]), ("b.jpg", ["venice 2", "Night"]), ("c.jpg", [])] {
+            try image.write(to: root.appendingPathComponent(name))
+            if !keywords.isEmpty {
+                try Sidecar(keywords: keywords).write(forImageAt: root.appendingPathComponent(name))
+            }
+        }
+        let catalog = LibraryCatalog(store: try CatalogStore.inMemory(), previewCache: PreviewCache(directory: base.appendingPathComponent("Previews")))
+        #expect(await catalog.knownKeywords().isEmpty)
+        let folder = try await catalog.addFolder(root)
+        await folder.load()
+        await waitUntil { folder.assets.count == 3 }
+        var known: [String] = []
+        for _ in 0 ..< 100 where known.count < 4 {
+            known = await catalog.knownKeywords()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        // Each once, as they were typed, sorted as names are.
+        #expect(known == ["night", "Night", "Venice", "venice 2"] || known == ["Night", "night", "Venice", "venice 2"])
+    }
+
     @Test func aFileIsToldByItsNameItsSizeAndItsDate() {
         let file = CameraFile(id: "DCIM/100/IMG_0001.JPG", byteSize: 300, creationDate: date(2021, 11, 10))
         let signature = ImportedFileSignature(file)

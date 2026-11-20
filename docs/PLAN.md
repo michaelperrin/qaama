@@ -2238,6 +2238,27 @@ Interface
             une pastille « Video » (`LibraryAsset.isVideo`), sélectionnables, importables et
             supprimables comme les photos. Pas vérifié : que l'appareil fournit une vignette
             pour une vidéo (carte retirée) ; Michaël essaiera avec une vidéo sur une carte.
+          - Tri de ce qui restait (20/11/2026), validé par Michaël : on fait les mots-clés à
+            l'import et l'ouverture de la carte à l'insertion ; on laisse le renommage par
+            modèle, les préréglages d'import, les cases par journée, auteur et copyright, et
+            le préréglage d'ajustements.
+          - Mots-clés à l'import : Michaël a demandé « une interface plus sympa pour les
+            saisir (facilité de sélectionner les existants + en créer des nouveaux, avoir des
+            petits "tags" », à reprendre ensuite dans le panneau Info. Fait avec le champ à
+            jetons du système (`NSTokenField`, `KeywordTokenField`), qui propose en tapant les
+            mots-clés déjà utilisés (`LibraryCatalog.knownKeywords()` : dossiers et index
+            Photos). Vers un dossier, les mots-clés vont dans un sidecar écrit à côté de
+            chaque photo importée (sur le RAW d'une paire, pas sur les vidéos) ; vers Photos,
+            dans la demande de création. Reste : reprendre ce champ dans le panneau Info et
+            la barre de l'éditeur (`KeywordsField`, encore un champ texte à virgules). Souhait
+            noté pour plus tard : une hiérarchie de mots-clés.
+          - Réglages : première fenêtre « Settings » de l'appli (`SettingsView`), un volet
+            General avec « Show a card or a camera when it is plugged in », actif par défaut.
+            La fenêtre passe alors sur l'appareil dès qu'il est annoncé, jamais pour un
+            téléphone (branché pour d'autres raisons).
+          - Pas vérifié dans l'appli : la saisie dans le champ à jetons (complétion, Retour,
+            virgule), les mots-clés réellement écrits dans Photos, la fenêtre de réglages
+            ouverte par le menu, la bascule à l'insertion d'une carte.
           - Aperçu des dossiers de destination dans la feuille (jour et nombre de photos) ;
             pas de case pour décocher une journée.
           - Suppression sur la carte : menu contextuel et Image › Delete, après confirmation,

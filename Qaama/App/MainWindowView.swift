@@ -61,6 +61,7 @@ struct MainWindowView: View {
     /// The filter preset being named: one saved from the Filter panel, or one renamed in the sidebar.
     @State private var presetDialog: FilterPresetDialog?
     @Environment(\.undoManager) private var undoManager
+    @AppStorage(AppSettings.opensDevicesKey) private var opensDevices = true
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -92,6 +93,12 @@ struct MainWindowView: View {
             arrival.moved(to: location)
         }
         .task { await catalog.load() }
+        // A card or a camera just plugged in is what one came for; a phone is plugged in for
+        // other reasons, and stays in the sidebar.
+        .onChange(of: catalog.cameras.sources.map(\.id)) { before, now in
+            guard opensDevices, let added = catalog.cameras.sources.first(where: { !before.contains($0.id) && now.contains($0.id) && $0.kind != .phone }) else { return }
+            selection = .device(added.id)
+        }
         .fileImporter(isPresented: $isPickingFolder, allowedContentTypes: [.folder]) { result in
             Task { await addFolder(result) }
         }

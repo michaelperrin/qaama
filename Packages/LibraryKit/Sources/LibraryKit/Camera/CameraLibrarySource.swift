@@ -303,10 +303,11 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
     /// follow. A RAW shown with its JPEG brings both files: into the same subfolder of a folder, as
     /// one photo of a library. `secondCopy` is a folder every file is copied to as well, filed by
     /// day: another disk, for a backup. Nil while another import from this device is going on.
-    /// `includingVideos` brings the device's videos that weren't imported yet as well, after the
+    /// `keywords` are given to every photo copied into a folder, in a sidecar next to it (a library
+    /// takes its own through its `ImportDestination`). `includingVideos` brings the device's videos that weren't imported yet as well, after the
     /// photos: filed like them in a folder, as videos in a library.
     public func startImport(of assets: [LibraryAsset], into destination: ImportDestination, named destinationName: String,
-                            secondCopy: URL? = nil, includingVideos: Bool = false) -> CameraImport?
+                            secondCopy: URL? = nil, includingVideos: Bool = false, keywords: [String] = []) -> CameraImport?
     {
         guard currentImport?.isFinished != false else { return nil }
         let videos = includingVideos ? newMovies().map { LibraryAsset(id: $0.id, pixelWidth: 0, pixelHeight: 0, creationDate: $0.creationDate, isFavorite: false) } : []
@@ -329,7 +330,7 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
                 }
                 switch destination {
                 case let .folder(folder, layout):
-                    await importPhoto(asset, into: folder, layout: layout, secondCopy: secondCopy, staging: staging, job: job)
+                    await importPhoto(asset, into: folder, layout: layout, secondCopy: secondCopy, keywords: keywords, staging: staging, job: job)
                 case let .library(makePhoto):
                     await importPhoto(asset, with: makePhoto, secondCopy: secondCopy, staging: staging, job: job)
                 }
@@ -340,7 +341,9 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
         return job
     }
 
-    private func importPhoto(_ asset: LibraryAsset, into folder: URL, layout: ImportLayout, secondCopy: URL?, staging: URL, job: CameraImport) async {
+    private func importPhoto(_ asset: LibraryAsset, into folder: URL, layout: ImportLayout, secondCopy: URL?, keywords: [String], staging: URL,
+                             job: CameraImport) async
+    {
         let directory = layout.subfolder(for: asset.creationDate).map { folder.appendingPathComponent($0, isDirectory: true) } ?? folder
         let copyDirectory = secondCopy.map { CameraImportFiles.secondCopyDirectory(in: $0, for: asset.creationDate) }
         var copied: [URL] = []
@@ -378,6 +381,10 @@ public final class CameraLibrarySource: LibrarySource, Identifiable {
             case let .success(placed):
                 if let installed = placed.installed {
                     copied.append(installed)
+                    // The photo's own file carries its keywords, not the JPEG shot with a RAW, nor a video.
+                    if file.id == asset.id, !file.isMovie, !keywords.isEmpty {
+                        await Task.detached { try? Sidecar(keywords: keywords).write(forImageAt: installed) }.value
+                    }
                 } else {
                     skipped += 1
                 }

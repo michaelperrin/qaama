@@ -19,6 +19,8 @@ struct CameraLibraryView: View {
     /// Where the grid is scrolled, for the grid that comes back after the viewer.
     @State private var gridPlace = GridPlaceKeeper()
     @State private var isChoosingDestination = false
+    /// The keywords in use, read when the import sheet opens.
+    @State private var knownKeywords: [String] = []
     /// The import whose result the user has read: its bar is gone.
     @State private var dismissedImportID: CameraImport.ID?
     @State private var ejectError: String?
@@ -80,10 +82,15 @@ struct CameraLibraryView: View {
         .onChange(of: hidesImported, initial: true) { source.hidesImported = hidesImported }
         // View › Hide Already Imported, while a device is on screen.
         .focusedSceneValue(\.hasImportedPhotosFilter, canHideImported ? true : nil)
+        .task(id: isChoosingDestination) {
+            if isChoosingDestination {
+                knownKeywords = await catalog.knownKeywords()
+            }
+        }
         .sheet(isPresented: $isChoosingDestination) {
             CameraImportSheet(deviceName: source.displayName, photoDates: photosToImport.map(\.creationDate), folders: catalog.folders,
                               albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor, undoManager: undoManager,
-                              videoCount: selection.isEmpty ? source.newMovieCount : 0,
+                              knownKeywords: knownKeywords, videoCount: selection.isEmpty ? source.newMovieCount : 0,
                               canDelete: source.capabilities.contains(.deletion), onImport: { choice in
                                   isChoosingDestination = false
                                   startImport(choice)
@@ -153,14 +160,14 @@ struct CameraLibraryView: View {
             destination = .folder(folder.folderURL, layout: layout)
             name = folder.displayName
         case let .photos(albumID, title):
-            destination = .library(catalog.photos.importer(intoAlbum: albumID))
+            destination = .library(catalog.photos.importer(intoAlbum: albumID, keywords: choice.keywords))
             name = title ?? "Photos"
         }
         // The sandbox lets the folder of the second copies be written to between these two calls.
         let secondCopy = choice.secondCopy
         let isAccessingSecondCopy = secondCopy?.startAccessingSecurityScopedResource() ?? false
         guard let job = source.startImport(of: photosToImport, into: destination, named: name, secondCopy: secondCopy,
-                                           includingVideos: choice.includesVideos)
+                                           includingVideos: choice.includesVideos, keywords: choice.keywords)
         else {
             if isAccessingSecondCopy {
                 secondCopy?.stopAccessingSecurityScopedResource()

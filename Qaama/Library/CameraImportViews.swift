@@ -13,6 +13,8 @@ enum CameraImportTarget {
 /// What the user chose for an import: where the photos go and what happens after.
 struct CameraImportChoice {
     var target: CameraImportTarget
+    /// Keywords given to every photo imported.
+    var keywords: [String]
     /// Bring the device's videos that weren't imported yet as well.
     var includesVideos: Bool
     /// A folder every file is copied to as well, for a backup; nil for none.
@@ -36,6 +38,8 @@ struct CameraImportSheet: View {
     let albumEditor: PhotosAlbumEditor
     /// The window's: a sheet has none of its own to undo with later.
     let undoManager: UndoManager?
+    /// The keywords in use in the libraries, offered while typing.
+    let knownKeywords: [String]
     /// How many videos would come with the photos: those of the device that weren't imported yet,
     /// when every new photo is imported; 0 when photos were picked by hand.
     let videoCount: Int
@@ -58,6 +62,8 @@ struct CameraImportSheet: View {
     /// empty for none.
     @AppStorage("importSecondCopyBookmark") private var secondCopyBookmark = Data()
     @AppStorage("importIncludesVideos") private var includesVideos = true
+    /// For this import only: the next one is about other photos.
+    @State private var keywords: [String] = []
     @State private var isChoosingSecondCopy = false
     @State private var secondCopyError: String?
     /// The album made here, which the list of albums may not hold yet.
@@ -79,18 +85,21 @@ struct CameraImportSheet: View {
                         }
                     }
                     if let folder {
-                        Picker("Organize", selection: $layout) {
-                            // Each way by what it makes of today.
-                            ForEach(ImportLayout.allCases, id: \.self) { layout in
-                                if layout == .flat {
-                                    Divider()
+                        // One row: how the photos are filed, and right under it the folders that makes.
+                        VStack(alignment: .leading, spacing: 10) {
+                            Picker("Organize", selection: $layout) {
+                                ForEach(ImportLayout.allCases, id: \.self) { layout in
+                                    if layout == .flat {
+                                        Divider()
+                                    }
+                                    Label(layout.title, systemImage: "folder")
+                                        .tag(layout)
                                 }
-                                Text(layout.title).tag(layout)
                             }
-                        }
-                        .help(folder.folderURL.path(percentEncoded: false))
-                        if layout != .flat {
-                            LabeledContent("Folders") { folderPreview }
+                            .help(folder.folderURL.path(percentEncoded: false))
+                            if layout != .flat {
+                                folderPreview
+                            }
                         }
                     } else {
                         LabeledContent("Album") {
@@ -114,6 +123,11 @@ struct CameraImportSheet: View {
                             }
                         }
                     }
+                    LabeledContent("Keywords") {
+                        KeywordsEditor(keywords: $keywords, known: knownKeywords)
+                            .frame(maxWidth: 280)
+                    }
+                    .help("Given to every photo imported. Type a keyword, in use or new, and a comma or Return; or pick among those in use with the tag button.")
                     if videoCount > 0 {
                         Toggle(videoCount == 1 ? "Import the video too" : "Import the \(videoCount.formatted()) videos too", isOn: $includesVideos)
                             .help("Videos are copied with the photos; once imported, Qaama doesn't list them")
@@ -158,7 +172,7 @@ struct CameraImportSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Import") {
                     let photos = CameraImportTarget.photos(albumID: albumTitle == nil ? nil : albumID, title: albumTitle)
-                    onImport(CameraImportChoice(target: folder.map { .folder($0, layout) } ?? photos, includesVideos: includesVideos && videoCount > 0,
+                    onImport(CameraImportChoice(target: folder.map { .folder($0, layout) } ?? photos, keywords: keywords, includesVideos: includesVideos && videoCount > 0,
                                                 secondCopy: secondCopy,
                                                 deletesImported: deletesImported && canDelete, ejects: ejects))
                 }
@@ -203,25 +217,40 @@ struct CameraImportSheet: View {
         photoDates.count
     }
 
-    /// The folders the photos will go to, with how many photos each: a list of a few lines, which
-    /// scrolls beyond.
+    /// The folders the photos will go to, side by side, each in a light badge: a folder, its path
+    /// level by level, and how many photos it gets. A few lines, which scroll beyond.
     private var folderPreview: some View {
         let planned = layout.folders(for: photoDates)
         return ScrollView {
-            VStack(alignment: .trailing, spacing: 3) {
+            TagFlow(spacing: 6) {
                 ForEach(planned) { folder in
-                    HStack(spacing: 8) {
-                        Text(folder.subfolder ?? "(no date)")
-                        Text(folder.count.formatted())
+                    HStack(spacing: 5) {
+                        Image(systemName: "folder")
                             .foregroundStyle(.secondary)
-                            .frame(minWidth: 28, alignment: .trailing)
+                        Text(folder.subfolder.map(ImportLayout.pathTitle) ?? "No date")
+                        // How many photos, as the count badges of a sidebar: a filled pill, a circle
+                        // for one or two digits.
+                        Text(folder.count.formatted())
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.background)
+                            .padding(.horizontal, 5)
+                            .frame(minWidth: 18, minHeight: 18)
+                            .background(.secondary, in: .capsule)
                     }
+                    .font(.callout)
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .padding(.leading, 8)
+                    .padding(.trailing, 4)
+                    .padding(.vertical, 3)
+                    .background(.quaternary, in: .rect(cornerRadius: 6))
+                    .help(folder.count == 1 ? "1 photo" : "\(folder.count.formatted()) photos")
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(height: min(CGFloat(planned.count) * 20, 104))
+        .frame(maxHeight: 96)
+        .fixedSize(horizontal: false, vertical: planned.count <= 6)
     }
 
     /// What the picker shows: the destination of the last import while it still exists, else the
@@ -252,17 +281,21 @@ struct CameraImportSheet: View {
 }
 
 private extension ImportLayout {
-    /// What the Organize menu calls this way of filing, with what it makes of today.
+    /// What the Organize menu calls this way of filing: its levels of folders, one inside the other.
     var title: String {
-        let example = subfolder(for: .now) ?? ""
-        return switch self {
-        case .byDay: "Year, then day (\(example))"
-        case .yearMonthDay: "Year, month, day (\(example))"
-        case .yearMonth: "Year, month (\(example))"
-        case .year: "Year (\(example))"
-        case .day: "Day (\(example))"
-        case .flat: "No subfolders"
+        switch self {
+        case .byDay: Self.pathTitle("Year/Date")
+        case .yearMonthDay: Self.pathTitle("Year/Month/Day")
+        case .yearMonth: Self.pathTitle("Year/Month")
+        case .year: "Year"
+        case .day: "Date"
+        case .flat: "No Subfolders"
         }
+    }
+
+    /// A path with a chevron between its levels, as a path bar shows it: "2026 › 11 › 19".
+    static func pathTitle(_ path: String) -> String {
+        path.split(separator: "/").joined(separator: " › ")
     }
 }
 
@@ -406,5 +439,5 @@ struct CameraImportBar: View {
 
 #Preview("Import sheet, no folder") {
     CameraImportSheet(deviceName: "EOS_DIGITAL", photoDates: Array(repeating: Date.now, count: 24), folders: [], albums: PhotosAlbumList(),
-                      albumEditor: PhotosAlbumEditor(library: PhotoKitAlbumLibrary()), undoManager: nil, videoCount: 3, canDelete: true, onImport: { _ in }, onCancel: {})
+                      albumEditor: PhotosAlbumEditor(library: PhotoKitAlbumLibrary()), undoManager: nil, knownKeywords: ["Venice", "night"], videoCount: 3, canDelete: true, onImport: { _ in }, onCancel: {})
 }

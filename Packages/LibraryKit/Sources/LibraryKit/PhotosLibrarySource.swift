@@ -618,8 +618,8 @@ public final class PhotosLibrarySource: LibrarySource {
 
     /// What an import hands the files of each photo to, to make a photo of the library of them,
     /// added to an album of the user's when one is named (`ImportDestination.library`).
-    public nonisolated func importer(intoAlbum albumID: String?) -> @Sendable (ImportedPhoto) async throws -> String {
-        { photo in try await PhotoKitAssetChanges.create(from: photo, intoAlbum: albumID) }
+    public nonisolated func importer(intoAlbum albumID: String?, keywords: [String] = []) -> @Sendable (ImportedPhoto) async throws -> String {
+        { photo in try await PhotoKitAssetChanges.create(from: photo, intoAlbum: albumID, keywords: keywords) }
     }
 
     /// Registers the undo of an import that made these photos: undoing deletes them, which Photos

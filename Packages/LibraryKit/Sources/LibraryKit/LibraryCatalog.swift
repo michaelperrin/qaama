@@ -50,6 +50,7 @@ public final class LibraryCatalog {
     }
 
     private let store: CatalogStore
+    private let photosIndexStore: PhotosIndexStore
     /// One index for the Photos library, shared by the library source and every album source.
     private let photosIndex: PhotosIndex
     private let previewCache: PreviewCache
@@ -73,7 +74,8 @@ public final class LibraryCatalog {
         self.previewCache = previewCache
         self.filterPresets = filterPresets
         self.cameras = cameras
-        photosIndex = PhotosIndex(store: PhotosIndexStore(catalog: store), library: PhotoKitIndexLibrary())
+        photosIndexStore = PhotosIndexStore(catalog: store)
+        photosIndex = PhotosIndex(store: photosIndexStore, library: PhotoKitIndexLibrary())
         photos = PhotosLibrarySource(index: photosIndex)
         photosForMap = PhotosLibrarySource(index: photosIndex)
         everywhere = CombinedLibrarySource(displayName: "Map", members: [photosForMap])
@@ -186,6 +188,16 @@ public final class LibraryCatalog {
         }
         presetLibraries[preset.id] = library
         return library
+    }
+
+    // MARK: - Keywords
+
+    /// The keywords in use in the folders and in the Photos library, sorted as the Finder sorts
+    /// names: what a keyword field offers to pick from. A flat list for now.
+    public func knownKeywords() async -> [String] {
+        let fromFolders = await (try? store.allKeywords()) ?? []
+        let fromPhotos = await (try? photosIndexStore.allKeywords()) ?? []
+        return fromFolders.union(fromPhotos).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     // MARK: - Imports

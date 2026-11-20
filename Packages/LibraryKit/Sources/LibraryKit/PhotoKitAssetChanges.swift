@@ -101,7 +101,7 @@ nonisolated enum PhotoKitAssetChanges {
     /// that comes with its JPEG becomes one photo, the JPEG being the one shown and the RAW its
     /// alternate, as a camera's pair is in Photos. Photos reads the date and the place from the
     /// files, and takes the files away (`shouldMoveFile`). `albumID` is an album to add the photo to.
-    static func create(from photo: ImportedPhoto, intoAlbum albumID: String?) async throws -> String {
+    static func create(from photo: ImportedPhoto, intoAlbum albumID: String?, keywords: [String] = []) async throws -> String {
         let jpeg = photo.files.first { !$0.isRAW }
         let resources: [(type: PHAssetResourceType, file: ImportedPhoto.File)] = photo.files.map { file in
             (file.isMovie ? .video : file.isRAW && jpeg != nil ? .alternatePhoto : .photo, file)
@@ -121,6 +121,7 @@ nonisolated enum PhotoKitAssetChanges {
                     options.shouldMoveFile = true
                     request.addResource(with: resource.type, fileURL: resource.file.url, options: options)
                 }
+                keywords.forEach { request.addKeyword($0) }
                 guard let placeholder = request.placeholderForCreatedAsset else { return }
                 if let album {
                     PHAssetCollectionChangeRequest(for: album)?.addAssets([placeholder] as NSArray)

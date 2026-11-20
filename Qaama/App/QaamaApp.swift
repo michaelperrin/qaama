@@ -39,5 +39,8 @@ struct QaamaApp: App {
         }
         .windowStyle(.automatic)
         .commands { EditorCommands() }
+        Settings {
+            SettingsView()
+        }
     }
 }

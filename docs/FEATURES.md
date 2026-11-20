@@ -53,6 +53,8 @@ can feed a website one day. Dates are when the feature landed.
   imported and deleted like them. An import of the new photos can bring the new videos too,
   filed like the photos in a folder (second copy included) or as videos in the Photos library,
   and never twice. Once imported, Qaama doesn't list them (2026-11-20).
+- Keywords at import: a field of the import sheet gives keywords to every photo imported, as
+  tokens, picked among the keywords already in use while typing, or new ones (2026-11-20).
 - Select All, next to Import in a device's toolbar: what is selected is what is imported
   (2026-11-20).
 - Second copy: an import can copy every file to another folder as well, on another disk for
@@ -421,6 +423,11 @@ can feed a website one day. Dates are when the feature landed.
 ### Presets
 - Export presets saving format, size, frame, watermark and file options together; chosen from a
   menu in the export window, which shows which preset the current settings match (2026-10-30).
+
+## Settings
+- A Settings window (Qaama › Settings…), with a first option: show a card or a camera in the
+  window as soon as it is plugged in, on by default; a phone is never opened by itself
+  (2026-11-20).
 
 ## Platform
 - Native macOS app (macOS 27), SwiftUI, Core Image on Metal, sandboxed (2026-10-29).
