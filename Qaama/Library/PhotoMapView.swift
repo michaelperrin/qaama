@@ -99,6 +99,7 @@ private struct PhotoMapCanvas: View {
         }
         // Satellite keeps the names of places and the roads: they are what tells where a group is.
         .mapStyle(style == .satellite ? .hybrid : .standard)
+        .mapFollowsAppAppearance()
         .mapControls {
             MapZoomStepper()
             MapScaleView()

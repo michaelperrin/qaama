@@ -2380,8 +2380,33 @@ Interface
             touche que les fenêtres de sa scène (ni menus, ni alertes, ni panneaux d'ouverture,
             ni la fenêtre de réglages) et ne revient pas à l'apparence du système une fois
             posé. Appliqué depuis les deux scènes (`onChange(initial:)`), pour qu'un
-            changement prenne même sans fenêtre principale ouverte. Pas encore vérifié dans
-            l'appli.
+            changement prenne même sans fenêtre principale ouverte.
+            Cartes (même jour, captures de Michaël, macOS en clair et Qaama en sombre : la barre
+            d'outils claire au-dessus de la carte, sombre dès que l'inspecteur est ouvert ; « je
+            pense que c'est ça le problème »). La barre est transparente : c'est la carte, restée
+            claire, qui se voit dessous ; avec l'inspecteur, un fond de fenêtre sombre la
+            surmonte. Mesuré par sonde : MapKit suit l'apparence du système et ignore celle dont
+            il hérite (`MKMapView` d'une `Map` en `aqua` sous `NSApp.appearance` sombre, comme
+            un `MKMapView` nu ; ni l'apparence de la fenêtre, ni `colorScheme`, ni
+            `-AppleInterfaceStyle` n'y changent rien) ; seule une apparence posée sur la vue
+            elle-même compte. Options présentées : ce contournement, une carte refaite en
+            `MKMapView`, ou laisser suivre le système ; Michaël a choisi le contournement.
+            `mapFollowsAppAppearance()` (`MapAppearance.swift`) pose derrière la `Map` une vue
+            vide qui retrouve dans la fenêtre le `MKMapView` au cadre le plus proche du sien et
+            lui donne sa propre apparence, à chaque changement. Sonde : trois cartes côte à
+            côte, les deux qui l'ont suivent sombre, clair, sombre, système ; la troisième reste
+            sur le système. Posé sur la carte de la bibliothèque, celle du filtre de lieu et
+            celle du panneau Info. Si un macOS futur dessine `Map` autrement, la carte suit
+            simplement le système de nouveau. Vérifié dans l'appli par Michaël (« ça marche »).
+            Reste un écart, laissé tel quel : au-dessus de la carte, la barre n'a qu'un flou
+            léger inspecteur fermé, une bande sombre coupée net inspecteur ouvert (effet de bord
+            « soft » puis « hard », choisis par le système). Michaël préférerait peut-être la
+            bande partout, « à voir si c'est du bricolage ou pas. Si c'est du bricolage on laisse
+            comme ça ». Sonde : l'effet appartient au `MKMapView` (son `NSScrollPocket`), et
+            `.scrollEdgeEffectStyle(.hard, for: .top)` ne l'atteint pas sur une `Map` (style
+            inchangé), alors qu'il change bien celui d'une `List` dans la même fenêtre. Le forcer
+            demanderait de toucher une vue privée ou de peindre notre propre bande : laissé au
+            système.
           - Pas vérifié dans l'appli : la saisie dans le champ à jetons (complétion, Retour,
             virgule), les mots-clés réellement écrits dans Photos, la fenêtre de réglages
             ouverte par le menu, la bascule à l'insertion d'une carte.

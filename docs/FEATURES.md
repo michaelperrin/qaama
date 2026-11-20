@@ -443,7 +443,7 @@ can feed a website one day. Dates are when the feature landed.
 - A Settings window (Qaama › Settings…), with a first option: show a card or a camera in the
   window as soon as it is plugged in, on by default; a phone is never opened by itself
   (2026-11-20).
-- Appearance: System, Light or Dark for the whole app, menus, panels and alerts included,
+- Appearance: System, Light or Dark for the whole app, menus, panels, alerts and maps included,
   whatever macOS uses (2026-11-20).
 
 ## Platform

@@ -66,6 +66,7 @@ struct LocationMap: View {
                     }
                 }
             }
+            .mapFollowsAppAppearance()
             // Only while setting the place: a click to look at the map must not move the photo.
             .simultaneousGesture(SpatialTapGesture().onEnded { tap in
                 guard let onPlace, let coordinate = proxy.convert(tap.location, from: .local) else { return }

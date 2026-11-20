@@ -42,6 +42,7 @@ struct PlaceFilterMap: View {
                     Marker("", coordinate: CLLocationCoordinate2D(center))
                 }
             }
+            .mapFollowsAppAppearance()
             .simultaneousGesture(SpatialTapGesture().onEnded { tap in
                 guard let coordinate = proxy.convert(tap.location, from: .local) else { return }
                 onPlace(GeoCoordinate(coordinate))
