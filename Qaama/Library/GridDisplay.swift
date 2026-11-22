@@ -51,8 +51,7 @@ struct ThumbnailSizeSlider: View {
         .labelsHidden()
         .controlSize(.small)
         .frame(width: 140)
-        // The toolbar draws its capsule on the view's bounds: without this the icons touch its edges.
-        .padding(.horizontal, 8)
+        .toolbarSliderInsets()
         .help("Thumbnail size")
     }
 }

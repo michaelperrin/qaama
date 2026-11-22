@@ -326,8 +326,12 @@ struct EditorModelTests {
         model.endCropping()
         #expect(!model.isCropping && model.recipe.geometry?.angle == 3 && model.canUndo)
 
-        model.rotate(quarterTurns: -1)
+        model.apply(.rotateLeft)
         #expect(model.geometry.quarterTurns == 3)
+        // The crop frame turned with the picture.
+        #expect(abs(model.geometry.crop.x - 0.1) < 1e-9 && abs(model.geometry.crop.y - 0.4) < 1e-9)
+        model.apply(.flipVertical)
+        #expect(model.geometry.isFlippedHorizontally && model.geometry.quarterTurns == 3)
         model.resetGeometry()
         #expect(model.recipe.geometry == nil)
 
@@ -481,6 +485,34 @@ struct PresetStoreTests {
 
 @MainActor
 struct BatchEditingTests {
+    @Test func turnsAndMirrorsPhotosFromTheGrid() async throws {
+        let source = SampleLibrarySource(count: 2)
+        let edited = source.assets[0], untouched = source.assets[1]
+        let recipe = EditRecipe(adjustments: AdjustmentSet(exposure: 0.8))
+        try await source.saveEdit(EditingOutput(recipeData: recipe.jsonData(), renderedJPEG: Data()), for: edited)
+
+        let manager = UndoManager()
+        manager.groupsByEvent = false
+        manager.beginUndoGrouping()
+        let count = try await BatchEditing.apply(.rotateRight, to: [edited, untouched], in: source, undoManager: manager)
+        manager.endUndoGrouping()
+        #expect(count == 2)
+        func saved(_ asset: LibraryAsset) async throws -> EditRecipe? {
+            try await source.editingInput(for: asset).recipeData.map { try EditRecipe(jsonData: $0) }
+        }
+        // The adjustments stay; the untouched photo gets a recipe of its own.
+        #expect(try await saved(edited)?.geometry?.quarterTurns == 1)
+        #expect(try await saved(edited)?.global.exposure == 0.8)
+        #expect(try await saved(untouched)?.geometry?.quarterTurns == 1)
+        #expect(manager.canUndo && manager.undoActionName == "Rotate Right")
+
+        // Turned back, the untouched photo is untouched again.
+        try await BatchEditing.apply(.rotateLeft, to: [edited, untouched], in: source)
+        #expect(source.asset(id: untouched.id)?.hasEdit == false)
+        #expect(try await saved(edited)?.geometry == nil)
+        #expect(try await saved(edited)?.global.exposure == 0.8)
+    }
+
     @Test func copiesAndPastesSavedAdjustmentsFromTheGrid() async throws {
         let source = SampleLibrarySource(count: 3)
         let clipboard = AdjustmentsClipboard()

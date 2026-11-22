@@ -452,6 +452,85 @@ struct MaskTests {
     }
 }
 
+struct GeometryChangeTests {
+    /// Where each change sends a point of the picture as it is seen.
+    private func moved(_ point: UnitPoint2D, by change: GeometryChange) -> UnitPoint2D {
+        switch change {
+        case .rotateRight: UnitPoint2D(x: 1 - point.y, y: point.x)
+        case .rotateLeft: UnitPoint2D(x: point.y, y: 1 - point.x)
+        case .flipHorizontal: UnitPoint2D(x: 1 - point.x, y: point.y)
+        case .flipVertical: UnitPoint2D(x: point.x, y: 1 - point.y)
+        }
+    }
+
+    private func close(_ a: UnitPoint2D, _ b: UnitPoint2D) -> Bool {
+        abs(a.x - b.x) < 1e-9 && abs(a.y - b.y) < 1e-9
+    }
+
+    private let geometries = [
+        Geometry(),
+        Geometry(quarterTurns: 1),
+        Geometry(angle: 10),
+        Geometry(angle: -7, quarterTurns: 3, isFlippedHorizontally: true, crop: UnitRect(x: 0.1, y: 0.2, width: 0.5, height: 0.3), aspectRatio: 2.5),
+        Geometry(angle: 4, quarterTurns: 2, crop: UnitRect(x: 0.3, y: 0, width: 0.6, height: 0.9)),
+        Geometry(isFlippedHorizontally: true, crop: UnitRect(x: 0, y: 0.5, width: 0.4, height: 0.5)),
+    ]
+
+    @Test func thePictureTurnsOrMirrorsAsSeen() {
+        let points = [UnitPoint2D(x: 0.2, y: 0.1), UnitPoint2D(x: 0.5, y: 0.5), UnitPoint2D(x: 0.9, y: 0.65)]
+        for geometry in geometries {
+            for change in GeometryChange.allCases {
+                let changed = geometry.applying(change)
+                // A quarter turn swaps the sides the straightening is measured in; the picture is the same.
+                for point in points {
+                    let before = geometry.referencePoint(fromSource: point, width: 300, height: 200)
+                    let after = changed.referencePoint(fromSource: point, width: 300, height: 200)
+                    #expect(close(after, moved(before, by: change)), "\(change) of \(geometry)")
+                }
+            }
+        }
+    }
+
+    @Test func theCropFrameFollowsThePicture() {
+        for geometry in geometries {
+            for change in GeometryChange.allCases {
+                let crop = geometry.crop, changed = geometry.applying(change).crop
+                let corners = [moved(UnitPoint2D(x: crop.x, y: crop.y), by: change), moved(UnitPoint2D(x: crop.maxX, y: crop.maxY), by: change)]
+                #expect(abs(changed.x - min(corners[0].x, corners[1].x)) < 1e-9 && abs(changed.maxX - max(corners[0].x, corners[1].x)) < 1e-9)
+                #expect(abs(changed.y - min(corners[0].y, corners[1].y)) < 1e-9 && abs(changed.maxY - max(corners[0].y, corners[1].y)) < 1e-9)
+            }
+        }
+    }
+
+    @Test func aLockedAspectRatioTurnsWithThePicture() {
+        let locked = Geometry(aspectRatio: 1.5)
+        #expect(locked.applying(.rotateRight).aspectRatio == 1 / 1.5)
+        #expect(locked.applying(.rotateLeft).aspectRatio == 1 / 1.5)
+        #expect(locked.applying(.flipHorizontal).aspectRatio == 1.5)
+        #expect(locked.applying(.flipVertical).aspectRatio == 1.5)
+        #expect(Geometry().applying(.rotateRight).aspectRatio == nil)
+    }
+
+    @Test func changesUndoEachOther() {
+        for geometry in geometries {
+            let crop = geometry.crop
+            func same(_ other: Geometry) -> Bool {
+                other.angle == geometry.angle && other.quarterTurns == geometry.quarterTurns
+                    && other.isFlippedHorizontally == geometry.isFlippedHorizontally
+                    && abs(other.crop.x - crop.x) < 1e-9 && abs(other.crop.y - crop.y) < 1e-9
+                    && abs(other.crop.width - crop.width) < 1e-9 && abs(other.crop.height - crop.height) < 1e-9
+            }
+            #expect(same(geometry.applying(.rotateRight).applying(.rotateLeft)))
+            #expect(same(geometry.applying(.flipHorizontal).applying(.flipHorizontal)))
+            #expect(same(geometry.applying(.flipVertical).applying(.flipVertical)))
+            #expect(same(geometry.applying(.rotateRight).applying(.rotateRight).applying(.rotateRight).applying(.rotateRight)))
+        }
+        // An untouched photo is untouched again, exactly: its recipe goes away.
+        #expect(Geometry().applying(.rotateRight).applying(.rotateLeft).isIdentity)
+        #expect(Geometry().applying(.flipVertical).applying(.flipVertical).isIdentity)
+    }
+}
+
 struct DenoiseTests {
     @Test func zeroIsASettingAndAbsentIsTheDefault() throws {
         // A RAW gets some noise reduction by default: asking for none is an edit.

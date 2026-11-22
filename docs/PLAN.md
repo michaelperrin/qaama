@@ -1723,8 +1723,68 @@ Bibliothèque
 - [ ] Recadrage, redressement, rotation, perspective simple.
       Fait le 30/10/2026 : cadre à poignées, grille des tiers, rapports verrouillables
       (original, carré, 3:2, 4:3, 16:9, 5:4), redressement ±45° avec rognage automatique des
-      coins, quarts de tour, retournement. Reste : perspective, rapports personnalisés et
-      préréglages de rapports (demandé par Michaël, plus tard).
+      coins, quarts de tour, retournement. Reste : perspective.
+      Rapports personnalisés et préréglages de rapports faits le 22/11/2026 (demande de
+      Michaël : « Ajouter le système de presets pour les ratios de crop ») :
+      - « New Ratio… » dans le menu Aspect demande le rapport en un seul champ (« 7:5 »,
+        « 7 x 5 », « 2,39:1 », ou un seul nombre pour un rapport à 1), l'applique au cadre et le
+        garde dans le menu pour toutes les photos ; « Remove Ratio » l'en retire.
+      - Choix : un préréglage de rapport n'est que deux nombres (`CropRatio`), nommé par eux.
+        Retour de Michaël le même jour : « Pourquoi pas avoir un nom optionnel à saisir (ça
+        permet de choisir un nom type "Ratio A4") » ; le reste « répond déjà largement au
+        besoin ». Ajouté : second champ « Name (optional) », le nom remplace les nombres dans le
+        menu. Saisir sous un nom un rapport déjà dans la liste de l'utilisateur le renomme sur
+        place ; les rapports livrés gardent leur nom. Créer un rapport personnalisé et l'enregistrer sont le même geste.
+        2:3 et 3:2 sont deux rapports (cadre debout ou couché). Un rapport de même valeur qu'un
+        rapport déjà listé (6:4 pour 3:2) n'est pas ajouté : c'est le listé qui est appliqué.
+      - La recette garde la valeur du rapport, jamais une référence à la liste : retirer un
+        rapport ne change aucune photo ; un cadre verrouillé sur un rapport qui n'est plus
+        listé l'affiche dans le menu (« 1.67:1 »).
+      - Stockage : `Crop Ratios.json` dans Application Support (`CropRatioStore`, EditorKit),
+        dans l'ordre d'ajout. Ajouter ou retirer un rapport de la liste n'est pas annulable
+        (comme les préréglages d'ajustements) ; l'appliquer l'est (« Aspect Ratio »).
+      - Le `Picker` est devenu un `Menu` contenant un `Picker` en ligne : il fallait des
+        commandes (New Ratio…, Remove Ratio) sous les choix.
+      - Vérifié par tests (lecture de la saisie, doublons, relecture du fichier) et par
+        compilation de l'appli. Non vérifié à l'écran : le rendu du menu dans la colonne, le
+        bouton « Add » grisé tant que la saisie n'est pas un rapport, le sous-menu.
+      - Rotations et retournements dans le menu Image, le 22/11/2026 (demande de Michaël :
+        « ajouter des entrées "Rotate left" / "Rotate right" (+ Flip et Mirror) dans le menu
+        Image, y compris quand on est en mode mosaïque ») : Rotate Left (⌘L), Rotate Right (⌘R),
+        comme Aperçu, Flip Horizontal, Flip Vertical. Sur la photo ouverte dans l'éditeur
+        (`EditorModel.apply`), sinon sur la sélection de la grille (`BatchEditing.apply`, une
+        seule étape d'annulation, réglages conservés, même chemin d'écriture que le collage
+        d'ajustements : rendu complet par photo).
+        - « Flip et Mirror » nommés Flip Horizontal (miroir) et Flip Vertical, comme Photos et
+          Aperçu : à confirmer par Michaël.
+        - `GeometryChange` (EditModel) : la recette retourne d'abord, tourne, puis redresse et
+          recadre ; tourner ou retourner l'image *telle qu'on la voit* touche donc plusieurs
+          champs. Le cadre tourne avec l'image, le rapport verrouillé s'inverse (3:2 devient
+          2:3), un miroir inverse les quarts de tour et l'angle de redressement. Testé en
+          comparant où atterrit un point de l'original avant et après.
+        - Défaut corrigé au passage : les boutons de l'outil de recadrage ne changeaient qu'un
+          champ. Sur une photo recadrée, un quart de tour laissait le cadre en place (il montrait
+          donc une autre partie de l'image), et « Flip » après un quart de tour retournait
+          verticalement.
+        - Vérifié par tests (46 EditModel, 104 EditorKit) et compilation. Non vérifié à
+          l'écran : les entrées du menu, leur état grisé, la mise à jour des vignettes après
+          une rotation depuis la grille, sur dossier comme sur Photos.
+        - Bouton « Rotate Left » dans la barre d'outils (demande de Michaël le même jour : « un
+          icône rotate left dans la barre d'outil en haut à droite, y compris quand on est en
+          mosaïque ») : `RotateLeftButton`, placé avant les onglets de l'inspecteur dans
+          l'éditeur et avant le bouton de l'inspecteur au-dessus de la grille et de la carte,
+          grisé sans sélection, absent d'une source non modifiable. L'action de la sélection est
+          remontée de la grille dans `LibraryContentView`, qui tient la barre d'outils ; menu et
+          bouton passent par la même.
+          Retour de Michaël sur capture : dans l'éditeur le bouton partageait la capsule du
+          curseur de zoom (« Peut-être pas une bonne idée de l'inclure à la barre de zoom ») :
+          deux éléments voisins de la barre d'outils sans `ToolbarSpacer` entre eux sont
+          regroupés par le système, même de placements différents. Espaceurs fixes autour du
+          bouton. Et « les barres de zoom manquent de padding-x », mosaïque comprise : marge
+          commune `toolbarSliderInsets()` (14 pt, contre 8 pour la mosaïque et 0 pour le canevas).
+        - Pas fait : ces commandes dans le menu contextuel de la grille.
+      - Pas fait : les rapports livrés ne proposent toujours pas l'orientation debout (2:3,
+        4:5… se créent à la main), ni tailles fixes en pixels.
 - [ ] Préréglages (sauvegarde/import de recettes), copier/coller les ajustements.
       Fait le 30/10/2026 : préréglages en fichiers JSON dans Application Support (appliquer,
       enregistrer, supprimer), copier/coller des ajustements entre photos (le recadrage reste

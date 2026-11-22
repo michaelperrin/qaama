@@ -40,6 +40,7 @@ struct EditorInspector: View {
     let model: EditorModel
     let presets: PresetStore
     let luts: LUTStore
+    let cropRatios: CropRatioStore
     @Binding var tab: InspectorTab
     @AppStorage(InspectorControls.restingTabKey) private var restingTab = InspectorTab.adjustments
 
@@ -51,7 +52,7 @@ struct EditorInspector: View {
         VStack(spacing: 0) {
             switch tab {
             case .info: InfoInspector(model: model)
-            case .crop: CropInspector(model: model) { tab = restingTab }
+            case .crop: CropInspector(model: model, ratios: cropRatios) { tab = restingTab }
             case .retouch: RetouchInspector(model: model) { tab = restingTab }
             case .adjustments: AdjustmentsInspector(model: model, presets: presets, luts: luts)
             }
@@ -157,6 +158,6 @@ struct InspectorTabPicker: View {
 
 #Preview {
     EditorInspector(model: EditorModel(assetID: "sample-1", source: SampleLibrarySource(), renderer: nil), presets: PresetStore(),
-                    luts: LUTStore(), tab: .constant(.adjustments))
+                    luts: LUTStore(), cropRatios: CropRatioStore(), tab: .constant(.adjustments))
         .frame(width: EditorInspector.width, height: 500)
 }

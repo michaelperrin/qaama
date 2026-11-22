@@ -371,8 +371,18 @@ can feed a website one day. Dates are when the feature landed.
 ### Crop and straighten
 - Crop frame with corner and edge handles, thirds grid, free or locked aspect ratio (original,
   square, 3:2, 4:3, 16:9, 5:4) (2026-10-30).
+- Aspect ratios of your own: New Ratio… in the Aspect menu takes a width and a height (7:5,
+  2.39:1, 2:3 for an upright frame) and, if you like, a name ("A4"), locks the crop to it and
+  keeps it in the menu for every photo; Remove Ratio takes one out of the menu without changing any photo (2026-11-22).
 - Straighten from -45° to +45° with automatic trimming of empty corners; rotate by quarter
   turns; flip horizontally (2026-10-30).
+- Image › Rotate Left (⌘L), Rotate Right (⌘R), Flip Horizontal and Flip Vertical: on the photo
+  open in the editor, or on every selected photo of the grid without opening them. The photo
+  turns or mirrors as it is seen, its crop frame, its straightening and a locked aspect ratio
+  with it; adjustments are kept; undoable. The crop tool has a Flip Vertical button too
+  (2026-11-22).
+- Rotate Left button in the toolbar, in the editor and above the grid, where it turns every
+  selected photo (2026-11-22).
 
 ### Retouch
 - Retouch tool (R, or the bandage tab of the inspector): paint over an object, a wire or a spot

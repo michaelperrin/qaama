@@ -1,3 +1,4 @@
+import EditModel
 import EditorKit
 import LibraryKit
 import SwiftUI
@@ -63,6 +64,7 @@ struct LibraryContentView: View {
             // View › Show Inspector acts on this window, grid or editor.
             .focusedSceneValue(\.hasInspector, true)
             .focusedSceneValue(\.adjustDateAction, adjustDateAction)
+            .focusedSceneValue(\.geometryChangeAction, geometryChangeAction)
             .focusedSceneValue(\.decisionsAction, decisionsAction)
             .focusedSceneValue(\.locationAction, locationAction)
             .focusedSceneValue(\.albumsCommand, albumsCommand)
@@ -105,6 +107,22 @@ struct LibraryContentView: View {
         }
         guard !selection.isEmpty else { return nil }
         return AdjustDateAction { adjustDate(of: selection.compactMap { source.asset(id: $0) }) }
+    }
+
+    /// Image › Rotate and Flip, and the toolbar's Rotate Left, on the selection; nil without one, in
+    /// a source that can't be edited, and in the editor, whose photo goes through its model.
+    private var geometryChangeAction: GeometryChangeAction? {
+        guard editorSession == nil, source.capabilities.contains(.editing), !selection.isEmpty else { return nil }
+        return GeometryChangeAction { change in
+            let assets = selection.compactMap { source.asset(id: $0) }
+            Task {
+                do {
+                    try await BatchEditing.apply(change, to: assets, in: source, undoManager: undoManager)
+                } catch {
+                    decisionError = error.localizedDescription
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -207,6 +225,14 @@ struct LibraryContentView: View {
                 }
             }
             LibraryQueryToolbar(source: source, panels: filterPanels ?? ownFilterPanels, presets: presetSaving, showsSort: !showsMap)
+            if source.capabilities.contains(.editing) {
+                // A capsule of its own, as in the editor.
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+                ToolbarItem(placement: .primaryAction) {
+                    RotateLeftButton { geometryChangeAction?.run(.rotateLeft) }
+                        .disabled(geometryChangeAction == nil)
+                }
+            }
             ToolbarSpacer(.fixed, placement: .primaryAction)
             ToolbarItem(placement: .primaryAction) {
                 InspectorVisibilityToggle(isVisible: $isInspectorVisible)

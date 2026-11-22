@@ -62,6 +62,39 @@ struct ExportAction {
     }
 }
 
+/// What Image › Rotate and Flip do to the grid's selection; the editor's own photo goes through
+/// its model.
+struct GeometryChangeAction {
+    let run: (GeometryChange) -> Void
+
+    init(_ run: @escaping (GeometryChange) -> Void) {
+        self.run = run
+    }
+}
+
+/// The toolbar's quarter turn to the left, in the editor and above the grid: the one geometry
+/// change worth a button, for photos that come in lying on their side. Image › Rotate Left is the
+/// same command.
+struct RotateLeftButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button("Rotate Left", systemImage: "rotate.left", action: action)
+            .help("Rotate left (⌘L)")
+    }
+}
+
+struct FocusedGeometryChangeKey: FocusedValueKey {
+    typealias Value = GeometryChangeAction
+}
+
+extension FocusedValues {
+    var geometryChangeAction: GeometryChangeAction? {
+        get { self[FocusedGeometryChangeKey.self] }
+        set { self[FocusedGeometryChangeKey.self] = newValue }
+    }
+}
+
 struct FocusedExportKey: FocusedValueKey {
     typealias Value = ExportAction
 }
@@ -215,6 +248,7 @@ struct EditorCommands: Commands {
     @FocusedValue(\.decisionsAction) private var decisions
     @FocusedValue(\.locationAction) private var locationAction
     @FocusedValue(\.exportAction) private var exportAction
+    @FocusedValue(\.geometryChangeAction) private var geometryChangeAction
     @FocusedValue(\.showInFinderAction) private var showInFinderAction
     @FocusedValue(\.albumsCommand) private var albumsCommand
     @FocusedValue(\.photoFilingAction) private var filing
@@ -357,6 +391,18 @@ struct EditorCommands: Commands {
                 .keyboardShortcut(.delete, modifiers: albumsCommand?.action.remove == nil ? [] : [.command])
                 .disabled(filing?.delete == nil)
             Divider()
+            // ⌘L and ⌘R, as in Preview.
+            Button("Rotate Left") { change(.rotateLeft) }
+                .keyboardShortcut("l")
+                .disabled(!canChangeGeometry)
+            Button("Rotate Right") { change(.rotateRight) }
+                .keyboardShortcut("r")
+                .disabled(!canChangeGeometry)
+            Button("Flip Horizontal") { change(.flipHorizontal) }
+                .disabled(!canChangeGeometry)
+            Button("Flip Vertical") { change(.flipVertical) }
+                .disabled(!canChangeGeometry)
+            Divider()
             Menu("Adjustments") {
                 Button("Copy Adjustments") { editor?.copyAdjustments() }
                     .keyboardShortcut("c", modifiers: [.command, .shift])
@@ -375,6 +421,19 @@ struct EditorCommands: Commands {
     private var canvas: CanvasRenderer? {
         guard let editor, editor.isOpen else { return nil }
         return editor.renderer
+    }
+
+    /// The photo open in the key window, else the grid's selection.
+    private var canChangeGeometry: Bool {
+        editor.map(\.isOpen) ?? (geometryChangeAction != nil)
+    }
+
+    private func change(_ change: GeometryChange) {
+        if let editor {
+            editor.apply(change)
+        } else {
+            geometryChangeAction?.run(change)
+        }
     }
 
     private static let canvasZoomStep: CGFloat = 1.25

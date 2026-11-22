@@ -40,6 +40,26 @@ public nonisolated enum BatchEditing {
         return await write(targets, in: source, undoManager: undoManager, actionName: "Paste Adjustments")
     }
 
+    /// Turns or mirrors each photo as it is seen, keeping its adjustments and its crop, and saves, as
+    /// one undoable step. Returns the number of photos updated; a photo that fails is logged and skipped.
+    @MainActor
+    @discardableResult
+    public static func apply(_ change: GeometryChange, to assets: [LibraryAsset], in source: any LibrarySource,
+                             undoManager: UndoManager? = nil) async throws -> Int
+    {
+        var targets: [(LibraryAsset, Data?)] = []
+        for asset in assets {
+            let input = try await source.editingInput(for: asset)
+            source.endEditing(asset)
+            var recipe = input.recipeData.flatMap { try? EditRecipe(jsonData: $0) } ?? EditRecipe()
+            let geometry = (recipe.geometry ?? Geometry()).applying(change)
+            // Back to untouched (four turns, two flips): no geometry, so the photo reverts if nothing else is edited.
+            recipe.geometry = geometry.isIdentity ? nil : geometry
+            try targets.append((asset, recipe.jsonData()))
+        }
+        return await write(targets, in: source, undoManager: undoManager, actionName: change.actionName)
+    }
+
     /// Saves a recipe (nil = revert) per photo, after recording the previous recipes so the whole
     /// step can be undone; the undo registers the redo the same way.
     @MainActor

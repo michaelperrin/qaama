@@ -489,15 +489,11 @@ public final class EditorModel {
         isCropping ? endCropping() : beginCropping()
     }
 
-    /// Turns the image by a quarter clockwise (+1) or counterclockwise (-1), keeping the crop.
-    public func rotate(quarterTurns: Int) {
-        geometry.quarterTurns = ((geometry.quarterTurns + quarterTurns) % 4 + 4) % 4
-        commitChange()
-    }
-
-    public func flipHorizontally() {
-        geometry.isFlippedHorizontally.toggle()
-        commitChange()
+    /// Turns or mirrors the photo as it is seen, its crop frame with it.
+    public func apply(_ change: GeometryChange) {
+        guard isOpen else { return }
+        geometry = geometry.applying(change)
+        commitChange(named: change.actionName)
     }
 
     public func resetGeometry() {

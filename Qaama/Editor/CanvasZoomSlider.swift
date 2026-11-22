@@ -40,6 +40,7 @@ struct CanvasZoomSlider: View {
                     .frame(width: 44, alignment: .trailing)
             }
         }
+        .toolbarSliderInsets()
         .help(range.lowerBound < 0 ? "Zoom, from 100%; the mark is Fit" : "Zoom, from Fit; the mark is 100%")
     }
 

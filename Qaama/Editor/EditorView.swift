@@ -1,3 +1,4 @@
+import EditModel
 import EditorKit
 import LibraryKit
 import SwiftUI
@@ -27,6 +28,7 @@ struct EditorView: View {
     @State private var exportModel: ExportModel?
     @State private var presets = PresetStore()
     @State private var luts = LUTStore()
+    @State private var cropRatios = CropRatioStore()
     @State private var inspectorTab = InspectorTab.adjustments
     /// Hiding the inspector gives the whole window to the photo.
     @AppStorage(InspectorControls.visibilityKey) private var isInspectorVisible = true
@@ -61,7 +63,7 @@ struct EditorView: View {
                         if inspectorWasShown, let inspectedModel = session.settledModel {
                             // Dimmed rather than disabled while it lags: disabling would redraw
                             // every control, the very cost the lag is there to avoid.
-                            EditorInspector(model: inspectedModel, presets: presets, luts: luts, tab: $inspectorTab)
+                            EditorInspector(model: inspectedModel, presets: presets, luts: luts, cropRatios: cropRatios, tab: $inspectorTab)
                                 .opacity(isInspectorBehind ? 0.35 : 1)
                                 .allowsHitTesting(!isInspectorBehind)
                         }
@@ -83,6 +85,14 @@ struct EditorView: View {
                         .disabled(!model.isOpen)
                 }
             }
+            // Spacers around it: neighbors without one share a capsule, and the button would sit
+            // inside the zoom slider's.
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+            ToolbarItem(placement: .primaryAction) {
+                RotateLeftButton { model.apply(.rotateLeft) }
+                    .disabled(!model.isOpen)
+            }
+            ToolbarSpacer(.fixed, placement: .primaryAction)
             if isInspectorVisible {
                 ToolbarItem(placement: .primaryAction) {
                     InspectorTabPicker(selection: $inspectorTab)
