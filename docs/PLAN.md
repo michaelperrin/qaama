@@ -551,6 +551,18 @@ Bibliothèque
         fullSizePhoto + adjustmentData, sondé le 17/11) ; date, lieu, favori, note et mots-clés
         sont recopiés, et la copie rejoint l'album affiché. Annuler la copie la supprime, avec
         la question du système.
+      - Rubrique « Recently Deleted » avec restauration, demandée par Michaël le 22/11/2026
+        (« au moins pour Apple Photos ») : pas faite. Constaté dans le SDK 27.2 : aucune API
+        publique ne liste les photos supprimées ni n'en ressort une. Ce qui existe : en privé,
+        `PHFetchOptions.includeTrashedAssets` et `PHAssetChangeRequest.undeleteAssets:` (noms
+        vus à l'exécution, non essayés ; refus du Mac App Store, fragile) ; en AppleScript,
+        `recently deleted album` en lecture seule, sans commande de restauration. Autre voie
+        propre proposée : une corbeille propre à Qaama (la photo masquée dans l'appli, la vraie
+        suppression PhotoKit au vidage ou après 30 jours), qui rendrait aussi la suppression
+        annulable. Arbitrage de Michaël : « Mince dommage en effet. Je pense que pour le moment
+        on ne va rien implémenter alors. » Puis : « C'est vrai que la corbeille Qaama n'est pas
+        bête à y réfléchir quand même. » Piste gardée ouverte, à reprendre aussi si Apple
+        ouvre l'API.
       - Paire RAW + JPEG affichée comme une seule photo : supprimée et copiée d'un bloc, sinon
         le JPEG resterait et apparaîtrait comme une photo à part.
       - `UndoableSteps` : la file de changements annulables d'`PhotosAlbumEditor`, extraite pour
