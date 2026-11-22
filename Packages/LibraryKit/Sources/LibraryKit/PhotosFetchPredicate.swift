@@ -11,9 +11,12 @@ import Photos
 nonisolated enum PhotosFetchPredicate {
     /// `native` is what PhotoKit accepts on this system; `index` is nil when the source has no index;
     /// `indexMatches` are the assets the index found for the search text, the place and the edits filters
-    /// (`PhotosIndexStore.search`), nil when neither is asked.
+    /// (`PhotosIndexStore.search`), nil when neither is asked. `trash` are the photos deleted in Qaama
+    /// (`PhotosTrash`): left out, or the only ones listed when `listsTrash` is true.
     /// Returns nil when the lists leave nothing to show: there is no fetch to run.
-    static func make(query: LibraryQuery, native: Set<QueryCapability>, index: PhotosIndexSnapshot?, indexMatches: [String]? = nil) -> NSPredicate? {
+    static func make(query: LibraryQuery, native: Set<QueryCapability>, index: PhotosIndexSnapshot?, indexMatches: [String]? = nil,
+                     trash: Set<String> = [], listsTrash: Bool = false) -> NSPredicate?
+    {
         let filters = query.filters
         var predicates = [NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)]
         if filters.favoritesOnly {
@@ -27,6 +30,12 @@ nonisolated enum PhotosFetchPredicate {
         }
         // The lists are combined here, so PhotoKit gets one of them at most, and the shortest.
         var allowed = query.scopedAssetIDs
+        var excluded: Set<String> = []
+        if listsTrash {
+            allowed = allowed?.intersection(trash) ?? trash
+        } else {
+            excluded = trash
+        }
         if let index {
             if let indexMatches {
                 allowed = allowed?.intersection(indexMatches) ?? Set(indexMatches)
@@ -34,12 +43,15 @@ nonisolated enum PhotosFetchPredicate {
             if filters.rawOnly {
                 // The JPEG twins aren't RAW: nothing more to exclude.
                 allowed = allowed?.intersection(index.rawIDs) ?? index.rawIDs
-            } else if !query.includesPairedJPEGs, !index.twinIDs.isEmpty {
-                if allowed != nil {
-                    allowed?.subtract(index.twinIDs)
-                } else {
-                    predicates.append(NSPredicate(format: "NOT (localIdentifier IN %@)", Array(index.twinIDs)))
-                }
+            } else if !query.includesPairedJPEGs {
+                excluded.formUnion(listsTrash ? index.twins(hiddenAmong: trash) : index.twinIDs)
+            }
+        }
+        if !excluded.isEmpty {
+            if allowed != nil {
+                allowed?.subtract(excluded)
+            } else {
+                predicates.append(NSPredicate(format: "NOT (localIdentifier IN %@)", Array(excluded)))
             }
         }
         if let allowed {
@@ -47,5 +59,13 @@ nonisolated enum PhotosFetchPredicate {
             predicates.append(NSPredicate(format: "localIdentifier IN %@", Array(allowed)))
         }
         return NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+    }
+}
+
+nonisolated extension PhotosIndexSnapshot {
+    /// The JPEG twins among these photos whose RAW is among them too: the pairs they show as one
+    /// photo. A twin deleted alone, while the twins were being shown, stays a photo of its own.
+    func twins(hiddenAmong ids: Set<String>) -> Set<String> {
+        ids.filter { id in twinIDs.contains(id) && pairedIDs[id].map(ids.contains) == true }
     }
 }

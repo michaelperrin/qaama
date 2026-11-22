@@ -26,7 +26,8 @@ struct QaamaApp: App {
         ModelMasks.useSceneModel(at: Bundle.main.url(forResource: "DETRResnet50SemanticSegmentationF16", withExtension: "mlmodelc"))
         let catalog = LibraryCatalog(store: store, filterPresets: FilterPresetStore(fileURL: FilterPresetStore.defaultURL()),
                                      cameras: CameraDevices(browser: ImageCaptureBrowser(), history: ImportHistory(fileURL: ImportHistory.defaultURL())),
-                                     importPresets: ImportPresetStore(fileURL: ImportPresetStore.defaultURL()))
+                                     importPresets: ImportPresetStore(fileURL: ImportPresetStore.defaultURL()),
+                                     photosTrash: PhotosTrash(fileURL: PhotosTrash.defaultURL()))
         catalog.previewRenderer = { input, recipeData in
             let recipe = try EditRecipe(jsonData: recipeData)
             return try await EditRenderer.jpeg(imageURL: input.imageURL, image: input.image, recipe: recipe)

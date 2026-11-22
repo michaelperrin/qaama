@@ -70,16 +70,21 @@ public protocol LibrarySource: AnyObject, Observable {
     /// is then nothing to go back to.
     func originalLocation(for asset: LibraryAsset) -> OriginalLocation?
 
-    /// Deletes photos from the library. The files of a folder go to the Trash, and an undo puts them
-    /// back; the photos of the Photos library go to its Recently Deleted album once the user has
-    /// agreed to the system's own question, and no undo is registered: PhotoKit can't take a photo
-    /// back out of there. The JPEG shot with a RAW goes with it when the listing shows the pair as
-    /// one photo. False when nothing was deleted because the user declined.
+    /// Deletes photos from the library, as one step an undo reverts wherever the photos can be
+    /// put back: the files of a folder go to the Trash, the photos of the Photos library to the
+    /// app's own Recently Deleted (`PhotosTrash`), without leaving the Photos library. Deleted from
+    /// Recently Deleted, they leave the Photos library once the user has agreed to the system's
+    /// own question, and no undo is registered: PhotoKit can't take a photo back out of Photos'
+    /// album of that name. The JPEG shot with a RAW goes with it when the listing shows the pair
+    /// as one photo. False when nothing was deleted because the user declined.
     @discardableResult
     func delete(_ assets: [LibraryAsset], undoManager: UndoManager?) async throws -> Bool
     /// What deleting these photos does, to say when asking for confirmation; nil when the source
     /// needs none asked, because the system asks by itself (Photos).
     func deletionNotice(for assets: [LibraryAsset]) -> String?
+    /// Puts deleted photos back where they were listed, as one undoable step: what the source of
+    /// the deleted photos does (`.restoration`).
+    func restore(_ assets: [LibraryAsset], undoManager: UndoManager?) async throws
     /// Makes a copy of each photo in the library, next to it, with its decisions and its saved
     /// edit. A pair shown as one photo is copied as a pair. Undoing deletes the copies.
     func duplicate(_ assets: [LibraryAsset], undoManager: UndoManager?) async throws
@@ -249,6 +254,10 @@ public extension LibrarySource {
         nil
     }
 
+    func restore(_: [LibraryAsset], undoManager _: UndoManager?) async throws {
+        throw LibrarySourceError.unsupported(.restoration)
+    }
+
     func duplicate(_: [LibraryAsset], undoManager _: UndoManager?) async throws {
         throw LibrarySourceError.unsupported(.duplication)
     }
@@ -334,6 +343,8 @@ public nonisolated enum LibraryCapability: Sendable, Hashable {
     case deletion
     /// Making a copy of a photo in the library.
     case duplication
+    /// Putting deleted photos back in the library: the source that lists them.
+    case restoration
     /// Opening a photo in the editor, storing its edit, pasting adjustments on it and exporting it:
     /// what the photos of a library allow, and those still on a card don't.
     case editing
@@ -360,6 +371,7 @@ public nonisolated enum LibrarySourceError: Error, LocalizedError, Sendable {
             case .originalLocation: "This library doesn't keep the original location apart."
             case .deletion: "Photos can't be deleted from this library."
             case .duplication: "Photos can't be duplicated in this library."
+            case .restoration: "There is nothing to restore here."
             case .editing: "Photos can't be edited here: import them first."
             }
         case let .folderUnreadable(url):

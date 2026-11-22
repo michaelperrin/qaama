@@ -17,10 +17,15 @@ struct PhotosLibraryView: View {
             case .notDetermined:
                 ProgressView("Requesting access to your photo library…")
             case .authorized, .limited:
-                // Photos can only be taken out of an album of the user's: Favorites is a smart album.
-                LibraryContentView(source: source,
-                                   albums: AlbumFiling(list: albums, editor: albumEditor, current: source.album?.kind == .user ? source.album : nil),
-                                   maps: maps)
+                if source.listsTrash {
+                    // Deleted photos are filed in no album: they are restored first.
+                    LibraryContentView(source: source, notice: Self.trashNotice)
+                } else {
+                    // Photos can only be taken out of an album of the user's: Favorites is a smart album.
+                    LibraryContentView(source: source,
+                                       albums: AlbumFiling(list: albums, editor: albumEditor, current: source.album?.kind == .user ? source.album : nil),
+                                       maps: maps)
+                }
             }
         }
         .task {
@@ -30,6 +35,10 @@ struct PhotosLibraryView: View {
             }
         }
     }
+
+    /// What Recently Deleted says above its photos: unlike Photos' own, it removes nothing from
+    /// the Photos library by itself.
+    private static let trashNotice = "Photos deleted in Qaama are still in the Photos library, until they are deleted from here."
 
     private var accessDeniedView: some View {
         ContentUnavailableView {

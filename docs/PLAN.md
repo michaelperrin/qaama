@@ -563,6 +563,43 @@ Bibliothèque
         on ne va rien implémenter alors. » Puis : « C'est vrai que la corbeille Qaama n'est pas
         bête à y réfléchir quand même. » Piste gardée ouverte, à reprendre aussi si Apple
         ouvre l'API.
+      - Corbeille propre à Qaama, faite le 22/11/2026 sur décision de Michaël : « Allez, on
+        implémente la corbeille Qaama. J'aime bien l'idée du ⌘Z car c'est embêtant que ça ne
+        soit pas possible à l'heure actuelle. »
+        - Supprimer une photo de Photos ne la supprime plus dans Photos : son identifiant est
+          noté dans `PhotosTrash` (JSON dans Application Support, donnée de l'utilisateur comme
+          les préréglages de filtres), sans question, et ⌘Z la ramène. La suppression dans
+          Photos n'est donc plus une exception à « tout est annulable ».
+        - Toutes les sources Photos (photothèque, albums, carte, préréglages, imports) écartent
+          ces photos par le prédicat (`NOT (localIdentifier IN …)`, réunie à la liste des
+          jumeaux JPEG : PhotoKit ne reçoit toujours qu'une liste). Elles suivent la corbeille
+          par son numéro de version et relistent en gardant les mois en place, comme pour un
+          changement de la photothèque : la grille ne bouge pas.
+        - « Recently Deleted » dans la barre latérale, sous Apple Photos, tant qu'elle contient
+          des photos : une `PhotosLibrarySource` qui ne liste qu'elles (`listsTrash`), sans
+          éditeur, ni carte, ni albums. Restore Photo (annulable, nouvelle capacité
+          `.restoration`) ; Delete Photo y supprime pour de bon dans Photos, avec la question
+          du système et les 30 jours du Recently Deleted de Photos, sans annulation.
+        - Pas de vidage automatique après 30 jours : PhotoKit poserait sa question à
+          l'improviste, au lancement. Les photos restent jusqu'à restauration ou suppression.
+        - Une photo sortie de la photothèque par ailleurs (supprimée dans Photos) est oubliée
+          de la corbeille quand Recently Deleted se charge ou que la photothèque perd des
+          photos ; jamais avec un accès limité, où PhotoKit peut taire une photo qui existe.
+        - Paire RAW + JPEG : supprimée d'un bloc, elle s'affiche et se restaure d'un bloc ; un
+          jumeau supprimé seul (jumeaux affichés) reste une photo à part dans la corbeille.
+        - Limites connues : la photo reste visible dans Photos.app et sur les autres appareils
+          tant qu'elle n'est pas supprimée depuis Recently Deleted ; les compteurs d'albums de
+          la barre latérale (estimations de Photos) la comptent encore ; annuler une copie ou
+          un import supprime toujours directement dans Photos, avec la question du système ;
+          les dossiers gardent la Corbeille du Finder ; pas de bouton « tout restaurer » (⌘A puis
+          la commande). « Delete All » ajouté le 22/11 dans le bandeau, à la demande de Michaël
+          (« Le bouton "Tout supprimer" pourrait être utile ») : supprime ce que la rubrique
+          liste, filtres compris, avec la question du système.
+        - Non vérifié à l'écran : rien n'a été lancé par l'agent. À essayer par Michaël :
+          supprimer, ⌘Z, l'entrée de la barre latérale et son compteur, Restore, la suppression
+          définitive, et la tenue de la grille de 74 000 photos au moment où une photo part
+          (un nouveau listage par source Photos chargée, 60 à 80 ms chacun d'après les mesures
+          du prédicat `NOT IN`).
       - Paire RAW + JPEG affichée comme une seule photo : supprimée et copiée d'un bloc, sinon
         le JPEG resterait et apparaîtrait comme une photo à part.
       - `UndoableSteps` : la file de changements annulables d'`PhotosAlbumEditor`, extraite pour

@@ -8,6 +8,8 @@ enum LibrarySelection: Hashable {
     case map
     case photos
     case photosAlbum(PhotosAlbum.ID)
+    /// The photos of the Photos library deleted in Qaama.
+    case recentlyDeleted
     case folder(FolderLibrarySource.ID)
     /// A subdirectory of a folder, by relative path.
     case subfolder(FolderLibrarySource.ID, String)
@@ -35,6 +37,7 @@ extension LibraryCatalog {
         case .map: "Map"
         case .photos: "Photos"
         case let .photosAlbum(id): photosAlbums.album(id: id)?.title ?? "Album"
+        case .recentlyDeleted: recentlyDeleted.displayName
         case let .folder(id): folders.first { $0.id == id }?.displayName ?? "Folder"
         case let .subfolder(_, path): path.split(separator: "/").last.map(String.init) ?? "Folder"
         case let .filterPreset(id): filterPresets.preset(id: id)?.name ?? "Filter Preset"
@@ -155,7 +158,7 @@ struct MainWindowView: View {
         case let .folder(id): .folder(id: id, path: nil)
         case let .subfolder(id, path): .folder(id: id, path: path)
         case let .filterPreset(id): catalog.filterPresets.preset(id: id)?.library
-        case .map, .device, .importRecord, nil: nil
+        case .map, .recentlyDeleted, .device, .importRecord, nil: nil
         }
     }
 
@@ -174,6 +177,8 @@ struct MainWindowView: View {
             } else {
                 ContentUnavailableView("Album Removed", systemImage: "rectangle.stack.badge.minus")
             }
+        case .recentlyDeleted:
+            PhotosLibraryView(source: catalog.recentlyDeleted, albums: catalog.photosAlbums, albumEditor: catalog.photosAlbumEditor)
         case let .folder(id):
             folderView(id: id, path: nil)
         case let .subfolder(id, path):

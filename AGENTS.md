@@ -81,8 +81,15 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
 - Deleting and duplicating belong to the source (`LibrarySource.delete`, `duplicate`): a folder
   moves the image and its sidecar to the Trash (through `FileTrash`, a folder in tests) and
   copies them under the Finder's name for a copy, the sidecar under a new identifier; Photos
-  deletes after the system's own question and copies the original's resources into a new photo.
+  copies the original's resources into a new photo.
   A RAW + JPEG pair shown as one photo is deleted or copied as one.
+- A photo of the Photos library deleted in Qaama stays in the Photos library: PhotoKit can neither
+  list Photos' Recently Deleted nor take a photo back out of it. Its identifier goes into
+  `PhotosTrash` (a JSON file of Application Support: user data), every `PhotosLibrarySource`
+  leaves it out of its listing, and the one made with `listsTrash` (`LibraryCatalog.recentlyDeleted`,
+  "Recently Deleted" in the sidebar) lists those photos alone, to restore them or to delete them
+  from the Photos library, which the system asks about. Any new Photos source takes the catalog's
+  trash, or it shows the deleted photos.
 - Noise reduction belongs to the decoding, not to the pipeline: `AdjustmentSet.denoise` is read on
   the global layer only (`EditRecipe.sourceDenoise`) and `SourceImage.image(denoise:)` gives the
   image the pipeline takes, a RAW decoded again by its engine (`RAWDecoder`, which keeps the
@@ -161,9 +168,10 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   asynchronous work, capture the previous state before writing, register on a target that lives
   as long as the window (the library source), and have the undo register its own inverse. Changes
   whose inverse is only known once made (a new album's identifier, where the Trash put a file) go
-  through `UndoableSteps`. Two exceptions: a photo deleted from the Photos library can't be taken
-  back out of Recently Deleted (PhotoKit), and a photo deleted from a card or a camera is gone
-  (no Trash there); neither registers an undo, and the second always asks first.
+  through `UndoableSteps`. Two exceptions: a photo deleted from the app's Recently Deleted leaves
+  the Photos library, and can't be taken back out of Photos' own (PhotoKit), and a photo deleted
+  from a card or a camera is gone (no Trash there); neither registers an undo, and the second
+  always asks first.
 - Small, single-purpose types with a doc comment that says what they are for and any
   non-obvious constraint. Comments explain why, not what.
 - No duplication across sources: shared behavior goes into the protocol, a helper enum or an

@@ -1,7 +1,7 @@
 import LibraryKit
 import SwiftUI
 
-/// Duplicating and deleting photos: what Image › Duplicate and Image › Delete act on in the key
+/// Duplicating, deleting and restoring photos: what Image › Duplicate, Delete and Restore act on in the key
 /// window (the photo open in the editor, or the grid's selection), and what the context menu of the
 /// open photo offers. The photos are looked up when an item is chosen.
 struct PhotoFilingAction {
@@ -11,6 +11,8 @@ struct PhotoFilingAction {
     let duplicate: (() -> Void)?
     /// Asks for confirmation first. Nil where the library can't delete a photo.
     let delete: (() -> Void)?
+    /// Nil but in Recently Deleted, where photos are put back in the library.
+    var restore: (() -> Void)?
 
     static func duplicateTitle(count: Int) -> String {
         count > 1 ? "Duplicate \(count) Photos" : "Duplicate Photo"
@@ -18,6 +20,10 @@ struct PhotoFilingAction {
 
     static func deleteTitle(count: Int) -> String {
         count > 1 ? "Delete \(count) Photos" : "Delete Photo"
+    }
+
+    static func restoreTitle(count: Int) -> String {
+        count > 1 ? "Restore \(count) Photos" : "Restore Photo"
     }
 }
 

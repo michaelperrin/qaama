@@ -13,10 +13,11 @@ struct PhotosFetchPredicateTests {
     }
 
     private func matches(_ query: LibraryQuery, index: PhotosIndexSnapshot?, native: Set<QueryCapability> = [.favorite, .rating],
-                         search: [String]? = nil) -> [String]
+                         search: [String]? = nil, trash: Set<String> = [], listsTrash: Bool = false) -> [String]
     {
         // No predicate: nothing can match, the source lists nothing.
-        guard let predicate = PhotosFetchPredicate.make(query: query, native: native, index: index, indexMatches: search) else { return [] }
+        guard let predicate = PhotosFetchPredicate.make(query: query, native: native, index: index, indexMatches: search,
+                                                        trash: trash, listsTrash: listsTrash) else { return [] }
         let library = [asset("raw", favorite: true, rating: 4, date: 100), asset("pair-raw", date: 200), asset("pair-jpeg", rating: 5, date: 200),
                        asset("jpeg", favorite: true, date: 300), asset("video", mediaType: 2)]
         return library.filter { predicate.evaluate(with: $0) }.compactMap { $0["localIdentifier"] as? String }
@@ -125,5 +126,37 @@ struct PhotosFetchPredicateTests {
         var query = LibraryQuery()
         query.filters.rawOnly = true
         #expect(matches(query, index: nil) == ["raw", "pair-raw", "pair-jpeg", "jpeg"])
+    }
+
+    @Test func leavesOutThePhotosDeletedInQaama() {
+        var query = LibraryQuery()
+        #expect(matches(query, index: index, trash: ["raw", "pair-jpeg"]) == ["pair-raw", "jpeg"])
+        // Without an index too: the trash doesn't come from it.
+        #expect(matches(query, index: nil, trash: ["raw"]) == ["pair-raw", "pair-jpeg", "jpeg"])
+
+        // Whatever else narrows the listing.
+        query.filters.rawOnly = true
+        #expect(matches(query, index: index, trash: ["raw"]) == ["pair-raw"])
+        query.filters.rawOnly = false
+        query.searchText = "anything"
+        #expect(matches(query, index: index, search: ["raw", "jpeg"], trash: ["jpeg"]) == ["raw"])
+        query.onlyAssetIDs = ["jpeg"]
+        #expect(PhotosFetchPredicate.make(query: query, native: [], index: index, indexMatches: ["raw", "jpeg"], trash: ["jpeg"]) == nil)
+    }
+
+    @Test func recentlyDeletedListsOnlyTheDeletedPhotos() {
+        var query = LibraryQuery()
+        #expect(matches(query, index: index, trash: ["raw", "jpeg"], listsTrash: true) == ["raw", "jpeg"])
+        #expect(PhotosFetchPredicate.make(query: query, native: [], index: index, trash: [], listsTrash: true) == nil, "an empty trash lists nothing")
+
+        // A pair deleted as one photo shows as one; a twin deleted alone is a photo of its own.
+        #expect(matches(query, index: index, trash: ["pair-raw", "pair-jpeg"], listsTrash: true) == ["pair-raw"])
+        #expect(matches(query, index: index, trash: ["pair-jpeg", "jpeg"], listsTrash: true) == ["pair-jpeg", "jpeg"])
+        query.includesPairedJPEGs = true
+        #expect(matches(query, index: index, trash: ["pair-raw", "pair-jpeg"], listsTrash: true) == ["pair-raw", "pair-jpeg"])
+
+        // The filters apply there as anywhere.
+        query.filters.favoritesOnly = true
+        #expect(matches(query, index: index, trash: ["raw", "pair-raw"], listsTrash: true) == ["raw"])
     }
 }

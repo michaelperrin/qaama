@@ -12,6 +12,9 @@ import UniformTypeIdentifiers
 /// "Apple Photos library" source: lists photos and provides their images through PhotoKit.
 ///
 /// Keeps the list in sync with the library through `PHPhotoLibraryChangeObserver`.
+///
+/// The photos deleted in Qaama (`PhotosTrash`) are still in the Photos library: every listing
+/// leaves them out, but the one of the source made to list them, the app's Recently Deleted.
 @Observable
 public final class PhotosLibrarySource: LibrarySource {
     public private(set) var assets: AssetCollection = .empty
@@ -25,11 +28,12 @@ public final class PhotosLibrarySource: LibrarySource {
     public private(set) var lastLoadDuration: Duration?
 
     public var displayName: String {
-        album?.title ?? "Photos"
+        listsTrash ? "Recently Deleted" : album?.title ?? "Photos"
     }
 
+    /// A deleted photo is only restored or deleted for good, as in Photos' own Recently Deleted.
     public var capabilities: Set<LibraryCapability> {
-        [.rating, .keywords, .captureDate, .location, .deletion, .duplication, .editing]
+        listsTrash ? [.deletion, .restoration] : [.rating, .keywords, .captureDate, .location, .deletion, .duplication, .editing]
     }
 
     /// Dates and favorite are native; rating filter and sort are too on macOS 27, confirmed by a probe at
@@ -50,9 +54,10 @@ public final class PhotosLibrarySource: LibrarySource {
 
     private var nativeCapabilities: Set<QueryCapability> = [.favorite, .captureDates]
 
-    /// Positions come from the index, which reads them from Photos' database.
+    /// Positions come from the index, which reads them from Photos' database. The deleted photos
+    /// are listed without a map: they are looked at to be restored or deleted, nothing else.
     public var hasPlaces: Bool {
-        index != nil
+        index != nil && !listsTrash
     }
 
     public var placesVersion: Int {
@@ -117,7 +122,7 @@ public final class PhotosLibrarySource: LibrarySource {
             let located = try await index.locatedAssets()
             let shown: [LocatedAsset]
             if album == nil, found == nil, query.isUnfiltered {
-                let hidden = query.includesPairedJPEGs ? [] : listedSnapshot.twinIDs
+                let hidden = (query.includesPairedJPEGs ? [] : listedSnapshot.twinIDs).union(trash?.ids ?? [])
                 shown = hidden.isEmpty ? located : await Task.detached(priority: .userInitiated) { located.filter { !hidden.contains($0.id) } }.value
             } else {
                 // PhotoKit documents fetch results as safe to read from any thread; this one is only read there.
@@ -211,9 +216,19 @@ public final class PhotosLibrarySource: LibrarySource {
         }
     }
 
-    public init(album: PhotosAlbum? = nil, index: PhotosIndex? = nil) {
+    /// The photos deleted in Qaama; shared by every Photos source. Nil lists every photo of the library.
+    private let trash: PhotosTrash?
+    /// True for the source that lists the deleted photos instead of leaving them out.
+    public let listsTrash: Bool
+    /// The version of the trash the current listing was built with; another triggers a refetch.
+    @ObservationIgnored private var listedTrashVersion = 0
+
+    /// `listsTrash` makes the source of the photos in `trash`: the app's Recently Deleted.
+    public init(album: PhotosAlbum? = nil, index: PhotosIndex? = nil, trash: PhotosTrash? = nil, listsTrash: Bool = false) {
         self.album = album
         self.index = index
+        self.trash = trash
+        self.listsTrash = listsTrash && trash != nil
     }
 
     /// Requests access if needed, then loads the photos, newest first, and starts tracking changes.
@@ -230,6 +245,9 @@ public final class PhotosLibrarySource: LibrarySource {
         // The RAW set and the pairs already known take a few tens of ms; the rest runs in the background.
         await index?.start()
         followIndex()
+        await trash?.load()
+        followTrash()
+        forgetMissingTrash()
         let lookup = lookup
         if let index, !lookup.isEmpty {
             found = await (lookup, (try? index.search(lookup.text, within: lookup.place, edits: lookup.edits)) ?? [])
@@ -565,20 +583,40 @@ public final class PhotosLibrarySource: LibrarySource {
         return try await perform(step)
     }
 
-    /// Photos asks the user by itself, then keeps the photos in Recently Deleted for thirty days.
-    /// PhotoKit has no way to take them back out, so there is nothing an undo could do: none is
-    /// registered, and Photos is where a deletion is reverted. The list is refreshed through the
-    /// change observer.
+    /// The photos are noted in the app's Recently Deleted and leave every listing at once; they stay
+    /// in the Photos library, so nothing is asked and an undo brings them back. From Recently
+    /// Deleted itself they are deleted from the Photos library: Photos asks the user by itself,
+    /// then keeps them in its own Recently Deleted for thirty days, out of PhotoKit's reach, so
+    /// no undo is registered. Without a trash (previews), every deletion is of that second kind.
     @discardableResult
-    public func delete(_ assets: [LibraryAsset], undoManager _: UndoManager?) async throws -> Bool {
+    public func delete(_ assets: [LibraryAsset], undoManager: UndoManager?) async throws -> Bool {
         let ids = withHiddenTwins(assets.map(\.id))
-        guard try await PhotoKitAssetChanges.delete(ids) else { return false }
+        if let trash, !listsTrash {
+            trash.trash(ids, undoManager: undoManager)
+            logger.notice("Moved \(ids.count) photos to Recently Deleted")
+        } else {
+            guard try await PhotoKitAssetChanges.delete(ids) else { return false }
+            trash?.forget(ids)
+            for id in ids {
+                materialized[id] = nil
+                resourceInfos[id] = nil
+            }
+        }
         for id in ids {
-            materialized[id] = nil
-            resourceInfos[id] = nil
             editingInputs[id] = nil
         }
+        // Now rather than once the trash has told: the caller acts on the listing next.
+        trashChanged()
         return true
+    }
+
+    /// Puts deleted photos back in the library, as one undoable step. Only Recently Deleted does.
+    public func restore(_ assets: [LibraryAsset], undoManager: UndoManager?) async throws {
+        guard let trash, listsTrash else { throw LibrarySourceError.unsupported(.restoration) }
+        let ids = withHiddenTwins(assets.map(\.id))
+        trash.restore(ids, undoManager: undoManager)
+        logger.notice("Restored \(ids.count) photos from Recently Deleted")
+        trashChanged()
     }
 
     /// The copy is a new photo made from the original's files, edit included, added to the album
@@ -633,9 +671,12 @@ public final class PhotosLibrarySource: LibrarySource {
     /// that the listing hides: a pair shown as one photo is deleted or copied as one.
     private func withHiddenTwins(_ ids: [String]) -> [String] {
         guard !query.includesPairedJPEGs else { return ids }
+        // Among the deleted photos, a twin is hidden only when it was deleted with its RAW.
+        let trashed = listsTrash ? trash?.ids : nil
         var seen = Set(ids)
         return ids.flatMap { id in
-            guard let twin = listedSnapshot.pairedIDs[id], listedSnapshot.twinIDs.contains(twin), seen.insert(twin).inserted else { return [id] }
+            guard let twin = listedSnapshot.pairedIDs[id], listedSnapshot.twinIDs.contains(twin), trashed?.contains(twin) != false,
+                  seen.insert(twin).inserted else { return [id] }
             return [id, twin]
         }
     }
@@ -665,6 +706,9 @@ public final class PhotosLibrarySource: LibrarySource {
         if timelineIsOutdated {
             // The months in place stay until the new ones are read: a few rows off for a moment.
             rebuildTimeline(showingFirstRows: false)
+        }
+        if !details.removedObjects.isEmpty {
+            forgetMissingTrash()
         }
         logger.notice("Applied library change (\(details.insertedObjects.count) inserted, \(details.removedObjects.count) removed, \(details.changedObjects.count) changed)")
     }
@@ -769,28 +813,72 @@ public final class PhotosLibrarySource: LibrarySource {
         followIndex()
     }
 
-    // MARK: - Listing
+    // MARK: - Deleted photos
 
-    /// The current query, index answers and search results, frozen for one fetch.
-    private func listing(indexMatches: [String]?) -> PhotosListing {
-        PhotosListing(query: query, native: nativeCapabilities, index: index?.snapshot, indexMatches: indexMatches, albumID: album?.id)
+    /// Lists again when photos are deleted in Qaama or restored, from this source or another.
+    private func followTrash() {
+        guard let trash else { return }
+        withObservationTracking {
+            _ = trash.version
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.trashChanged()
+                self?.followTrash()
+            }
+        }
     }
 
-    private func refetch() {
+    /// A few photos came or went among those in place: the months stay until the new ones are read,
+    /// as for a change of the library, so the grid stays where it is.
+    private func trashChanged() {
+        guard let trash, fetchResult != nil, trash.version != listedTrashVersion else { return }
+        refetch(showingFirstRows: false)
+    }
+
+    /// Drops from the trash the photos that left the Photos library: deleted in Photos, or from
+    /// its own Recently Deleted after thirty days. Asked by the source that lists the trash, when
+    /// it loads and when the library loses photos. With a limited access, a photo PhotoKit doesn't
+    /// hand over may well exist: nothing is dropped.
+    private func forgetMissingTrash() {
+        guard listsTrash, let trash, access == .authorized, !trash.ids.isEmpty else { return }
+        let ids = Array(trash.ids)
+        Task { [logger] in
+            let existing = await Task.detached(priority: .utility) {
+                Set(PhotoKitIndexLibrary.identifiers(of: PHAsset.fetchAssets(withLocalIdentifiers: ids, options: nil)))
+            }.value
+            let missing = ids.filter { !existing.contains($0) }
+            guard !missing.isEmpty else { return }
+            logger.notice("Forgot \(missing.count) deleted photos that left the Photos library")
+            trash.forget(missing)
+        }
+    }
+
+    // MARK: - Listing
+
+    /// The current query, index answers, search results and deleted photos, frozen for one fetch.
+    private func listing(indexMatches: [String]?) -> PhotosListing {
+        PhotosListing(query: query, native: nativeCapabilities, index: index?.snapshot, indexMatches: indexMatches, albumID: album?.id,
+                      trash: trash?.ids ?? [], trashVersion: trash?.version ?? 0, listsTrash: listsTrash)
+    }
+
+    /// `showingFirstRows` as for `rebuildTimeline`: false when the listing is the one in place,
+    /// a few photos apart.
+    private func refetch(showingFirstRows: Bool = true) {
         probeNativeQueries()
         let clock = ContinuousClock()
         let start = clock.now
         let listing = listing(indexMatches: found?.matches)
-        apply(listing.fetch(), for: listing)
+        apply(listing.fetch(), for: listing, showingFirstRows: showingFirstRows)
         logger.notice("Refetched \(self.assets.count) photos in \((clock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
     }
 
-    private func apply(_ result: PHFetchResult<PHAsset>, for listing: PhotosListing) {
+    private func apply(_ result: PHFetchResult<PHAsset>, for listing: PhotosListing, showingFirstRows: Bool = true) {
         listedSnapshot = listing.index ?? PhotosIndexSnapshot()
+        listedTrashVersion = listing.trashVersion
         listingDatesCache = nil
         membershipVersion += 1
         apply(fetchResult: result)
-        rebuildTimeline(showingFirstRows: true)
+        rebuildTimeline(showingFirstRows: showingFirstRows)
     }
 
     // MARK: - Timeline

@@ -270,10 +270,21 @@ can feed a website one day. Dates are when the feature landed.
   deleting is ⌘⌫.
   - In a folder, the file goes to the Trash with its sidecar, after confirmation, and Undo puts
     both back: the photo returns with its rating, flag, keywords and edit.
-  - In the Apple Photos library, Photos asks for confirmation itself and keeps the photo in
-    Recently Deleted for 30 days; it is restored from Photos, not with Undo.
+  - In the Apple Photos library, the photo goes to Qaama's own Recently Deleted, without a
+    question, and Undo brings it back (2026-11-22).
   - A RAW + JPEG pair shown as one photo is deleted as one.
   - Also from the map of every library, each photo being deleted in the library that holds it.
+- Recently Deleted (2026-11-22), in the sidebar under Apple Photos while it holds photos, with
+  their count: the photos of the Photos library deleted in Qaama. They no longer show anywhere
+  else in Qaama (library, albums, map, saved filters), but stay in the Photos library, where
+  Photos and the other devices still show them.
+  - Restore Photo, in the context menu and the Image menu, puts the selected photos back where
+    they were, albums included. Undoable.
+  - Delete Photo there deletes them from the Photos library: Photos asks for confirmation
+    itself and keeps them in its own Recently Deleted for 30 days. Not undoable.
+  - Delete All, above the photos, deletes every photo listed there the same way.
+  - Nothing is deleted after a delay: the photos stay until they are restored or deleted.
+  - A RAW + JPEG pair deleted as one photo shows, and is restored or deleted, as one.
 - Duplicate photos (2026-11-17): Image › Duplicate Photo (⌘D), in the thumbnails' context menu
   and in the one of the photo open in the editor. The copy keeps the rating, flag, keywords,
   corrected date and saved edit, which stays editable and revertible on the copy. Undoable.

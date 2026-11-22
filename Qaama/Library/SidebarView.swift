@@ -235,6 +235,12 @@ struct SidebarView: View {
                                      badge: albums.albums.filter { $0.kind == .user }.count, role: .albumsRoot,
                                      children: albums.tree.isEmpty ? nil : albums.tree.map(SidebarItem.init)))
         }
+        // Only while it holds photos, or is being looked at: last, as in Photos.
+        let deleted = catalog.photosTrash.ids.count
+        if deleted > 0 || selection == .recentlyDeleted {
+            items.append(SidebarItem(id: "recently-deleted", title: catalog.recentlyDeleted.displayName, symbol: "trash", selection: .recentlyDeleted,
+                                     badge: deleted, help: "Photos deleted in Qaama, to restore or to delete from the Photos library"))
+        }
         return items
     }
 

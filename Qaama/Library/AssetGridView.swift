@@ -36,6 +36,8 @@ struct AssetGridView: View {
     var onDuplicate: (([LibraryAsset.ID]) -> Void)?
     /// Deletes these photos, after confirmation; nil leaves the command out.
     var onDelete: (([LibraryAsset.ID]) -> Void)?
+    /// Puts these deleted photos back in the library; nil leaves the command out.
+    var onRestore: (([LibraryAsset.ID]) -> Void)?
     /// Told which month is at the top, and asked to scroll to another; nil for a grid without the toolbar's month button.
     var navigator: TimelineNavigator?
     /// Told how to read where this grid is scrolled, and where to scroll it when it takes the place
@@ -83,6 +85,7 @@ struct AssetGridView: View {
         let canShowInFinder = source.hasFileURLs
         let canDuplicate = onDuplicate != nil && source.capabilities.contains(.duplication)
         let canDelete = onDelete != nil && source.capabilities.contains(.deletion)
+        let canRestore = onRestore != nil && source.capabilities.contains(.restoration)
         let canEdit = source.capabilities.contains(.editing)
         let albumState = albums.map(AssetGridCell.AlbumState.init)
         // What the selected photos share, read once per update: a cell reads only its own row.
@@ -114,7 +117,7 @@ struct AssetGridView: View {
                                                   menu: AssetGridCell.MenuState(count: actsOnSelection(asset) ? selection.count : 1, canEdit: canEdit,
                                                                                 canPaste: canPaste, canAdjustDate: canAdjustDate, location: location,
                                                                                 canShowInFinder: canShowInFinder, canDuplicate: canDuplicate,
-                                                                                canDelete: canDelete, albums: albumState,
+                                                                                canDelete: canDelete, canRestore: canRestore, albums: albumState,
                                                                                 decisions: selectionDecisions.map { decisionState(of: asset, sharing: $0) },
                                                                                 generation: menuGeneration),
                                                   source: source, actions: actions)
@@ -371,6 +374,7 @@ struct AssetGridView: View {
         actions.showInFinder = { asset in showInFinder(Set(targetIDs(for: asset))) }
         actions.duplicate = { asset in onDuplicate?(targetIDs(for: asset)) }
         actions.delete = { asset in onDelete?(targetIDs(for: asset)) }
+        actions.restore = { asset in onRestore?(targetIDs(for: asset)) }
         actions.decide = { decision, asset in
             run { try await MetadataEditing.apply(targets(for: asset).map { ($0, decision) }, in: source, undoManager: undoManager) }
         }
@@ -836,6 +840,7 @@ final class AssetGridActions {
     var showInFinder: (LibraryAsset) -> Void = { _ in }
     var duplicate: (LibraryAsset) -> Void = { _ in }
     var delete: (LibraryAsset) -> Void = { _ in }
+    var restore: (LibraryAsset) -> Void = { _ in }
     /// Writes a rating or a flag to the photos the menu acts on.
     var decide: (LibraryDecision, LibraryAsset) -> Void = { _, _ in }
     /// The photos a context menu acts on, by identifier: the selection when the photo is part of it.
@@ -901,6 +906,8 @@ struct AssetGridCell: View, Equatable {
         var canShowInFinder: Bool
         var canDuplicate: Bool
         var canDelete: Bool
+        /// The photos are deleted ones, which can be put back in the library.
+        var canRestore: Bool
         var albums: AlbumState?
         /// Nil where the library stores neither rating nor flag: the rows are left out.
         var decisions: DecisionState?
@@ -1052,8 +1059,13 @@ struct AssetGridCell: View, Equatable {
                 Divider()
                 Button(PhotoFilingAction.deleteTitle(count: menu.count), role: .destructive) { actions.delete(asset) }
             } else {
-                // The only item of the photos of a device: it is the one that tells the menu opens.
+                // The only items of the photos of a device and of the deleted ones: they are the
+                // ones that tell the menu opens.
                 ContextMenuOpening(report: { actions.menuIsOpening(for: asset.id, at: index) }) {
+                    if menu.canRestore {
+                        Button(PhotoFilingAction.restoreTitle(count: menu.count)) { actions.restore(asset) }
+                        Divider()
+                    }
                     Button(PhotoFilingAction.deleteTitle(count: menu.count), role: .destructive) { actions.delete(asset) }
                 }
             }

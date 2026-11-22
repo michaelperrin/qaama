@@ -14,11 +14,18 @@ nonisolated struct PhotosListing: Sendable {
     var indexMatches: [String]?
     /// Local identifier of the album to list; nil for the whole library.
     var albumID: String?
+    /// The photos deleted in Qaama, and the version of `PhotosTrash` they were read at.
+    var trash: Set<String> = []
+    var trashVersion = 0
+    /// True to list the deleted photos instead of leaving them out.
+    var listsTrash = false
 
     func fetch() -> PHFetchResult<PHAsset> {
         // Nothing can match (no RAW, no search result): an empty identifier list is a predicate PhotoKit
         // has no reason to accept, so ask for no asset instead.
-        guard let predicate = PhotosFetchPredicate.make(query: query, native: native, index: index, indexMatches: indexMatches) else {
+        guard let predicate = PhotosFetchPredicate.make(query: query, native: native, index: index, indexMatches: indexMatches,
+                                                        trash: trash, listsTrash: listsTrash)
+        else {
             return PHAsset.fetchAssets(withLocalIdentifiers: [], options: nil)
         }
         let options = PHFetchOptions()

@@ -7,6 +7,10 @@ import OSLog
 @Observable
 public final class LibraryCatalog {
     public let photos: PhotosLibrarySource
+    /// The photos of the Photos library deleted in Qaama, which every Photos source leaves out.
+    public let photosTrash: PhotosTrash
+    /// Those photos listed, to restore them or delete them from the Photos library.
+    public let recentlyDeleted: PhotosLibrarySource
     /// Every photo of the Photos library and of the folders on one map. It reaches them through
     /// views of its own (`photosForMap`, `folderViews`), since it sets their query: filtering the
     /// map leaves the Photos library and the folders as their own entries show them.
@@ -67,11 +71,14 @@ public final class LibraryCatalog {
     @ObservationIgnored private var importLibraries: [ImportRecord.ID: PresetLibrary] = [:]
     private let logger = Logger(subsystem: "fr.michaelperrin.qaama", category: "LibraryCatalog")
 
-    /// `filterPresets` are kept in memory unless a store with a file is handed in (the app's), and
-    /// no card or camera is ever listed unless `cameras` come with a browser (the app's too).
+    /// `filterPresets` and `photosTrash` are kept in memory unless a store with a file is handed in
+    /// (the app's), and no card or camera is ever listed unless `cameras` come with a browser (the
+    /// app's too).
     public init(store: CatalogStore, previewCache: PreviewCache = PreviewCache(), filterPresets: FilterPresetStore = FilterPresetStore(),
-                cameras: CameraDevices = CameraDevices(), importPresets: ImportPresetStore = ImportPresetStore())
+                cameras: CameraDevices = CameraDevices(), importPresets: ImportPresetStore = ImportPresetStore(),
+                photosTrash: PhotosTrash = PhotosTrash())
     {
+        self.photosTrash = photosTrash
         self.importPresets = importPresets
         self.store = store
         self.previewCache = previewCache
@@ -79,8 +86,9 @@ public final class LibraryCatalog {
         self.cameras = cameras
         photosIndexStore = PhotosIndexStore(catalog: store)
         photosIndex = PhotosIndex(store: photosIndexStore, library: PhotoKitIndexLibrary())
-        photos = PhotosLibrarySource(index: photosIndex)
-        photosForMap = PhotosLibrarySource(index: photosIndex)
+        photos = PhotosLibrarySource(index: photosIndex, trash: photosTrash)
+        recentlyDeleted = PhotosLibrarySource(index: photosIndex, trash: photosTrash, listsTrash: true)
+        photosForMap = PhotosLibrarySource(index: photosIndex, trash: photosTrash)
         everywhere = CombinedLibrarySource(displayName: "Map", members: [photosForMap])
         photosAlbumEditor = PhotosAlbumEditor(library: PhotoKitAlbumLibrary(), list: photosAlbums)
         // Opening the map of everything scans the folders, as opening each of them does.
@@ -97,6 +105,7 @@ public final class LibraryCatalog {
         cameras.start()
         await cameras.history?.load()
         await filterPresets.load()
+        await photosTrash.load()
         do {
             var restored: [FolderLibrarySource] = []
             for var folder in try await store.folders() {
@@ -159,7 +168,7 @@ public final class LibraryCatalog {
         if let existing = albumSources[album.id] {
             return existing
         }
-        let source = PhotosLibrarySource(album: album, index: photosIndex)
+        let source = PhotosLibrarySource(album: album, index: photosIndex, trash: photosTrash)
         albumSources[album.id] = source
         return source
     }
@@ -173,10 +182,10 @@ public final class LibraryCatalog {
         let library: PresetLibrary
         switch preset.library {
         case .photos:
-            library = known ?? .photos(PhotosLibrarySource(index: photosIndex))
+            library = known ?? .photos(PhotosLibrarySource(index: photosIndex, trash: photosTrash))
         case let .photosAlbum(id):
             guard let album = photosAlbums.album(id: id) else { return nil }
-            library = known ?? .photos(PhotosLibrarySource(album: album, index: photosIndex))
+            library = known ?? .photos(PhotosLibrarySource(album: album, index: photosIndex, trash: photosTrash))
         case let .folder(id, path):
             // A folder removed and added again is another source: its view is made again.
             guard let folder = folders.first(where: { $0.id == id }) else { return nil }
@@ -215,7 +224,7 @@ public final class LibraryCatalog {
         let library: PresetLibrary
         switch record.destination {
         case .photos:
-            let source = PhotosLibrarySource(index: photosIndex)
+            let source = PhotosLibrarySource(index: photosIndex, trash: photosTrash)
             source.query.fixedAssetIDs = Set(record.photoIDs)
             library = .photos(source)
         case let .folder(id):

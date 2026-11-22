@@ -17,6 +17,8 @@ struct LibraryContentView: View {
     /// True for the map of every library: there is no grid to switch to, only that of a group
     /// opened from the map.
     var showsOnlyMap = false
+    /// A sentence to show above the grid for as long as this library is: what Recently Deleted is.
+    var notice: String?
     /// The stay in the editor, from opening a photo to closing; it moves from photo to photo by itself.
     @State private var editorSession: EditorSession?
     @State private var selection: Set<LibraryAsset.ID> = []
@@ -162,11 +164,13 @@ struct LibraryContentView: View {
                     SettledWidth(trailingColumnWidth: EditorInspector.width) {
                         AssetGridView(source: source, selection: $selection, onOpen: openEditor,
                                       onAdjustDate: adjustDate, onLocation: runLocation, albums: albumsAction, onDuplicate: duplicate,
-                                      onDelete: askToDelete,
+                                      onDelete: askToDelete, onRestore: restore,
                                       navigator: navigator, place: gridPlace)
                             .safeAreaInset(edge: .top, spacing: 0) {
-                                if let notice = source.indexingNotice {
-                                    IndexingNoticeView(notice: notice, progress: source.indexingProgress)
+                                if let indexing = source.indexingNotice {
+                                    IndexingNoticeView(notice: indexing, progress: source.indexingProgress)
+                                } else if let notice {
+                                    IndexingNoticeView(notice: notice, progress: nil, action: deleteAllAction)
                                 }
                             }
                     }
@@ -492,18 +496,21 @@ struct LibraryContentView: View {
         return visits?.back
     }
 
+    /// Nothing opens where photos can't be edited: a deleted photo is restored first.
     private func openEditor(_ id: LibraryAsset.ID) {
+        guard source.capabilities.contains(.editing) else { return }
         gridPlace.open(id, leavingGridAt: gridPlace.read())
         editorSession = EditorSession(assetID: id, source: source)
     }
 
     // MARK: - Duplicating and deleting
 
-    /// Image › Duplicate and Delete, and the same in the open photo's context menu: the photo open
-    /// in the editor, else the selection; nil when there is neither, or the library can do neither.
+    /// Image › Duplicate, Delete and Restore, and the same in the open photo's context menu: the
+    /// photo open in the editor, else the selection; nil when there is neither, or the library can
+    /// do none of them.
     private var filingAction: PhotoFilingAction? {
         let capabilities = source.capabilities
-        guard !capabilities.isDisjoint(with: [.duplication, .deletion]) else { return nil }
+        guard !capabilities.isDisjoint(with: [.duplication, .deletion, .restoration]) else { return nil }
         let count: Int
         let targets: () -> [LibraryAsset.ID]
         if let editorSession {
@@ -516,7 +523,23 @@ struct LibraryContentView: View {
         }
         return PhotoFilingAction(count: count,
                                  duplicate: capabilities.contains(.duplication) ? { duplicate(targets()) } : nil,
-                                 delete: capabilities.contains(.deletion) ? { askToDelete(targets()) } : nil)
+                                 delete: capabilities.contains(.deletion) ? { askToDelete(targets()) } : nil,
+                                 restore: capabilities.contains(.restoration) ? { restore(targets()) } : nil)
+    }
+
+    /// Puts deleted photos back in the library, as one undoable step.
+    private func restore(_ assetIDs: [LibraryAsset.ID]) {
+        let assets = source.assets(withIDs: assetIDs)
+        guard !assets.isEmpty else { return }
+        Task {
+            do {
+                try await source.restore(assets, undoManager: undoManager)
+                // They leave the grid: a selection of photos no longer shown would still be acted on.
+                selection.subtract(assetIDs)
+            } catch {
+                decisionError = error.localizedDescription
+            }
+        }
     }
 
     /// Copies photos in the library, as one undoable step. The copy of an edited photo carries the
@@ -536,7 +559,22 @@ struct LibraryContentView: View {
     /// Deletes photos once it is confirmed: by this window's alert, or by the system's own where
     /// the library has one (Photos), which a second question before it would only double.
     private func askToDelete(_ assetIDs: [LibraryAsset.ID]) {
-        let assets = assetIDs.compactMap { source.asset(id: $0) }
+        askToDelete(assetIDs.compactMap { source.asset(id: $0) })
+    }
+
+    /// Delete All, next to what Recently Deleted says of itself: every photo listed there, the
+    /// filters in place included, is deleted from the Photos library. Nil in the other libraries.
+    private var deleteAllAction: IndexingNoticeView.Action? {
+        guard source.capabilities.contains(.restoration), source.capabilities.contains(.deletion) else { return nil }
+        return IndexingNoticeView.Action(title: "Delete All", help: "Delete every photo listed here from the Photos library",
+                                         isDisabled: source.assets.isEmpty)
+        {
+            // The rows themselves: looking each photo up by identifier would take a request apiece.
+            askToDelete(Array(source.assets))
+        }
+    }
+
+    private func askToDelete(_ assets: [LibraryAsset]) {
         guard !assets.isEmpty, editorSession?.model.isBusy != true else { return }
         if let notice = source.deletionNotice(for: assets) {
             deletion = DeletionRequest(assets: assets, notice: notice)

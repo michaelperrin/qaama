@@ -390,6 +390,9 @@ struct EditorCommands: Commands {
             Button(PhotoFilingAction.deleteTitle(count: filing?.count ?? 1)) { filing?.delete?() }
                 .keyboardShortcut(.delete, modifiers: albumsCommand?.action.remove == nil ? [] : [.command])
                 .disabled(filing?.delete == nil)
+            // Out of Recently Deleted, back in the library.
+            Button(PhotoFilingAction.restoreTitle(count: filing?.count ?? 1)) { filing?.restore?() }
+                .disabled(filing?.restore == nil)
             Divider()
             // ⌘L and ⌘R, as in Preview.
             Button("Rotate Left") { change(.rotateLeft) }
