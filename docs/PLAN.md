@@ -2596,6 +2596,68 @@ Interface
 - [ ] HDR (gain map, EDR sur écran compatible), vidéo courte peut‑être.
 - [ ] iCloud (si compte développeur), puis déclinaison iPad si le cœur reste portable.
 
+### Phase 4 — v2 : bibliothèque Cloud (réflexion du 22/11/2026, rien de démarré)
+
+Pas avant la v1. Réflexion menée avec Michaël le 22/11/2026, sans prototype ni mesure : tout ce
+qui suit est à vérifier avant de s'engager.
+
+- **Besoin** (Michaël) : « gérer le problème d'espace disque » en ne gardant sur le disque que
+  les vignettes, plus les originaux récents et récemment ouverts, le reste étant chargé depuis
+  le cloud à l'ouverture d'une photo. C'est d'abord son propre besoin : « éviter que mes données
+  soient chez Apple et éviter de payer 10 € / mois juste pour ça (je n'utilise pas le reste de
+  l'offre iCloud payante) ». Et cela « pourrait intéresser un public », à condition d'avoir
+  « une offre packagée facile + possibilité de choisir son propre hébergement S3 ».
+- **Direction retenue : un stockage compatible S3**, dans une bibliothèque Cloud que
+  l'utilisateur crée explicitement, à côté des dossiers locaux qui restent ce qu'ils sont.
+  Arbitrage de Michaël : « ça ne me dérange pas si les fichiers ne sont plus visibles dans le
+  Finder » dans ce cas.
+  - Pourquoi S3 plutôt que File Provider (iCloud Drive, Dropbox, Proton Drive montés dans le
+    Finder) : avec File Provider, l'éviction appartient au système (une app ne peut évincer
+    elle-même que sur iCloud Drive, à vérifier) et le comportement dépend de l'extension de
+    chaque fournisseur. Avec S3, la politique de cache est la nôtre et le comportement est
+    déterministe.
+  - Pourquoi pas un connecteur Proton Drive : pas d'API publique stable pour les tiers à notre
+    connaissance (à revérifier, un SDK officiel a été évoqué), et le chiffrement de bout en
+    bout oblige à réimplémenter la cryptographie côté client.
+  - Ce qui rend le moteur de synchronisation raisonnable : les originaux sont immuables (les
+    modifications sont des recettes), donc envoyés une fois et vérifiés par somme de contrôle ;
+    Qaama est seul à écrire, les conflits ne touchent que les sidecars entre deux appareils
+    (écritures conditionnelles `If-Match`) ; le catalogue se reconstruit en listant le bucket ;
+    le versionnement du bucket sert de corbeille (« tout est annulable »).
+- **Forme envisagée** :
+  - une `S3LibrarySource` derrière `LibrarySource`, rien de propre à S3 hors de LibraryKit ;
+  - dans le bucket : originaux, sidecars à côté, vignettes et aperçus aussi (un second
+    appareil affiche la grille sans télécharger un original), dans la même disposition qu'un
+    dossier local, pour pouvoir tout récupérer avec un outil S3 et l'ouvrir comme dossier ;
+  - cache local des originaux, borné, qui garde les récents et les récemment ouverts ; un
+    original n'est évincé qu'une fois son envoi vérifié ;
+  - client : signature SigV4 maison sur `URLSession` plutôt que le SDK AWS, à trancher par un
+    prototype dans `Experiments/` ; clés dans le trousseau.
+- **Limites connues** :
+  - mise en route peu grand public avec son propre bucket (créer le bucket, saisir des clés) :
+    d'où l'offre packagée, qui est un service à opérer (comptes, facturation, support) et un
+    projet à part entière ;
+  - envois longs de RAW sur une connexion lente : reprise, envoi en plusieurs parties,
+    transferts en arrière-plan. Le gros du travail est là ;
+  - frais de sortie variables selon l'hébergeur ;
+  - état hors-ligne à montrer pour une photo dont l'original n'est pas dans le cache ;
+  - une app iOS devient nécessaire (Michaël : « un peu équivalente à l'app desktop de Qaama et
+    à l'app Photos d'iOS pour voir sa librairie sur mobile ») : interface à refaire pour le
+    tactile, envoi automatique des photos du téléphone malgré les limites d'exécution en
+    arrière-plan d'iOS (une extension PhotoKit récente y est consacrée, à vérifier), et compte
+    développeur payant.
+- **Ordre proposé**, chaque étape utile seule :
+  - [ ] bibliothèque S3 sur Mac, avec son propre bucket (règle l'espace disque, valide le
+        moteur d'envoi) ;
+  - [ ] app iOS en lecture seule (grille, plein écran, notes et drapeaux) sur les mêmes paquets ;
+  - [ ] envoi automatique depuis le téléphone, puis édition mobile ;
+  - [ ] offre packagée.
+- **À préserver d'ici là** : paquets portables (pas d'AppKit dans leur API), rien de propre aux
+  dossiers ou à PhotoKit hors de LibraryKit.
+- **Sujet séparé, plus petit** : qu'un dossier local placé dans iCloud Drive ne soit pas rapatrié
+  en entier par le scan (`MetadataIndexer` lit les en-têtes, ce qui télécharge les fichiers
+  absents du disque).
+
 ## 6. Outils à installer côté poste
 
 - **Xcode** (en cours) : indispensable. Vérifier ensuite
