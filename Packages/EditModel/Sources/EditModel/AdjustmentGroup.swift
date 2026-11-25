@@ -15,7 +15,7 @@ public enum AdjustmentGroup: String, CaseIterable, Codable, Sendable {
         case .light: [\.exposure, \.highlights, \.shadows, \.blackPoint, \.contrast]
         case .color: [\.vibrance, \.saturation]
         case .detail: [\.sharpness]
-        case .effects: [\.dehaze, \.grain]
+        case .effects: [\.texture, \.clarity, \.dehaze, \.grain]
         case .curves, .colorMixer, .denoise: []
         }
     }

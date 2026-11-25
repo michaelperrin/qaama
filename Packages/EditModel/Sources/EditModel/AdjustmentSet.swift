@@ -40,6 +40,10 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     public var denoise: Denoise?
 
     /// Effects
+    /// Contrast of the fine details (pores, bark, fabric): crisper (+) or smoother (-), -1 to +1.
+    public var texture: Double?
+    /// Contrast of the larger shapes, mostly in the midtones: punchier (+) or softer (-), -1 to +1.
+    public var clarity: Double?
     /// Remove (+) or add (-) atmospheric haze, -1 to +1.
     public var dehaze: Double?
     /// Film-like grain, 0 to 1.
@@ -62,8 +66,8 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
 
     public init(temperature: Double? = nil, tint: Double? = nil, exposure: Double? = nil, highlights: Double? = nil,
                 shadows: Double? = nil, blackPoint: Double? = nil, contrast: Double? = nil, vibrance: Double? = nil,
-                saturation: Double? = nil, sharpness: Double? = nil, denoise: Denoise? = nil, dehaze: Double? = nil,
-                grain: Double? = nil, vignette: Vignette? = nil, monochrome: Monochrome? = nil, lut: LUT? = nil)
+                saturation: Double? = nil, sharpness: Double? = nil, denoise: Denoise? = nil, texture: Double? = nil,
+                clarity: Double? = nil, dehaze: Double? = nil, grain: Double? = nil, vignette: Vignette? = nil, monochrome: Monochrome? = nil, lut: LUT? = nil)
     {
         self.temperature = temperature
         self.tint = tint
@@ -76,6 +80,8 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
         self.saturation = saturation
         self.sharpness = sharpness
         self.denoise = denoise
+        self.texture = texture
+        self.clarity = clarity
         self.dehaze = dehaze
         self.grain = grain
         self.vignette = vignette
@@ -87,7 +93,7 @@ public struct AdjustmentSet: Codable, Hashable, Sendable {
     /// Every single-value adjustment, in the order the engine applies them.
     public static let all: [WritableKeyPath<AdjustmentSet, Double?> & Sendable] = [
         \.temperature, \.tint, \.exposure, \.highlights, \.shadows, \.blackPoint, \.contrast, \.vibrance, \.saturation,
-        \.sharpness, \.dehaze, \.grain,
+        \.sharpness, \.texture, \.clarity, \.dehaze, \.grain,
     ]
 
     public static let positiveRange: ClosedRange<Double> = 0 ... 1

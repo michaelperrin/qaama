@@ -376,6 +376,11 @@ can feed a website one day. Dates are when the feature landed.
   from the same place, or added by hand to the folder the library shows in the Finder. Works
   inside masks, comes after black and white (a LUT can tone it) and before grain and vignette;
   a photo whose LUT was deleted says so and shows without it (2026-11-16).
+- Texture: makes fine details (pores, bark, fabric) crisper, or smoother with negative values,
+  without touching the larger shapes or the colors (2026-11-24).
+- Clarity: adds contrast to the larger shapes, mostly in the midtones, or softens them into a
+  glow with negative values; it follows the edges between bright and dark areas, to keep halos
+  short. Both work inside masks like every adjustment (2026-11-24).
 - Dehaze: removes atmospheric haze estimated from the photo itself (dark channel prior), or adds
   some with negative values; works inside masks like every adjustment (2026-10-30).
 

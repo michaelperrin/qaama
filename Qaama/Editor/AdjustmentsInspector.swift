@@ -113,6 +113,8 @@ struct AdjustmentsInspector: View {
             LUTSection(model: model, luts: luts)
             group("Effects", .effects) {
                 SliderStack {
+                    slider("Texture", \.texture)
+                    slider("Clarity", \.clarity)
                     slider("Dehaze", \.dehaze)
                     slider("Grain", \.grain)
                 }

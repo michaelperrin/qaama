@@ -18,7 +18,7 @@ struct EditRecipeTests {
         #expect(set.saturation == nil, "a neutral value is stored as absent")
         #expect(AdjustmentSet(exposure: 0) == AdjustmentSet())
         #expect(AdjustmentSet(temperature: 4).temperature == 1)
-        #expect(AdjustmentSet.all.count == 12)
+        #expect(AdjustmentSet.all.count == 14)
         #expect(AdjustmentSet(grain: -1).grain == nil, "grain has no negative side")
         #expect(AdjustmentSet.range(of: \.exposure) == -3 ... 3 && AdjustmentSet.range(of: \.shadows) == -1 ... 1)
     }
@@ -222,7 +222,8 @@ struct AdjustmentGroupTests {
     @Test func everyAdjustmentBelongsToOneGroup() {
         // A value outside every group could never be switched off.
         var set = AdjustmentSet(temperature: 0.1, tint: 0.1, exposure: 0.1, highlights: 0.1, shadows: 0.1, blackPoint: 0.1, contrast: 0.1,
-                                vibrance: 0.1, saturation: 0.1, sharpness: 0.1, denoise: Denoise(luminance: 0.1), dehaze: 0.1, grain: 0.1)
+                                vibrance: 0.1, saturation: 0.1, sharpness: 0.1, denoise: Denoise(luminance: 0.1), texture: 0.1,
+                                clarity: 0.1, dehaze: 0.1, grain: 0.1)
         set.curves = Curves(rgb: ToneCurve(points: [CurvePoint(x: 0, y: 0.2), CurvePoint(x: 1, y: 1)]))
         set.hsl = HSL(values: [.red: HSLValue(saturation: 0.5)])
         #expect(!set.isIdentity)

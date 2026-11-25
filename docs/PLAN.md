@@ -1707,6 +1707,53 @@ Bibliothèque
         (`CIColorClamp` sur le transparent) : recadrer en dernier.
       - Le champ `vignette` de la recette passe d'un nombre à un objet : les sidecars qui
         portaient l'ancienne vignette ne se relisent plus (pas de rétrocompatibilité à ce stade).
+- [x] Texture et clarté, demandées par Michaël le 24/11/2026 (« Ajouter les filtres texture et
+      clarté pour les ajustements »). Fait le même jour.
+      - Deux curseurs de −1 à +1 dans la carte Effects, au-dessus de Dehaze (le groupe où
+        LightCraft et Lightroom les rangent) : `AdjustmentSet.texture` et `clarity`, utilisables
+        dans un calque masqué comme les autres. Choix de ma part, à déplacer si Michaël les
+        préfère dans Detail ou Light.
+      - Réglages et formules de LightCraft (`local_tone_delta` dans `finish.rs`, rayons dans
+        `craft-libs`, MIT ou Apache 2.0, noté dans `LocalContrast.swift`) : le détail est l'écart,
+        en stops, entre la luminance d'un pixel et une copie lissée, et le pixel est éclairci ou
+        assombri d'une part de cet écart, les trois canaux par le même gain (les couleurs ne
+        bougent pas). Texture : flou gaussien de 0,18 % du grand côté, 1,1 stop par stop de
+        détail, atténué sur les bords forts, 67 % de la force en négatif. Clarté : base lissée
+        sur 1,2 % du grand côté par un filtre guidé (qui ne lisse pas à travers les bords, donc
+        peu de halo), 0,85 stop par stop, en entier dans les tons moyens et à 35 % aux extrêmes.
+        Les rayons suivent la taille de l'image : aperçu et export donnent le même rendu.
+      - Place dans la chaîne : après hautes lumières et ombres, avant le point noir, le contraste
+        et les courbes, donc sur des tons encore proportionnels à la lumière.
+      - Écrit en filtres Core Image sans noyau maison (`LocalContrast`) : le logarithme et la
+        forme du détail sont des tables 1D (`CIColorCurves` lu en linéaire, avec son domaine)
+        construites une fois ; le curseur ne règle qu'un exposant (`CIGammaAdjust`), rien n'est
+        construit par mouvement. Écart avec LightCraft : le poids des tons moyens est un mélange
+        du gain avec 1 (`CIBlendWithMask`) et non un facteur de l'exposant, identique au premier
+        ordre.
+      - Mesuré sur GPU, cache de Core Image coupé, un réglage en amont changé à chaque passe :
+        à 24 Mpx, texture 5,6 ms, clarté 7,4 ms, les deux 10,3 ms (rendu sans eux : 2 ms) ; à
+        45 Mpx, 9,8, 11,2 et 17,4 ms. Première version : 12, 14 et 41 ms à 24 Mpx.
+      - Leçon : ce qui coûte est le nombre de passes sur l'image pleine taille, pas les flous.
+        `CI_PRINT_TREE=4` montre les passes : chaque flou relisait l'image entière, et la
+        réduction de Core Image (`CILanczosScaleTransform`) prend deux passes par division par
+        deux. Les deux réglages lissent maintenant une même copie réduite, dont la première
+        division par deux est une simple mise à l'échelle (quatre pixels lus pour un, une passe)
+        faite sur l'image avant le passage en stops.
+      - Leçon : `CIGuidedFilter` ne lisse que si on lui donne une copie plus petite que le guide,
+        et il réduit ce guide sans le moyenner : un motif fin (rayures de 6 px) ressortait en
+        vagues plus fortes que le motif. Écarté une deuxième fois (voir le débruitage) ; le
+        filtre guidé est réécrit en filtres simples (moyenne, variance, deux flous) sur la copie
+        réduite, la variance calculée depuis les écarts à la moyenne locale pour tenir dans des
+        demi-flottants.
+      - Leçon : forcer l'alpha à 1 avec `CIColorMatrix` rend l'étendue infinie, et un filtre
+        qui lit l'étendue (flou borné, réduction) rend alors une image vide sans rien dire :
+        recadrer aussitôt.
+      - Limite connue : les copies lissées passent par des demi-flottants, soit des pas de
+        0,007 stop ; un aplat peut bouger de 0,7 % à fond de curseur sur GPU (2 à 3 % avec le
+        rendu logiciel des tests, qui arrondit vers le bas). Pas de bandes vues sur l'essai.
+      - Jugé à l'œil sur un seul fond d'écran du système (Sonoma Horizon : vignes, arbres, ciel),
+        pas encore sur les photos de Michaël : forces et rayons sont ceux de LightCraft, à
+        ajuster après son essai.
 - [x] Débruitage (« Denoise »), étape 1, demandé par Michaël le 19/11/2026. Fait le même jour.
       - Deux curseurs, luminance et couleur, dans une carte « Denoise » à interrupteur, à la place
         de l'ancien curseur « Noise Reduction » de la carte Detail (`CINoiseReduction` appliqué

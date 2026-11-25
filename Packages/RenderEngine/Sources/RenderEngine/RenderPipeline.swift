@@ -8,8 +8,8 @@ import EditModel
 /// (`SourceImage.image(denoise:)`): that one setting belongs to the decoding, not to the chain.
 /// Retouches come first, on that image, then the geometry, then the layers in order; within a layer
 /// the adjustments run in the engine's fixed order: white balance, exposure, dehaze, highlights and
-/// shadows, black point, contrast, curves, color, selective color, detail, black and white, the LUT,
-/// then effects.
+/// shadows, texture and clarity, black point, contrast, curves, color, selective color, detail, black
+/// and white, the LUT, then effects.
 public nonisolated enum RenderPipeline {
     public static func apply(_ recipe: EditRecipe, to image: CIImage) -> CIImage {
         apply(recipe, to: image, geometry: recipe.geometry)
@@ -118,6 +118,14 @@ public nonisolated enum RenderPipeline {
                 curve.point4 = CGPoint(x: 1, y: 1)
                 output = curve.outputImage ?? output
             }
+        }
+
+        // On the tones as exposed and recovered, before the curves that shape them for display: the
+        // detail is measured in stops, which a tone curve would bend.
+        let texture = adjustments.texture ?? 0
+        let clarity = adjustments.clarity ?? 0
+        if texture != 0 || clarity != 0 {
+            output = LocalContrast.apply(texture: texture, clarity: clarity, to: output)
         }
 
         if let blackPoint = adjustments.blackPoint, blackPoint != 0 {

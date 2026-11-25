@@ -148,7 +148,8 @@ nonisolated enum EditActionName {
         let values: [(KeyPath<AdjustmentSet, Double?>, String)] = [
             (\.temperature, "Temperature"), (\.tint, "Tint"), (\.exposure, "Exposure"), (\.highlights, "Highlights"),
             (\.shadows, "Shadows"), (\.blackPoint, "Black Point"), (\.contrast, "Contrast"), (\.vibrance, "Vibrance"),
-            (\.saturation, "Saturation"), (\.sharpness, "Sharpness"), (\.dehaze, "Dehaze"), (\.grain, "Grain"),
+            (\.saturation, "Saturation"), (\.sharpness, "Sharpness"), (\.texture, "Texture"), (\.clarity, "Clarity"),
+            (\.dehaze, "Dehaze"), (\.grain, "Grain"),
         ]
         for (keyPath, name) in values where old[keyPath: keyPath] != new[keyPath: keyPath] {
             names.append(name)
