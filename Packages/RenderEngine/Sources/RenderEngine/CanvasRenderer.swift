@@ -20,10 +20,24 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
         didSet { view?.setNeedsDisplay(view?.bounds ?? .zero) }
     }
 
+    /// Pixels of `image` per pixel of the photo it shows: 1 unless it is a reduced copy
+    /// (`SourceImage.proxy`), which is drawn in the same place, the image being fitted to the view
+    /// whatever its size. Set it before the image it describes.
+    public var imageScale: CGFloat = 1
+
     /// 1 = fit the whole image in the view. Setting it schedules a redraw.
     public var zoom: CGFloat = 1 {
-        didSet { view?.setNeedsDisplay(view?.bounds ?? .zero) }
+        didSet {
+            view?.setNeedsDisplay(view?.bounds ?? .zero)
+            if zoom != oldValue {
+                viewportChanged?()
+            }
+        }
     }
+
+    /// Called when the zoom or the size of the view changes, that is when `displayScale` may have:
+    /// whoever gives the canvas a reduced copy of the photo decides there whether it still does.
+    @ObservationIgnored public var viewportChanged: (() -> Void)?
 
     /// The largest zoom the gestures, the slider and the menu allow.
     public static let maximumZoom: CGFloat = 16
@@ -36,14 +50,27 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
     }
 
     /// Size of the view's drawable in pixels, as last laid out; zero before the view has one.
-    public private(set) var drawableSize: CGSize = .zero
+    public private(set) var drawableSize: CGSize = .zero {
+        didSet {
+            if drawableSize != oldValue {
+                viewportChanged?()
+            }
+        }
+    }
 
-    /// The zoom at which one pixel of the image is one pixel of the screen, or nil without an image
-    /// or a view to show it in. Above `maximumZoom` for an image much larger than the view.
+    /// The zoom at which one pixel of the photo is one pixel of the screen, or nil without an image
+    /// or a view to show it in. Above `maximumZoom` for a photo much larger than the view.
     public var actualSizeZoom: CGFloat? {
-        guard let image else { return nil }
-        let fit = Self.fitScale(imageSize: image.extent.size, in: drawableSize)
+        guard let image, imageScale > 0 else { return nil }
+        let fit = Self.fitScale(imageSize: image.extent.size, in: drawableSize) * imageScale
         return fit > 0 ? 1 / fit : nil
+    }
+
+    /// Screen pixels per pixel of the photo, as zoomed: 1 at actual size. Nil without an image or a
+    /// view. A reduced copy of the photo holds enough pixels for the screen while its own scale is
+    /// no smaller than this.
+    public var displayScale: CGFloat? {
+        actualSizeZoom.map { zoom / $0 }
     }
 
     /// Screen pixels per image pixel when the whole image fits the drawable (zoom 1); 0 when either
@@ -136,10 +163,10 @@ public final class CanvasRenderer: NSObject, MTKViewDelegate {
 
     /// Decodes `image` now, off the main actor, and returns it as pixels the canvas draws at once:
     /// an image of the same extent and values, backed by memory the caller owns for as long as it
-    /// keeps the result. Meant for the draft of a photo the user may step to next.
+    /// keeps the result. Meant for the proxy of a photo the user may step to next.
     ///
     /// Core Image's own cache of intermediates can't be relied on for this: once a few full-size
-    /// decodes fill it, it evicts drafts decoded ahead in no predictable order (measured: 40 ms or
+    /// decodes fill it, it evicts proxies decoded ahead in no predictable order (measured: 40 ms or
     /// 600 ms for the same step). Half-float pixels in the working space keep values above one.
     ///
     /// At user-initiated priority on purpose: a RAW is mostly decompressed on the CPU, and a

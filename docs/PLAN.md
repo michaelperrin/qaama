@@ -2078,6 +2078,110 @@ Interface
       voisine.
       Restent : le changement d'onglet reconstruit encore le formulaire ; le bouton Close
       abandonne toujours les modifications sans prévenir.
+      Mémoire de l'éditeur mesurée le 25/11/2026 (question de Michaël : 460 Mo au repos, « des
+      pics à plus de 2 Go »). Au repos, rien à reprendre : 324 Mo de tas, dont une centaine pour
+      les tampons du listage PhotoKit des 74 000 photos, et moins de 50 Mo d'images. Les pics
+      sont des surfaces de travail de Core Image, demi-flottantes, une par étape et par tuile
+      (100 Mo la demi-image de 26 Mpx) : 1,8 Go sur un HEIC de 12 Mpx, 4,7 Go dans l'app à
+      l'ouverture d'un RAW de 26 Mpx (16 Go de RAM, swap déjà entamé). Core Image les rend de
+      lui-même après environ 3 s sans rendu, d'où les dents de scie. Rejoué hors app sur trois
+      RAF publics de X-T4 (raw.pixls.us), texture de 2800 px, un processus par variante :
+      contexte actuel, 1,4 Go après le brouillon, 3,5 Go après la pleine résolution, 4,5 Go au
+      plus haut, curseur 13 ms. Aucun réglage du contexte n'y change grand-chose : `memoryTarget`
+      (1024, 512, 128 Mo) 3,9 à 4,5 Go ; `clearCaches()` sans effet immédiat ; `cacheIntermediates`
+      coupé 4,1 Go et curseur masqué à 31 ms au lieu de 6 ; contexte à part pour les voisines
+      4,6 Go. Leçon : ce n'est pas le cache des intermédiaires qui pèse, c'est le rendu en
+      pleine taille lui-même, brouillon compris (étiré à l'étendue de l'image pleine, le pipeline
+      le traite à 26 Mpx). Seule piste qui paie, mesurée comme borne haute : donner au pipeline
+      une image à la taille de l'écran (pixels du brouillon décodés une fois dans un tampon à
+      nous, sans étirement) tant que le zoom ne dépasse pas l'ajusté : 1,0 à 1,4 Go au plus
+      haut, curseur 4 ms au lieu de 13. Pas fait : chantier, les filtres dont le rayon est en
+      pixels, les masques et les retouches doivent suivre l'échelle, et la pleine taille reste
+      nécessaire au zoom et à l'export. Outils : `footprint`, `vmmap`, `heap` ; `heap` et
+      `malloc_history` suspendent l'app le temps de leur analyse (une minute de « Not
+      responding » pendant la capture).
+      Avis de Michaël sur l'image à la taille de l'écran : « c'est peut-être une bonne idée. À
+      voir peut-être comment font les autres éditeurs ? » Regardé le même jour. Photomator, en
+      boîte noire (`footprint`, `vmmap` sur le processus, un RAW de 26 Mpx ouvert) : 1,3 Go,
+      maximum du processus 3,0 Go (Michaël y avait vu 280 Mo en mosaïque et une pointe à
+      1,43 Go) ; mêmes surfaces du moteur RAW d'Apple que chez nous, dont une de 1560×1040,
+      soit le quart de l'échelle, et l'image tenue ensuite dans des textures Metal (460 Mo).
+      LightCraft (MIT ou Apache 2.0, `crates/engine/src/media/source.rs` et
+      `crates/pipeline/src/lib.rs`) : trois niveaux de source, 512 px, 2560 px et l'original,
+      le plus petit qui sert la taille demandée compte tenu du recadrage ; tous les paramètres
+      spatiaux exprimés par rapport au grand côté de l'image, le débruitage dimensionné dans
+      les pixels de l'original, pour qu'un aperçu ressemble au rendu plein réduit.
+      Inventaire fait le même jour, à la demande de Michaël, de ce qui dépend de la taille de
+      l'image donnée au pipeline. Suit déjà la taille (rien à faire) : tout ce qui est par
+      pixel (balance, exposition, courbes, contraste, couleur, mélangeur, noir et blanc, LUT),
+      le voile (analyse à 512 px), texture et clarté (fractions du grand côté, planchers de 0,6
+      et 1 px), le vignettage, la géométrie, les masques (dégradés en coordonnées unitaires,
+      adoucissement en fraction, pinceau peint à 1024 px, modèles analysés à 1024 px). En
+      pixels fixes, à multiplier par l'échelle de la source : rayon de 8 px de
+      `CIHighlightShadowAdjust`, netteté (masque flou de 1,5 px, flou jusqu'à 2 px), grain
+      (maille de 1,6 px), lissage des couleurs du débruitage hors RAW (8 px). Sans équivalent
+      à échelle réduite : le débruitage de luminance (`CINoiseReduction`) et la netteté fine,
+      justes à 100 % seulement, comme partout ailleurs. Plus délicat : le débruitage RAW (le
+      moteur d'Apple redécode, il faudrait le lui demander à l'échelle de l'aperçu) et le
+      remplissage des retouches, calculé sur les pixels de l'original (marges et croissance en
+      pixels). Plomberie : `SourceImage.draft` étire le brouillon à la taille pleine (c'est ce
+      qu'il faut défaire), `CanvasRenderer` tire zoom réel, bornes de zoom et rectangle de
+      l'image de `image.extent`, les images qui ne sont pas des RAW n'ont pas de brouillon,
+      et rien ne dit au pipeline à quelle échelle est sa source. Export, enregistrement dans
+      Photos et `PreviewCache` restent en pleine taille.
+      Fait le 25/11/2026 sur un premier périmètre, accord de Michaël : « oui, pars sur ce
+      premier périmètre » (tout sauf retouches et débruitage, qui gardent la pleine taille).
+      Mesure préalable sur les trois RAF, pour savoir quelle image réduite peut rester à
+      l'écran : décodage à demi-échelle sans le mode brouillon 230 à 340 ms et 0,7 Go ; avec
+      le mode brouillon 290 à 510 ms, 0,7 Go ; décodage plein puis réduction 250 à 450 ms et
+      1,5 Go. Écart moyen avec le décodage plein réduit : 1,2 niveau sur 255 sans le mode
+      brouillon, 1,4 avec. Leçon : à demi-échelle le mode brouillon de `CIRAWFilter` ne gagne
+      rien et s'éloigne plus du rendu plein ; il n'est plus utilisé.
+      Mise en œuvre : `SourceImage.proxy` remplace le brouillon étiré (moitié de la photo,
+      pour un RAW décodée à cette échelle par le moteur, pour les autres réduite ; rien sous
+      2048 px de grand côté) ; `RenderPipeline.apply(…, scale:)` multiplie par l'échelle les
+      quatre tailles en pixels (hautes lumières et ombres, netteté, adoucissement, grain) et
+      réduit les remplissages de retouche ; `MaskRenderer` ajuste un masque de modèle fait à
+      une autre taille, et ces masques sont calculés sur la copie réduite ; `CanvasRenderer`
+      connaît `imageScale` (le zoom réel reste celui de la photo) et prévient quand zoom ou
+      taille de vue changent ; `EditorModel.proxyServes` choisit : copie réduite tant qu'on
+      n'est pas arrêté sur la photo, puis tant que l'écran ne demande pas plus de pixels
+      qu'elle n'en a (10 % de marge une fois dessus, pour ne pas osciller) et que la recette
+      n'a ni retouche ni débruitage. Mesuré par le vrai chemin de code sur les mêmes RAF,
+      texture de 2800 px : 1,4 Go au plus haut au lieu de 4,5 ; curseur 6 ms au lieu de 13,
+      curseur sous masque 4 ms au lieu de 6 ; voisine affichée en 9 ms ; le passage à la
+      pleine taille (zoom) coûte 614 ms et remonte à 3,8 Go, rendus 3 s plus tard. Test de
+      fidélité : rendu de la copie réduite contre rendu plein réduit, moins de 3 niveaux
+      d'écart (`RenderPipelineScaleTests`). Non vérifié dans l'app par moi : à confirmer par
+      Michaël au journal (« Preview of … on the proxy / the full resolution »).
+      Restent : retouches et débruitage sur la copie réduite (les remplissages suivent déjà
+      l'échelle ; le débruitage RAW demanderait un second décodage réduit) ; netteté et grain
+      ne sont qu'approchés sous 100 % ; sur un écran plus large que la copie réduite (5K en
+      plein écran pour 26 Mpx), l'éditeur reste en pleine taille comme avant.
+      Retour de Michaël le 26/11/2026 : « ça m'a l'air de bien fonctionner. Le zoom est quand
+      même assez lent sur un RAW », et une bordure claire autour de l'image en vue ajustée dès
+      que Texture est réglée, qui disparaît en zoomant.
+      Bordure : pas due à la copie réduite, révélée par elle. Texture travaille sur une copie
+      deux fois plus petite pour les images de 2800 à 5500 px de grand côté, ce que sont
+      devenues les copies réduites des 26 Mpx (les HEIC de 12 Mpx l'avaient donc déjà). Cette
+      réduction n'était pas tenue à ses bords : Core Image la fusionne avec la mise à l'échelle
+      du canevas, et le résultat lit hors de l'image. Bande de 14 à 20 % plus claire sur
+      quelques pixels, seulement sur une image qui a du grain et pour un facteur d'affichage
+      qui ne tombe pas rond (3120 px dans 1720 oui, dans 1716 non), d'où sa reproduction
+      tardive : ni une image unie, ni un rendu à 100 %, ni le moteur logiciel ne la montrent.
+      Corrigé par `clampedToExtent()` avant la réduction (`LocalContrast.reduced`), test sur
+      une image de bruit dessinée par le canevas. Le voile réduit de la même façon mais floute
+      ensuite très large : non vérifié.
+      Zoom : chaque cran rendait tout le pipeline sur les pixels de la photo, et le premier les
+      décodait (614 ms). Désormais, tant que le zoom ou la taille de la vue bougent, le canevas
+      garde la copie réduite, agrandie au besoin, et la pleine taille n'arrive que 250 ms après
+      l'arrêt ; à partir de 100 %, on reste sur les pixels de la photo (il n'y en a pas plus à
+      l'écran que l'écran n'en a, et la copie agrandie serait floue). Pour que le retour à la
+      copie soit immédiat, ses pixels sont décodés dans un tampon du modèle une fois arrêté sur
+      la photo (`holdProxyPixels`, 52 Mo), comme la session le fait pour les voisines. La marge
+      de 10 % ne sert plus d'hystérésis : la décision se prend toujours à l'arrêt. Non mesuré
+      dans l'app. Confirmé par Michaël le 26/11/2026 : « le zoom est beaucoup plus réactif et
+      le problème de bordure a disparu ».
       Inspecteur des ajustements resserré (11/11/2026, demande de Michaël : « pas très
       belle », trop haute). Chaque curseur passe de 56 à 36 pt : libellé et valeur sur une
       ligne, piste fine dessous, pleine largeur (dans un `Form` groupé, le `Slider` système

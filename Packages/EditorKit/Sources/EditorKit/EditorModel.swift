@@ -27,9 +27,11 @@ public final class EditorModel {
     public private(set) var isClosed = false
 
     public private(set) var sourceImage: SourceImage?
-    /// True while the canvas shows the source's draft instead of its full resolution: a RAW appears
-    /// with its quick draft decode, and gets the full one once the user stays on it.
-    public private(set) var showsDraft = false
+    /// True while the canvas is given the source's proxy, a reduced copy, instead of the photo at
+    /// full resolution (see `proxyServes`).
+    public private(set) var showsProxy = false
+    /// True once the user has stayed on the photo (`settle()`).
+    @ObservationIgnored private var isSettled = false
     /// File name without extension, for export suggestions.
     public private(set) var baseName = "Photo"
     /// The original file, when the source exposes one: exports copy its metadata.
@@ -701,7 +703,8 @@ public final class EditorModel {
             }
             checkpoint = recipe
             sourceImage = photo.sourceImage
-            showsDraft = photo.sourceImage.draft != nil
+            // The canvas is the session's: from now on its zoom is about this photo.
+            renderer?.viewportChanged = { [weak self] in self?.viewportChanged() }
             renderPreview()
             logger.notice("Opened \(self.assetID, privacy: .public) in \((ContinuousClock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public)")
             resolveModelMasksIfNeeded()
@@ -727,19 +730,89 @@ public final class EditorModel {
         retouchRefresh?.cancel()
         histogramTask?.cancel()
         hueHistogramTask?.cancel()
+        viewportSettling?.cancel()
         undoManager?.removeAllActions(withTarget: self)
         if preparation == nil, let asset {
             source.endEditing(asset)
         }
     }
 
-    /// Replaces the draft on the canvas with the full resolution. The session calls it once the
-    /// user stays on the photo: the full decode of a RAW keeps the GPU busy for a few hundred
-    /// milliseconds, which stepping through photos must not queue up behind.
-    public func showFullResolution() {
-        guard showsDraft, !isClosed else { return }
-        showsDraft = false
+    /// Tells the model the user stays on the photo: the canvas gets its full resolution if the
+    /// proxy doesn't serve. Until then it only ever gets the proxy, since a full decode keeps the
+    /// GPU busy for a few hundred milliseconds, which stepping through photos must not queue up
+    /// behind. The session calls it.
+    public func settle() {
+        guard !isSettled, !isClosed else { return }
+        isSettled = true
+        refreshPreviewLevel()
+        holdProxyPixels()
+    }
+
+    /// Decodes the proxy into pixels of the model's own, unless the session already did when it
+    /// read the photo ahead: the canvas goes back to the proxy each time the zoom moves, and must
+    /// find it at once, which Core Image's cache doesn't promise once a full decode has filled it.
+    private func holdProxyPixels() {
+        guard let renderer, let sourceImage, !sourceImage.holdsProxyPixels, let proxy = sourceImage.proxy else { return }
+        Task { [weak self] in
+            guard let pixels = await renderer.rasterized(proxy), let self, !isClosed, let current = self.sourceImage, !current.holdsProxyPixels else { return }
+            self.sourceImage = current.withProxy(pixels)
+            if showsProxy {
+                renderPreview()
+            }
+        }
+    }
+
+    /// How much the canvas may enlarge the proxy before the photo's own pixels are asked for: a
+    /// window a little wider than the proxy is not worth a pipeline four times as heavy.
+    static let proxyStretch: CGFloat = 1.1
+
+    /// How long the zoom and the view must have stopped changing before the photo's own pixels are
+    /// asked for.
+    @ObservationIgnored var viewportSettleDelay: Duration = .milliseconds(250)
+    /// True while the zoom or the size of the view is changing.
+    @ObservationIgnored private var isViewportMoving = false
+    @ObservationIgnored private var viewportSettling: Task<Void, Never>?
+
+    /// Whether the proxy, rather than the photo at full resolution, is what the canvas should get
+    /// for `recipe`: until the user stays on the photo, then unless the recipe asks for something
+    /// worked out on the photo's own pixels (retouches, and noise reduction, which belongs to the
+    /// decoding), for as long as the proxy holds enough pixels for the zoom, and while the zoom moves.
+    private func proxyServes(_ recipe: EditRecipe, of sourceImage: SourceImage) -> Bool {
+        guard let scale = sourceImage.proxyScale else { return false }
+        guard isSettled else { return true }
+        guard recipe.retouches.isEmpty, sourceImage.amounts(of: recipe.sourceDenoise) == sourceImage.defaultDenoise else { return false }
+        guard let asked = renderer?.displayScale else { return true }
+        if isViewportMoving {
+            // Never the full resolution in the middle of a zoom, which would stop to decode it; and
+            // below actual size the proxy even when the photo's pixels are there: the screen shows
+            // more of them than it has itself, and the pipeline would run on them all. From actual
+            // size up they are no more than the screen's, and the proxy would show blurred.
+            return showsProxy || asked < 1
+        }
+        return asked <= scale * Self.proxyStretch
+    }
+
+    /// Renders again if what the canvas should get, proxy or full resolution, is no longer what it has.
+    private func refreshPreviewLevel() {
+        guard !isClosed, let sourceImage, proxyServes(previewRecipe, of: sourceImage) != showsProxy else { return }
         renderPreview()
+    }
+
+    /// The zoom or the size of the view changed. Every step of a zoom would otherwise run the whole
+    /// pipeline on the photo's own pixels (and the first one decode them): while it moves below
+    /// actual size, the canvas draws the proxy, enlarged if need be, and the full resolution
+    /// comes once it stops.
+    private func viewportChanged() {
+        guard !isClosed, isSettled, sourceImage?.proxy != nil else { return }
+        isViewportMoving = true
+        refreshPreviewLevel()
+        viewportSettling?.cancel()
+        viewportSettling = Task { [weak self, viewportSettleDelay] in
+            try? await Task.sleep(for: viewportSettleDelay)
+            guard !Task.isCancelled, let self else { return }
+            isViewportMoving = false
+            refreshPreviewLevel()
+        }
     }
 
     // MARK: - Recipe and history
@@ -818,18 +891,25 @@ public final class EditorModel {
     private func renderPreview() {
         guard !isClosed, let sourceImage else { return }
         let recipe = previewRecipe
-        // The draft has the full image's extent, so everything downstream treats it the same. It is
-        // shown as decoded by default: the recipe's noise reduction comes with the full resolution.
-        let original = showsDraft ? sourceImage.draft ?? sourceImage.image : sourceImage.image
-        let source = showsDraft ? original : denoisedImage(of: sourceImage, for: recipe)
+        // The proxy is shown as decoded by default: a recipe's noise reduction comes with the full
+        // resolution. The pipeline is told its scale and gives what the photo would, reduced.
+        let usesProxy = proxyServes(recipe, of: sourceImage)
+        let scale = usesProxy ? sourceImage.proxyScale ?? 1 : 1
+        let original = usesProxy ? sourceImage.proxy ?? sourceImage.image : sourceImage.image
+        let source = usesProxy ? original : denoisedImage(of: sourceImage, for: recipe)
         let shown: CIImage = if isShowingOriginal {
             original
         } else if isCropping {
             // The crop tool frames the straightened image: show it whole, the frame does the cropping.
-            RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry?.withoutCrop, masks: maskImages, fills: retouchFills, luts: luts)
+            RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry?.withoutCrop, masks: maskImages, fills: retouchFills, luts: luts, scale: scale)
         } else {
-            RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry, masks: maskImages, fills: retouchFills, luts: luts)
+            RenderPipeline.apply(recipe, to: source, geometry: recipe.geometry, masks: maskImages, fills: retouchFills, luts: luts, scale: scale)
         }
+        if usesProxy != showsProxy {
+            showsProxy = usesProxy
+            logger.notice("Preview of \(self.assetID, privacy: .public) on \(usesProxy ? "the proxy" : "the full resolution", privacy: .public)")
+        }
+        renderer?.imageScale = scale
         renderer?.image = showsMaskOverlay ? withMaskOverlay(shown, of: recipe, source: source) : shown
         scheduleHistogram(of: shown)
         scheduleHueHistogram(of: recipe, source: source)
@@ -847,7 +927,9 @@ public final class EditorModel {
         maskReferenceGeometry = frame
         let missing = recipe.layers.flatMap { $0.mask?.components ?? [] }.filter { $0.kind.needsModel && maskImages[$0.id] == nil }
         guard !missing.isEmpty, maskResolution == nil else { return }
-        let reference = GeometryRenderer.straighten(sourceImage.image, with: geometry)
+        // On the proxy when there is one: the models look at a much smaller copy anyway, and the
+        // full resolution would be decoded for that alone.
+        let reference = GeometryRenderer.straighten(sourceImage.proxy ?? sourceImage.image, with: geometry)
         pendingMaskCount = missing.count
         maskResolution = Task { [weak self] in
             for component in missing {
@@ -898,7 +980,7 @@ public final class EditorModel {
     }
 
     /// Recomputes the hue histogram when what enters the color mixer changed, once the sliders
-    /// settle. The draft and the full resolution hold the same hues: either will do.
+    /// settle. The proxy and the full resolution hold the same hues: either will do.
     private func scheduleHueHistogram(of recipe: EditRecipe, source: CIImage) {
         let upstream = RenderPipeline.colorMixerUpstream(of: recipe, layerIndex: selectedLayerIndex ?? 0)
         let key = HueHistogramSource(recipe: upstream, maskIDs: Set(maskImages.keys), fillIDs: Set(retouchFills.keys))

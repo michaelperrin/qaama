@@ -64,27 +64,34 @@ struct CanvasRendererFileTests {
 }
 
 @MainActor
-struct SourceImageDraftTests {
-    @Test func aDraftIsStretchedToCoverTheFullImageExactly() {
-        let draft = CIImage(color: CIColor(red: 0, green: 0, blue: 1)).cropped(to: CGRect(x: 0, y: 0, width: 50, height: 25))
-        let full = CGRect(x: 0, y: 0, width: 101, height: 50)
-        let stretched = SourceImageLoader.stretched(draft, to: full)
-        #expect(stretched.extent == full)
-        let context = CIContext(options: [.useSoftwareRenderer: true])
-        var pixel = [UInt8](repeating: 0, count: 4)
-        context.render(stretched, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 100, y: 49, width: 1, height: 1), format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
-        #expect(pixel[2] > 250 && pixel[3] == 255) // blue up to the far corner
+struct SourceImageProxyTests {
+    private func loadJPEG(width: Int, height: Int) throws -> SourceImage {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("proxy-\(UUID().uuidString).jpg")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let green = CIImage(color: CIColor(red: 0, green: 1, blue: 0)).cropped(to: CGRect(x: 0, y: 0, width: width, height: height))
+        try CIContext().writeJPEGRepresentation(of: green, to: url, colorSpace: #require(CGColorSpace(name: CGColorSpace.sRGB)))
+        return try SourceImageLoader.load(.file(url))
     }
 
-    @Test func aPlainImageHasNoDraft() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("draft-\(UUID().uuidString).jpg")
-        defer { try? FileManager.default.removeItem(at: url) }
-        let green = CIImage(color: CIColor(red: 0, green: 1, blue: 0)).cropped(to: CGRect(x: 0, y: 0, width: 40, height: 20))
-        try CIContext().writeJPEGRepresentation(of: green, to: url, colorSpace: #require(CGColorSpace(name: CGColorSpace.sRGB)))
-        let loaded = try SourceImageLoader.load(.file(url))
-        #expect(loaded.draftPixels == nil && loaded.draft == nil && !loaded.isRAW)
+    @Test func aSmallImageHasNoProxy() throws {
+        let loaded = try loadJPEG(width: 40, height: 20)
+        #expect(loaded.proxy == nil && loaded.proxyScale == nil && !loaded.isRAW)
         let pixels = CIImage(color: .blue).cropped(to: CGRect(x: 0, y: 0, width: 20, height: 10))
-        #expect(loaded.withDraftPixels(pixels).draft?.extent == loaded.image.extent)
+        #expect(loaded.withProxy(pixels).proxyScale == 0.5)
+    }
+
+    @Test func aLargeImageHasAProxyOfHalfItsSizeInWholePixels() throws {
+        let loaded = try loadJPEG(width: 2401, height: 1601)
+        #expect(loaded.pixelSize == CGSize(width: 2401, height: 1601))
+        #expect(loaded.proxy?.extent == CGRect(x: 0, y: 0, width: 1200, height: 800))
+        let scale = try #require(loaded.proxyScale)
+        #expect(abs(scale - 0.5) < 0.001)
+        // Opaque up to its far corner: the odd row and column are dropped, not half covered.
+        let context = CIContext(options: [.useSoftwareRenderer: true])
+        var pixel = [UInt8](repeating: 0, count: 4)
+        try context.render(#require(loaded.proxy), toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 1199, y: 799, width: 1, height: 1),
+                           format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+        #expect(pixel[1] > 250 && pixel[3] == 255)
     }
 
     @Test func rasterizingKeepsTheExtentAndTheValuesIncludingAboveOne() async throws {
@@ -134,6 +141,33 @@ struct CanvasZoomTests {
         #expect(renderer.actualSizeZoom == 4)
         renderer.setZoom(100)
         #expect(renderer.zoom == CanvasRenderer.maximumZoom)
+    }
+
+    @MainActor @Test func aReducedCopyKeepsThePhotosActualSizeAndTheCanvasTellsWhenItsViewportChanges() throws {
+        let renderer = try #require(CanvasRenderer())
+        var changes = 0
+        renderer.viewportChanged = { changes += 1 }
+        // Half of a 6000 × 4000 photo.
+        renderer.imageScale = 0.5
+        renderer.image = CIImage(color: .red).cropped(to: CGRect(x: 0, y: 0, width: 3000, height: 2000))
+        #expect(renderer.displayScale == nil)
+        let view = renderer.makeView()
+        renderer.mtkView(view, drawableSizeWillChange: CGSize(width: 1500, height: 1500))
+        #expect(changes == 1)
+        #expect(renderer.actualSizeZoom == 4)
+        #expect(renderer.displayScale == 0.25)
+        renderer.setZoom(2)
+        #expect(changes == 2)
+        #expect(renderer.displayScale == 0.5)
+        renderer.setZoom(2)
+        renderer.mtkView(view, drawableSizeWillChange: CGSize(width: 1500, height: 1500))
+        #expect(changes == 2)
+        // The same photo at full size is drawn in the same place, at the same scale.
+        let rect = renderer.imageRect(inViewOfSize: CGSize(width: 750, height: 750))
+        renderer.imageScale = 1
+        renderer.image = CIImage(color: .red).cropped(to: CGRect(x: 0, y: 0, width: 6000, height: 4000))
+        #expect(renderer.displayScale == 0.5)
+        #expect(renderer.imageRect(inViewOfSize: CGSize(width: 750, height: 750)) == rect)
     }
 
     @MainActor @Test func zoomStopsAtFitAndRecentersThere() throws {

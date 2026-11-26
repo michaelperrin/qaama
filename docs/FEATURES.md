@@ -334,9 +334,13 @@ can feed a website one day. Dates are when the feature landed.
 - Step to the previous or next photo of the library with the left and right arrow keys, in the
   grid's order and within its filters; unsaved edits prompt to save, discard or stay. The photo
   shows first, the inspector follows once you stop on a photo (2026-11-05).
-- Fast RAW browsing: a RAW first appears as a quick draft decode by the same RAW engine (same
-  colors), and gets its full resolution once you stay on it; the photos before and after the one
-  on screen are read and decoded ahead, so stepping to them is immediate (2026-11-05).
+- Fast RAW browsing: a RAW first appears as a half-size decode by the same RAW engine (same
+  colors); the photos before and after the one on screen are read and decoded ahead, so stepping
+  to them is immediate (2026-11-05, 2026-11-25).
+- Light on memory: while the photo fits the window, the editor works on a half-size copy of it,
+  and on the photo's own pixels once you zoom in beyond what that copy holds; sliders respond
+  faster and a 26 MP RAW takes about a third of the memory. Exports and saved edits are always
+  made from the full photo (2026-11-25).
 
 ### Adjustments
 - A switch on every group (white balance, light, curves, color, color mixer, detail, denoise,

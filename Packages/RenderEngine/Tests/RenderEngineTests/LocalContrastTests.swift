@@ -1,6 +1,7 @@
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import EditModel
+import Metal
 @testable import RenderEngine
 import Testing
 
@@ -130,5 +131,42 @@ struct LocalContrastTests {
         set.setEnabled(false, for: .effects)
         let image = flat(0.18)
         #expect(RenderPipeline.apply(EditRecipe(adjustments: set), to: image) === image)
+    }
+
+    /// On the canvas, as the editor draws it: a photo whose texture is worked out on a copy half
+    /// its size (2800 to 5500 pixels along its long edge) showed a band a fifth lighter along its
+    /// borders. It takes grain to show, a flat color having no detail to raise, and a view the
+    /// photo doesn't fit by a round factor: Core Image then merges the two scales into one that
+    /// reads beyond the image.
+    @MainActor @Test func textureLeavesNoBandAlongTheBorders() throws {
+        let renderer = try #require(CanvasRenderer())
+        let width = 1720, height = 1147
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
+        descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+        descriptor.storageMode = .shared
+        let texture = try #require(renderer.device.makeTexture(descriptor: descriptor))
+        let queue = try #require(renderer.device.makeCommandQueue())
+        // Mean green of each of the twelve leftmost columns, as drawn.
+        func columns(_ image: CIImage) throws -> [Double] {
+            let commandBuffer = try #require(queue.makeCommandBuffer())
+            #expect(renderer.render(image, into: texture, commandBuffer: commandBuffer, pointScale: 1))
+            commandBuffer.commit()
+            commandBuffer.waitUntilCompleted()
+            var bytes = [UInt8](repeating: 0, count: width * height * 4)
+            texture.getBytes(&bytes, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+            return (0 ..< 12).map { x in (50 ..< height - 50).reduce(0.0) { $0 + Double(bytes[($1 * width + x) * 4 + 1]) } / Double(height - 100) }
+        }
+        let extent = CGRect(x: 0, y: 0, width: 3120, height: 2080)
+        #expect(LocalContrast.reduction(forSigma: LocalContrast.textureSigmaFraction * extent.width, pixelsKept: 2.5) == 2)
+        let level = CIVector(x: 0.2, y: 0, z: 0, w: 0)
+        let grainy = try #require(CIFilter(name: "CIRandomGenerator")?.outputImage).applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": level, "inputGVector": level, "inputBVector": level,
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0), "inputBiasVector": CIVector(x: 0.2, y: 0.2, z: 0.2, w: 1),
+        ]).cropped(to: extent)
+        let plain = try columns(grainy)
+        let textured = try columns(RenderPipeline.apply(EditRecipe(adjustments: AdjustmentSet(texture: 1)), to: grainy))
+        let gains = zip(plain, textured).map { $1 / $0 }
+        // The border gains what the columns further in do.
+        #expect(gains.allSatisfy { abs($0 / gains[11] - 1) < 0.05 }, "gains from the border in: \(gains.map { ($0 * 100).rounded() / 100 })")
     }
 }

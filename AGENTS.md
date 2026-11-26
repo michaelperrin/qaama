@@ -96,6 +96,18 @@ Experiments/      Throwaway feasibility prototypes, never linked into the app
   photo's `CIRAWFilter`), other images filtered (`DenoiseFilter`). Render through
   `EditRenderer.render(source:recipe:)`, which does it; `SourceImage.image` alone is the original.
   Never mark an image made per slider position as a cached intermediate (see `docs/PLAN.md`).
+- The editor works on a reduced copy of the photo (`SourceImage.proxy`, half its size) for as long
+  as the screen asks for no more pixels than it holds and the recipe has neither retouches nor
+  noise reduction of its own (`EditorModel.proxyServes`), and tells the pipeline its `scale`. The
+  pipeline must give what the photo would, reduced: size a filter as a share of the image, or
+  multiply what is in pixels of the photo by `scale` (see `RenderPipelineScaleTests`). The canvas
+  fits whatever image it is given and knows its `imageScale`; exports always take the photo.
+  While the zoom moves below actual size the canvas keeps the proxy, and the photo's own pixels
+  come once it stops.
+- An image reduced inside a filter is held at its borders first (`clampedToExtent()`, then the
+  scale, then the crop): Core Image merges that scale with the one that fits the photo in the
+  view, and the merged one reads beyond the image (a light band along the borders with texture,
+  at some sizes of the view only). Check such a filter as the canvas draws it, on a grainy image.
 - Retouches are strokes in the recipe, in the original's coordinates. What fills them is computed
   by `RetouchRenderer` once per stroke, off the main actor, and only composited by the pipeline;
   each fill depends on the retouches before it, and on the noise reduction of the original it

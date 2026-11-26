@@ -253,7 +253,13 @@ nonisolated enum LocalContrast {
         guard factor > 1 else { return image }
         // The first halving as a plain scale, which reads four pixels for one and runs in a single
         // pass over the full-size image; Core Image's own reduction takes two passes per halving.
-        let half = image.transformed(by: CGAffineTransform(scaleX: 0.5, y: 0.5))
+        // Held at its borders first. Core Image merges this scale with the one that fits the photo
+        // in the view, and the result reads beyond the image: anything with grain got a band a fifth
+        // lighter and a few pixels wide along its borders when the copy is used as it is (a factor
+        // of 2: photos 2800 to 5500 pixels long, and the proxies of larger ones).
+        let extent = image.extent
+        let half = image.clampedToExtent().transformed(by: CGAffineTransform(scaleX: 0.5, y: 0.5))
+            .cropped(to: CGRect(x: extent.minX / 2, y: extent.minY / 2, width: extent.width / 2, height: extent.height / 2))
         guard factor > 2 else { return half }
         let scale = CIFilter.lanczosScaleTransform()
         scale.inputImage = half

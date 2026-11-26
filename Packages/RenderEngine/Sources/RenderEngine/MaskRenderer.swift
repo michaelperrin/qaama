@@ -41,12 +41,23 @@ public nonisolated enum MaskRenderer {
 
     // MARK: - Components
 
+    /// `image` scaled to cover `extent` exactly, when it was made for the same picture at another size.
+    static func fitted(_ image: CIImage, to extent: CGRect) -> CIImage {
+        let from = image.extent
+        guard from != extent, !from.isInfinite, from.width > 0, from.height > 0 else { return image.cropped(to: extent) }
+        let transform = CGAffineTransform(translationX: extent.minX, y: extent.minY)
+            .scaledBy(x: extent.width / from.width, y: extent.height / from.height)
+            .translatedBy(x: -from.minX, y: -from.minY)
+        return image.clampedToExtent().transformed(by: transform).cropped(to: extent)
+    }
+
     static func render(_ kind: MaskKind, reference: CIImage, resolved: CIImage?) -> CIImage? {
         let extent = reference.extent
         switch kind {
         case .subject, .background, .people, .sky, .scene:
-            // Model-based components arrive precomputed.
-            return resolved.map { $0.cropped(to: extent) }
+            // Model-based components arrive precomputed, on the photo or on its proxy: a mask is
+            // smooth and was worked out much smaller than either (`ModelMasks`).
+            return resolved.map { fitted($0, to: extent) }
         case let .brush(brush):
             return BrushRenderer.render(brush, extent: extent)
         case let .linearGradient(gradient):

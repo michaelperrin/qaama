@@ -17,11 +17,16 @@ public nonisolated struct SourceImage: Sendable {
     /// The photo at full resolution, as it is decoded when nothing is asked: the original. What a
     /// recipe is applied to is `image(denoise:)`.
     public let image: CIImage
-    /// The pixels of a quick stand-in for `image`, for photos that are slow to decode: a RAW's draft
-    /// decode at reduced scale, by the same RAW engine, so colors match. Smaller than `image`; use
-    /// `draft` to show it. Nil when `image` is quick itself. It never carries a recipe's noise
-    /// reduction: it is on screen for a moment, at a scale that hides the noise anyway.
-    public let draftPixels: CIImage?
+    /// A reduced copy of `image`, for the screen: the editor works on it for as long as the screen
+    /// asks for no more pixels than it holds, since every stage of the pipeline costs memory and
+    /// time in proportion to the pixels it is given (measured on 26 MP: 4.5 GB and 13 ms per slider
+    /// move at full size, 1.4 GB and 4 ms on the half). A RAW's is decoded at that scale by the same
+    /// RAW engine, so colors match. Nil for a photo too small to gain anything. It never carries a
+    /// recipe's noise reduction: a recipe that sets one is rendered on `image(denoise:)`.
+    public let proxy: CIImage?
+    /// True when `proxy` is pixels already decoded (`withProxy`), which can be drawn at once
+    /// whatever Core Image has kept or let go of in the meantime.
+    public let holdsProxyPixels: Bool
     public let isRAW: Bool
     /// Decodes a RAW again with other amounts of noise reduction; nil for other images.
     private let decoder: RAWDecoder?
@@ -29,26 +34,28 @@ public nonisolated struct SourceImage: Sendable {
         image.extent.size
     }
 
-    /// `draftPixels` stretched to the extent of `image`, so the pipeline can't tell it from the
-    /// real thing: masks, crops and pixel-sized filters land where they will on it.
-    public var draft: CIImage? {
-        draftPixels.map { SourceImageLoader.stretched($0, to: image.extent) }
+    /// Pixels of `proxy` per pixel of `image`: what the pipeline is told when it is given the proxy
+    /// (`RenderPipeline.apply`'s `scale`). Nil without a proxy.
+    public var proxyScale: CGFloat? {
+        guard let proxy, image.extent.width > 0 else { return nil }
+        return proxy.extent.width / image.extent.width
     }
 
-    public init(image: CIImage, draftPixels: CIImage? = nil, isRAW: Bool) {
-        self.init(image: image, draftPixels: draftPixels, isRAW: isRAW, decoder: nil)
+    public init(image: CIImage, proxy: CIImage? = nil, isRAW: Bool) {
+        self.init(image: image, proxy: proxy, isRAW: isRAW, decoder: nil)
     }
 
-    init(image: CIImage, draftPixels: CIImage?, isRAW: Bool, decoder: RAWDecoder?) {
+    init(image: CIImage, proxy: CIImage?, isRAW: Bool, decoder: RAWDecoder?, holdsProxyPixels: Bool = false) {
         self.image = image
-        self.draftPixels = draftPixels
+        self.proxy = proxy
+        self.holdsProxyPixels = holdsProxyPixels
         self.isRAW = isRAW
         self.decoder = decoder
     }
 
-    /// The same photo with other draft pixels, typically the same ones already decoded.
-    public func withDraftPixels(_ pixels: CIImage) -> SourceImage {
-        SourceImage(image: image, draftPixels: pixels, isRAW: isRAW, decoder: decoder)
+    /// The same photo with its proxy decoded into pixels (`CanvasRenderer.rasterized`).
+    public func withProxy(_ pixels: CIImage) -> SourceImage {
+        SourceImage(image: image, proxy: pixels, isRAW: isRAW, decoder: decoder, holdsProxyPixels: true)
     }
 
     // MARK: - Noise reduction
@@ -78,9 +85,9 @@ public nonisolated struct SourceImage: Sendable {
     }
 }
 
-/// Decodes a `RenderSource` into a `CIImage`. Decoding is lazy in Core Image, but RAW demosaicing is
-/// expensive, so the result is marked as a cacheable intermediate: the pipeline downstream re-runs on
-/// every slider change, the RAW stage does not.
+/// Decodes a `RenderSource` into a `CIImage` and its proxy. Decoding is lazy in Core Image, but RAW
+/// demosaicing is expensive, so the results are marked as cacheable intermediates: the pipeline
+/// downstream re-runs on every slider change, the RAW stage does not.
 public nonisolated enum SourceImageLoader {
     public enum LoadError: Error, LocalizedError {
         case unreadable(URL)
@@ -95,41 +102,54 @@ public nonisolated enum SourceImageLoader {
     public static func load(_ source: RenderSource) throws -> SourceImage {
         switch source {
         case let .image(cgImage):
-            return SourceImage(image: CIImage(cgImage: cgImage).insertingIntermediate(cache: true), isRAW: false)
+            return plain(CIImage(cgImage: cgImage))
         case let .file(url):
             if isRAW(url), let raw = CIRAWFilter(imageURL: url) {
                 // An output image keeps the settings the filter had when it was asked for, so one
-                // filter (50 ms to set up) gives both the draft and the full decode.
-                raw.isDraftModeEnabled = true
-                raw.scaleFactor = draftScale
-                let draft = raw.outputImage
-                raw.isDraftModeEnabled = false
+                // filter (50 ms to set up) gives both the proxy and the full decode.
+                raw.scaleFactor = Float(proxyScale)
+                let reduced = raw.outputImage
                 raw.scaleFactor = 1
                 if let output = raw.outputImage {
                     let full = output.insertingIntermediate(cache: true)
+                    let proxy = hasProxy(full.extent.size) ? reduced?.insertingIntermediate(cache: true) : nil
                     // The filter stays with the photo: its noise reduction is set through it.
-                    return SourceImage(image: full, draftPixels: draft?.insertingIntermediate(cache: true), isRAW: true, decoder: RAWDecoder(raw))
+                    return SourceImage(image: full, proxy: proxy, isRAW: true, decoder: RAWDecoder(raw))
                 }
             }
             guard let image = CIImage(contentsOf: url, options: [.applyOrientationProperty: true]) else {
                 throw LoadError.unreadable(url)
             }
-            return SourceImage(image: image.insertingIntermediate(cache: true), isRAW: false)
+            return plain(image)
         }
     }
 
-    /// Scale of a RAW's draft decode. Measured on a 26 MP X-Trans file: about 100 ms at half scale
-    /// in draft mode against 250 to 450 ms for the full decode; a quarter is no faster, and half
-    /// still fills a 3000-pixel-wide canvas.
-    static let draftScale: Float = 0.5
+    /// A photo that is not a RAW: its proxy is the image itself, reduced.
+    private static func plain(_ decoded: CIImage) -> SourceImage {
+        let image = decoded.insertingIntermediate(cache: true)
+        guard hasProxy(image.extent.size) else { return SourceImage(image: image, isRAW: false) }
+        // Whole pixels: a fractional extent would leave a half-transparent row at the edge.
+        let size = CGSize(width: (image.extent.width * proxyScale).rounded(.down), height: (image.extent.height * proxyScale).rounded(.down))
+        let reduced = image
+            .transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
+            .transformed(by: CGAffineTransform(scaleX: size.width / image.extent.width, y: size.height / image.extent.height))
+            .cropped(to: CGRect(origin: .zero, size: size))
+        return SourceImage(image: image, proxy: reduced.insertingIntermediate(cache: true), isRAW: false)
+    }
 
-    /// `draft` scaled to cover `extent` exactly, so it can stand in for the image of that extent.
-    static func stretched(_ draft: CIImage, to extent: CGRect) -> CIImage {
-        guard draft.extent.width > 0, draft.extent.height > 0, !draft.extent.isInfinite else { return draft }
-        let transform = CGAffineTransform(translationX: extent.minX, y: extent.minY)
-            .scaledBy(x: extent.width / draft.extent.width, y: extent.height / draft.extent.height)
-            .translatedBy(x: -draft.extent.minX, y: -draft.extent.minY)
-        return draft.transformed(by: transform).cropped(to: extent)
+    /// Scale of a photo's proxy. For a RAW, measured on three 26 MP X-Trans files: decoding at half
+    /// scale takes 230 to 340 ms and 0.7 GB, where decoding in full and reducing takes 250 to 450 ms
+    /// and 1.5 GB; the engine's draft mode is no faster at that scale and further from the full
+    /// decode (1.4 against 1.2 levels of 255 on average), so it is not used. Half of a 26 MP photo
+    /// still fills a canvas 3000 pixels wide.
+    static let proxyScale: CGFloat = 0.5
+
+    /// Long edge under which a photo gets no proxy: it is cheap as it is, and its half would not
+    /// fill a canvas.
+    static let smallestLongEdgeWithProxy: CGFloat = 2048
+
+    static func hasProxy(_ size: CGSize) -> Bool {
+        max(size.width, size.height) >= smallestLongEdgeWithProxy
     }
 
     public static func isRAW(_ url: URL) -> Bool {

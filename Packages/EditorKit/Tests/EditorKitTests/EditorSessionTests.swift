@@ -159,34 +159,85 @@ struct EditorSessionTests {
         #expect(!source.inputRequests.contains("stub-2"))
     }
 
-    @Test func aDraftIsShownFirstAndTheFullResolutionOnRequest() async throws {
+    @Test func theProxyIsShownUntilTheScreenOrTheRecipeAsksForThePhotosOwnPixels() async throws {
         let url = try makeImage()
         defer { try? FileManager.default.removeItem(at: url) }
         let source = StubSource(imageURL: url)
         let renderer = try #require(CanvasRenderer())
-        let extent = CGRect(x: 0, y: 0, width: 64, height: 32)
+        // The whole photo fits the view at a quarter of its size: its half, the proxy, is plenty.
+        renderer.mtkView(renderer.makeView(), drawableSizeWillChange: CGSize(width: 1000, height: 1000))
+        let extent = CGRect(x: 0, y: 0, width: 4000, height: 2000)
         let full = CIImage(color: CIColor(red: 1, green: 0, blue: 0)).cropped(to: extent)
-        // Half the size, as a RAW's draft is: the model shows it stretched over the full extent.
-        let draft = CIImage(color: CIColor(red: 0, green: 0, blue: 1)).cropped(to: CGRect(x: 0, y: 0, width: 32, height: 16))
-        let photo = PreparedPhoto(keywords: ["sea"], input: EditingInput(imageURL: url), sourceImage: SourceImage(image: full, draftPixels: draft, isRAW: true))
+        let proxy = CIImage(color: CIColor(red: 0, green: 0, blue: 1)).cropped(to: CGRect(x: 0, y: 0, width: 2000, height: 1000))
+        let photo = PreparedPhoto(keywords: ["sea"], input: EditingInput(imageURL: url), sourceImage: SourceImage(image: full, proxy: proxy, isRAW: true))
         let model = EditorModel(assetID: "stub", source: source, renderer: renderer, preparation: Task { photo })
 
-        func centerPixel() throws -> [UInt8] {
+        // Which of the two the canvas was given: the blue proxy or the red photo.
+        func shown() throws -> String {
+            let image = try #require(renderer.image)
             var pixel = [UInt8](repeating: 0, count: 4)
-            try CIContext(options: [.useSoftwareRenderer: true]).render(#require(renderer.image), toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 32, y: 16, width: 1, height: 1),
-                                                                        format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
-            return pixel
+            CIContext(options: [.useSoftwareRenderer: true]).render(image, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: image.extent.midX, y: image.extent.midY, width: 1, height: 1),
+                                                                    format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+            return pixel[2] > 250 ? "proxy" : pixel[0] > 250 ? "full" : "neither"
         }
 
         await model.open()
-        #expect(model.isOpen && model.showsDraft)
+        #expect(model.isOpen && model.showsProxy)
         #expect(model.keywords == ["sea"])
         #expect(model.sourceImage?.pixelSize == extent.size)
-        #expect(try centerPixel()[2] > 250) // the blue draft
+        #expect(try shown() == "proxy")
+        #expect(renderer.imageScale == 0.5 && renderer.actualSizeZoom == 4)
 
-        model.showFullResolution()
-        #expect(!model.showsDraft)
-        #expect(try centerPixel()[0] > 250) // the red full image
+        // Until the user stays on the photo, the proxy whatever is asked.
+        model.viewportSettleDelay = .milliseconds(5)
+        renderer.setZoom(4)
+        await settle()
+        #expect(model.showsProxy)
+        renderer.setZoom(1)
+
+        // Staying on the photo changes nothing while the proxy serves; its pixels are decoded.
+        model.settle()
+        await settle()
+        #expect(try model.showsProxy && shown() == "proxy")
+        #expect(model.sourceImage?.holdsProxyPixels == true)
+
+        // Zoomed in beyond what the proxy holds: the photo's own pixels, once the zoom has stopped.
+        renderer.setZoom(3)
+        renderer.setZoom(4)
+        #expect(model.showsProxy)
+        await settle()
+        #expect(try !model.showsProxy && shown() == "full")
+        #expect(renderer.imageScale == 1 && renderer.actualSizeZoom == 4)
+
+        // Further in, the photo's pixels stay: there are no more of them on screen than the screen has.
+        renderer.setZoom(6)
+        #expect(!model.showsProxy)
+        await settle()
+        #expect(!model.showsProxy)
+
+        // The proxy again as soon as the zoom moves below actual size, and for good where it serves.
+        renderer.setZoom(3)
+        #expect(try model.showsProxy && shown() == "proxy")
+        renderer.setZoom(1)
+        await settle()
+        #expect(model.showsProxy)
+
+        // Zoom 2 shows the proxy pixel for pixel: a little beyond is not worth the full resolution.
+        renderer.setZoom(2.1)
+        await settle()
+        #expect(model.showsProxy)
+        renderer.setZoom(2.3)
+        await settle()
+        #expect(!model.showsProxy)
+        renderer.setZoom(1)
+        await settle()
+        #expect(model.showsProxy)
+
+        // Noise reduction belongs to the decoding of the photo: the proxy doesn't carry it.
+        model.recipe.global.denoise = Denoise(luminance: 0.5)
+        #expect(!model.showsProxy && renderer.imageScale == 1)
+        model.recipe.global.denoise = nil
+        #expect(model.showsProxy)
 
         // Prepared by someone else: releasing the editing input is theirs to do.
         model.close()

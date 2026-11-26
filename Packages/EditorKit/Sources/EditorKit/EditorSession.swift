@@ -11,9 +11,9 @@ import RenderEngine
 /// canvas and its Core Image context here, the views built on top of them in the app.
 ///
 /// The photo on screen comes first, the rest follows once the user stays on it (`settleDelay`):
-/// its full resolution if it appeared as a draft, the inspector (`settledModel`), then the two
+/// its full resolution if its proxy doesn't serve, the inspector (`settledModel`), then the two
 /// photos next to it, read and decoded ahead so that stepping to them is immediate. Stepping on
-/// before that cancels it all, so going quickly through photos only ever pays for drafts.
+/// before that cancels it all, so going quickly through photos only ever pays for proxies.
 @Observable
 public final class EditorSession {
     public let source: any LibrarySource
@@ -34,7 +34,7 @@ public final class EditorSession {
     /// What was read ahead for the current photo and its neighbors, in flight or done. The session
     /// owns what the source holds for each of them and releases it in `release(_:)`.
     @ObservationIgnored private var preparations: [LibraryAsset.ID: Task<PreparedPhoto, Error>] = [:]
-    /// Photos read ahead whose draft is already decoded into pixels of its own.
+    /// Photos read ahead whose proxy is already decoded into pixels of its own.
     @ObservationIgnored private var decoded: Set<LibraryAsset.ID> = []
     /// Which way the user last stepped: +1 toward the next photo, -1 toward the previous one. The
     /// photo further that way is the one most likely to be asked for, so it is read ahead first.
@@ -88,7 +88,7 @@ public final class EditorSession {
         guard !model.isClosed else { return }
         if await waitUntilPresented(model) {
             let size = model.sourceImage?.pixelSize ?? .zero
-            let kind = model.sourceImage?.isRAW == true ? (model.showsDraft ? "RAW draft" : "RAW") : "image"
+            let kind = (model.sourceImage?.isRAW == true ? "RAW" : "image") + (model.showsProxy ? " proxy" : "")
             let format = Duration.UnitsFormatStyle.units(allowed: [.milliseconds])
             logger.notice("Showed \(kind, privacy: .public) \(Int(size.width))x\(Int(size.height)) \((ContinuousClock.now - self.shownAt).formatted(format), privacy: .public) after it was asked for: opened in \((opened - self.shownAt).formatted(format), privacy: .public), first frame \((ContinuousClock.now - opened).formatted(format), privacy: .public) (\(model.assetID, privacy: .public))")
         }
@@ -96,10 +96,10 @@ public final class EditorSession {
         guard !Task.isCancelled, !model.isClosed else { return }
 
         let settled = ContinuousClock.now
-        let hadDraft = model.showsDraft
-        model.showFullResolution()
+        let hadProxy = model.showsProxy
+        model.settle()
         settledModel = model
-        if hadDraft, await waitUntilPresented(model) {
+        if hadProxy, !model.showsProxy, await waitUntilPresented(model) {
             logger.notice("Full resolution \((ContinuousClock.now - settled).formatted(.units(allowed: [.milliseconds])), privacy: .public) after settling (\(model.assetID, privacy: .public))")
         }
         await prepareNeighbors(of: model)
@@ -123,7 +123,7 @@ public final class EditorSession {
     }
 
     /// Reads the photos on both sides ahead, the one in the direction of travel first, and decodes
-    /// their drafts so the canvas can draw them at once. Photos that are no longer next to the
+    /// their proxies so the canvas can draw them at once. Photos that are no longer next to the
     /// current one are let go.
     private func prepareNeighbors(of model: EditorModel) async {
         let neighbors = [direction, -direction].compactMap { source.neighbor(of: model.assetID, offset: $0) }
@@ -143,15 +143,15 @@ public final class EditorSession {
                 }
                 continue
             }
-            guard !Task.isCancelled, !model.isClosed, !decoded.contains(id), let draft = photo.sourceImage.draftPixels,
-                  let pixels = await renderer?.rasterized(draft) else { continue }
-            // Unless the photo was let go or asked for again meanwhile, hand out the decoded draft
+            guard !Task.isCancelled, !model.isClosed, !decoded.contains(id), let proxy = photo.sourceImage.proxy,
+                  let pixels = await renderer?.rasterized(proxy) else { continue }
+            // Unless the photo was let go or asked for again meanwhile, hand out the decoded proxy
             // from now on. The editing input is the same one: releasing it works as before.
             guard preparations[id] == preparation else { continue }
-            let ready = PreparedPhoto(keywords: photo.keywords, input: photo.input, sourceImage: photo.sourceImage.withDraftPixels(pixels), metadata: photo.metadata)
+            let ready = PreparedPhoto(keywords: photo.keywords, input: photo.input, sourceImage: photo.sourceImage.withProxy(pixels), metadata: photo.metadata)
             preparations[id] = Task { ready }
             decoded.insert(id)
-            logger.notice("Read \(id, privacy: .public) ahead in \((ContinuousClock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public), draft decoded")
+            logger.notice("Read \(id, privacy: .public) ahead in \((ContinuousClock.now - start).formatted(.units(allowed: [.milliseconds])), privacy: .public), proxy decoded")
         }
     }
 

@@ -10,6 +10,11 @@ import EditModel
 /// the adjustments run in the engine's fixed order: white balance, exposure, dehaze, highlights and
 /// shadows, texture and clarity, black point, contrast, curves, color, selective color, detail, black
 /// and white, the LUT, then effects.
+///
+/// The image may be a reduced copy of the photo (`SourceImage.proxy`), `scale` saying how many of
+/// its pixels make one of the photo's: the result is then what the photo itself would give, reduced
+/// as much. Whatever is sized in pixels of the photo (a radius, a grain) must be multiplied by it;
+/// what is sized as a share of the image follows by itself.
 public nonisolated enum RenderPipeline {
     public static func apply(_ recipe: EditRecipe, to image: CIImage) -> CIImage {
         apply(recipe, to: image, geometry: recipe.geometry)
@@ -19,11 +24,13 @@ public nonisolated enum RenderPipeline {
     /// then crop. `geometry` can be overridden (the crop tool shows the straightened image without
     /// its crop); `masks` holds the precomputed images of model-based mask components, by component
     /// id, and `fills` the precomputed fills of the retouches, by retouch id (`RetouchRenderer`).
-    /// `luts` is where the tables the recipe names are read from.
+    /// `luts` is where the tables the recipe names are read from. `scale` is 1 for the photo itself;
+    /// the fills, which are in the photo's pixels, are reduced with it.
     public static func apply(_ recipe: EditRecipe, to image: CIImage, geometry: Geometry?, masks: [UUID: CIImage] = [:],
-                             fills: [UUID: CIImage] = [:], luts: LUTLibrary = .shared) -> CIImage
+                             fills: [UUID: CIImage] = [:], luts: LUTLibrary = .shared, scale: CGFloat = 1) -> CIImage
     {
-        var current = recipe.retouches.isEmpty ? image : RetouchRenderer.apply(recipe.retouches, fills: fills, to: image)
+        let placedFills = scale == 1 ? fills : fills.mapValues { $0.transformed(by: CGAffineTransform(scaleX: scale, y: scale)) }
+        var current = recipe.retouches.isEmpty ? image : RetouchRenderer.apply(recipe.retouches, fills: placedFills, to: image)
         if let geometry {
             current = GeometryRenderer.straighten(current, with: geometry)
         }
@@ -32,9 +39,9 @@ public nonisolated enum RenderPipeline {
         let frame = geometry.map { GeometryRenderer.cropRect(of: $0, in: reference.extent) }
         for (index, layer) in recipe.layers.enumerated() where layer.isEnabled && !layer.adjustments.isIdentity {
             if index == 0 || layer.mask == nil {
-                current = apply(layer.adjustments, to: current, frame: frame, luts: luts)
+                current = apply(layer.adjustments, to: current, frame: frame, luts: luts, scale: scale)
             } else if let mask = layer.mask, let maskImage = MaskRenderer.render(mask, reference: reference, resolved: masks) {
-                let adjusted = apply(layer.adjustments, to: current, frame: frame, luts: luts)
+                let adjusted = apply(layer.adjustments, to: current, frame: frame, luts: luts, scale: scale)
                 let blend = CIFilter.blendWithMask()
                 blend.inputImage = adjusted
                 blend.backgroundImage = current
@@ -69,7 +76,9 @@ public nonisolated enum RenderPipeline {
 
     /// One layer's adjustments. `frame` is the part of the image that will be kept, for the
     /// adjustments that depend on the final frame (the vignette); nil means the whole image.
-    public static func apply(_ adjustments: AdjustmentSet, to image: CIImage, frame: CGRect? = nil, luts: LUTLibrary = .shared) -> CIImage {
+    public static func apply(_ adjustments: AdjustmentSet, to image: CIImage, frame: CGRect? = nil, luts: LUTLibrary = .shared,
+                             scale: CGFloat = 1) -> CIImage
+    {
         // Without the groups that are switched off: their values stay in the recipe, unused.
         let adjustments = adjustments.effective
         var output = image
@@ -106,7 +115,7 @@ public nonisolated enum RenderPipeline {
             // gentle tone-curve push on the upper range instead.
             tones.highlightAmount = Float(1 + min(highlights, 0) * 0.7)
             tones.shadowAmount = Float(shadows)
-            tones.radius = 8
+            tones.radius = Float(Self.toneRadius * scale)
             output = tones.outputImage ?? output
             if highlights > 0 {
                 let curve = CIFilter.toneCurve()
@@ -167,13 +176,13 @@ public nonisolated enum RenderPipeline {
             if sharpness > 0 {
                 let filter = CIFilter.unsharpMask()
                 filter.inputImage = output
-                filter.radius = 1.5
+                filter.radius = Float(Self.sharpenRadius * scale)
                 filter.intensity = Float(sharpness * 1.5)
                 output = filter.outputImage ?? output
             } else {
                 let blur = CIFilter.gaussianBlur()
                 blur.inputImage = output
-                blur.radius = Float(-sharpness * 2)
+                blur.radius = Float(-sharpness * Self.softenRadius * scale)
                 // The blur grows the extent; keep the image's own frame.
                 output = (blur.outputImage ?? output).cropped(to: output.extent)
             }
@@ -201,7 +210,7 @@ public nonisolated enum RenderPipeline {
         }
 
         if let grain = adjustments.grain, grain > 0 {
-            output = applyGrain(grain, to: output)
+            output = applyGrain(grain, to: output, scale: scale)
         }
 
         if let vignette = adjustments.vignette, !vignette.isNeutral {
@@ -225,7 +234,7 @@ public nonisolated enum RenderPipeline {
 
     /// Film-like grain: position-based noise (so preview and export match), reduced to gray, centered on
     /// mid-gray with a strength set by the slider, then overlaid on the image.
-    static func applyGrain(_ amount: Double, to image: CIImage) -> CIImage {
+    static func applyGrain(_ amount: Double, to image: CIImage, scale: CGFloat = 1) -> CIImage {
         let extent = image.extent
         guard !extent.isInfinite else { return image }
         let strength = amount * 0.35
@@ -242,7 +251,7 @@ public nonisolated enum RenderPipeline {
                 "inputBVector": CIVector(x: 0, y: 0, z: strength, w: 0),
                 "inputBiasVector": CIVector(x: 0.5 * (1 - strength), y: 0.5 * (1 - strength), z: 0.5 * (1 - strength), w: 0),
             ])
-            .transformed(by: CGAffineTransform(scaleX: 1.6, y: 1.6))
+            .transformed(by: CGAffineTransform(scaleX: grainSize * scale, y: grainSize * scale))
             .cropped(to: extent)
         guard let noise else { return image }
         let blend = CIFilter.overlayBlendMode()
@@ -272,6 +281,16 @@ public nonisolated enum RenderPipeline {
         filter.setValue(colorSpace, forKey: "inputColorSpace")
         return filter.outputImage ?? image
     }
+
+    // MARK: Sizes in pixels of the photo, multiplied by the scale of the image given
+
+    /// Reach of the highlights and shadows recovery.
+    static let toneRadius = 8.0
+    /// Radius of the sharpening, and of the blur at the other end of the slider.
+    static let sharpenRadius = 1.5
+    static let softenRadius = 2.0
+    /// Size of a grain.
+    static let grainSize = 1.6
 
     /// How far the black point moves (in linear input or output) at the end of its slider.
     static let blackPointSpan = 0.15
